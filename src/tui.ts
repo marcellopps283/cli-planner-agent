@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import fg from "fast-glob";
@@ -453,9 +454,45 @@ export function InteractiveDashboard({
   const [isEditingRevise, setIsEditingRevise] = useState(false);
   const [reviseInput, setReviseInput] = useState("");
   const [lastReviseChange, setLastReviseChange] = useState<string | undefined>();
+  const [isEditingRoot, setIsEditingRoot] = useState(false);
+  const [rootInput, setRootInput] = useState(dashboard.root);
   const actions = getTuiActions(dashboardState);
 
   useInput((input, key) => {
+    if (isEditingRoot) {
+      if (key.escape) {
+        setIsEditingRoot(false);
+        setRootInput(dashboardState.root);
+        return;
+      }
+
+      if (key.backspace || key.delete) {
+        setRootInput((current) => current.slice(0, -1));
+        return;
+      }
+
+      if (key.return) {
+        const nextRoot = resolveUserRoot(rootInput, dashboardState.root);
+
+        setIsEditingRoot(false);
+        setActionResult(undefined);
+        setPendingConfirmation(undefined);
+        setSelectedActionIndex(0);
+        void loadTuiDashboard({ root: nextRoot }).then((nextDashboard) => {
+          setDashboardState(nextDashboard);
+          setRootInput(nextDashboard.root);
+          setView(nextDashboard.setup.initialized ? "overview" : "actions");
+        });
+        return;
+      }
+
+      if (input.length > 0 && !key.ctrl && !key.meta) {
+        setRootInput((current) => `${current}${input}`);
+      }
+
+      return;
+    }
+
     if (view === "actions" && isEditingRevise) {
       if (key.escape) {
         setIsEditingRevise(false);
@@ -487,6 +524,12 @@ export function InteractiveDashboard({
 
     if (input === "q" || key.escape) {
       exit();
+      return;
+    }
+
+    if (input.toLowerCase() === "c") {
+      setRootInput("");
+      setIsEditingRoot(true);
       return;
     }
 
@@ -608,6 +651,8 @@ export function InteractiveDashboard({
     pendingConfirmation,
     isEditingRevise,
     reviseInput,
+    isEditingRoot,
+    rootInput,
   });
 }
 
@@ -620,6 +665,8 @@ export function BlueprintDashboard({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  isEditingRoot,
+  rootInput,
 }: {
   dashboard: TuiDashboard;
   view?: TuiView;
@@ -629,6 +676,8 @@ export function BlueprintDashboard({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  isEditingRoot?: boolean;
+  rootInput?: string;
 }): React.ReactElement {
   const lintStatus = dashboard.lint.errors.length === 0 ? "ok" : "error";
 
@@ -656,6 +705,8 @@ export function BlueprintDashboard({
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
+      isEditingRoot,
+      rootInput,
     }),
   );
 }
@@ -670,6 +721,8 @@ function ActiveView({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  isEditingRoot,
+  rootInput,
 }: {
   dashboard: TuiDashboard;
   view: TuiView;
@@ -680,9 +733,11 @@ function ActiveView({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  isEditingRoot?: boolean;
+  rootInput?: string;
 }): React.ReactElement {
-  if (!dashboard.setup.initialized && view !== "actions") {
-    return h(SetupView, { dashboard });
+  if (isEditingRoot || (!dashboard.setup.initialized && view !== "actions")) {
+    return h(SetupView, { dashboard, isEditingRoot, rootInput });
   }
 
   if (view === "tasks") {
@@ -712,7 +767,37 @@ function ActiveView({
   return h(OverviewView, { dashboard, lintStatus });
 }
 
-function SetupView({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
+function SetupView({
+  dashboard,
+  isEditingRoot,
+  rootInput,
+}: {
+  dashboard: TuiDashboard;
+  isEditingRoot?: boolean;
+  rootInput?: string;
+}): React.ReactElement {
+  if (isEditingRoot) {
+    return h(
+      Box,
+      { flexDirection: "column", gap: 1 },
+      h(
+        Box,
+        { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+        h(Text, { bold: true }, "Choose Project Directory"),
+        h(Text, null, `Current: ${dashboard.root}`),
+        h(Text, null, `New path: ${rootInput ?? ""}`),
+      ),
+      h(
+        Box,
+        { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
+        h(Text, { bold: true }, "Controls"),
+        h(Text, null, "Enter opens the typed directory."),
+        h(Text, null, "Leave empty and press Enter to keep current."),
+        h(Text, null, "Esc cancels."),
+      ),
+    );
+  }
+
   return h(
     Box,
     { flexDirection: "column", gap: 1 },
@@ -721,6 +806,13 @@ function SetupView({ dashboard }: { dashboard: TuiDashboard }): React.ReactEleme
       { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
       h(Text, { bold: true }, "Blueprint not initialized"),
       ...dashboard.setup.messages.map((message) => h(Text, { key: message }, message)),
+    ),
+    h(
+      Box,
+      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Choose Directory"),
+      h(Text, null, "Enter keeps this directory and starts guided setup."),
+      h(Text, null, "Press c to choose another directory."),
     ),
     h(
       Box,
@@ -1196,6 +1288,7 @@ async function inspectBlueprintSetup(root: string, blueprintRoot: string): Promi
       "This directory has no .blueprint folder yet.",
       "Open the project root or initialize Blueprint here.",
       "Press Enter in this screen to start the guided setup.",
+      "Press c to choose another directory.",
     ],
     commands: [
       "blueprint init",
@@ -1204,6 +1297,19 @@ async function inspectBlueprintSetup(root: string, blueprintRoot: string): Promi
       "blueprint tui",
     ],
   };
+}
+
+function resolveUserRoot(input: string, currentRoot: string): string {
+  const trimmed = input.trim();
+
+  if (!trimmed) {
+    return currentRoot;
+  }
+
+  const expanded =
+    trimmed === "~" ? os.homedir() : trimmed.startsWith("~/") ? path.join(os.homedir(), trimmed.slice(2)) : trimmed;
+
+  return path.resolve(currentRoot, expanded);
 }
 
 function nextView(view: TuiView): TuiView {

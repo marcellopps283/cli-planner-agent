@@ -153,6 +153,8 @@ MVP atual:
 - le profile, inventario de contexto, lint, manifest, grafo, tasks e exports;
 - navega por abas `overview`, `tasks`, `graph`, `providers` e `actions`;
 - mostra onboarding quando o diretorio atual ainda nao tem `.blueprint/`;
+- mostra o diretorio atual no onboarding; `Enter` mantem o diretorio e `c`
+  permite escolher outro caminho dentro da TUI;
 - mostra status de profile, blueprint, contexto e tasks;
 - lista tasks, dependencias, provider pool e fila de acoes operacionais;
 - executa acoes locais da aba `actions`: `setup project`, `lint`, `export`,

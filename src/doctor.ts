@@ -60,6 +60,7 @@ export async function inspectProject(rootInput: string): Promise<ProjectDoctorRe
     cwd: root,
     dot: true,
     onlyFiles: true,
+    suppressErrors: true,
     unique: true,
     ignore: DEFAULT_IGNORES,
   });
@@ -107,4 +108,3 @@ async function readGitignore(root: string): Promise<string[]> {
     throw error;
   }
 }
-
