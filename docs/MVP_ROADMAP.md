@@ -59,6 +59,11 @@ Smoke local em 2026-05-02: OpenAI/Codex retornou limite de uso no modo planner
 LLM e o fallback deterministico funcionou. O profile foi alternado para Gemini
 como planner, `plan --engine llm` gerou 4 tasks e `blueprint lint` passou.
 
+Smoke empacotado em 2026-05-03: `pnpm pack` + instalacao em prefixo temporario
+validaram o bin `blueprint` fora do checkout. O smoke externo tambem confirmou
+que `profile init --project-registry` precisa criar o registry local junto com
+o profile para deixar `profile validate` verde logo depois.
+
 Checkpoint:
 
 - Um repo real gera plano com arquitetura, grafo e tasks.

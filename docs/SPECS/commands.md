@@ -25,6 +25,11 @@ Exemplo para ambiente sem cota Claude:
 blueprint profile init --providers openai,google --planner-provider openai
 ```
 
+Quando usado com `--project-registry`, tambem cria
+`.blueprint/model_registry.yaml` a partir do registry bundled se o arquivo ainda
+nao existir. Assim o par `profile init --project-registry` e `profile validate`
+funciona sem exigir um `registry export` manual antes.
+
 ### `blueprint profile show`
 
 Mostra o profile local ativo.

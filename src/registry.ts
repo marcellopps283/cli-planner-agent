@@ -24,6 +24,7 @@ export interface ModelRegistryValidationResult {
 
 export interface ExportModelRegistryOptions {
   root: string;
+  path?: string;
   force?: boolean;
 }
 
@@ -34,7 +35,7 @@ export async function exportModelRegistry(options: ExportModelRegistryOptions): 
   warnings: string[];
 }> {
   const root = path.resolve(options.root);
-  const registryPath = getRegistryPath(root);
+  const registryPath = resolveRegistryPath(root, options.path ?? MODEL_REGISTRY_FILE);
   const registry: ModelRegistryFile = {
     schema_version: "1.0",
     models: DEFAULT_MODEL_REGISTRY,
@@ -151,7 +152,7 @@ export function serializeModelRegistry(registry: ModelRegistryFile): string {
 }
 
 export function getRegistryPath(root: string): string {
-  return path.join(path.resolve(root), BLUEPRINT_DIR, MODEL_REGISTRY_FILE);
+  return resolveRegistryPath(root, MODEL_REGISTRY_FILE);
 }
 
 export function resolveRegistryPath(root: string, registryPath: string): string {

@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { BLUEPRINT_DIR } from "./blueprint.js";
 import { DEFAULT_MODEL_REGISTRY } from "./models.js";
-import { MODEL_REGISTRY_FILE, loadModelRegistryForProfile } from "./registry.js";
+import { MODEL_REGISTRY_FILE, exportModelRegistry, loadModelRegistryForProfile } from "./registry.js";
 import {
   PlannerProfileSchema,
   ProviderIdSchema,
@@ -100,13 +100,26 @@ export async function initPlannerProfile(
   }
 
   await mkdir(path.dirname(profilePath), { recursive: true });
+
+  const registryWarnings: string[] = [];
+
+  if (modelRegistrySource === "project") {
+    const registryResult = await exportModelRegistry({
+      root,
+      path: modelRegistry.path,
+      force: options.force,
+    });
+
+    registryWarnings.push(...registryResult.warnings);
+  }
+
   await writeFile(profilePath, serializePlannerProfile(profile), "utf8");
 
   return {
     path: profilePath,
     profile,
     written: true,
-    warnings: validation.warnings,
+    warnings: [...validation.warnings, ...registryWarnings],
   };
 }
 

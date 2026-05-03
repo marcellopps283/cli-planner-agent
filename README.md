@@ -9,8 +9,9 @@ como Codex, Claude Code e Gemini CLI.
 
 ## Status
 
-Projeto iniciado em 2026-05-02. Esta base registra o contrato arquitetural antes
-do primeiro codigo funcional.
+MVP funcional, privado no GitHub e com CI ativo em `main`. O estado atual cobre
+inicializacao, profiles, registry customizavel, doctor, planner deterministico,
+planner LLM via CLI oficial, lint, revise, export e TUI.
 
 ## Principio central
 
@@ -31,6 +32,25 @@ blueprint providers
 blueprint auth doctor
 blueprint plan
 blueprint lint
+```
+
+## Instalacao local
+
+Enquanto o pacote continuar privado, use o checkout local:
+
+```bash
+pnpm install
+pnpm build
+pnpm link --global
+blueprint --help
+```
+
+Para validar o pacote sem publicar:
+
+```bash
+pnpm pack --pack-destination /tmp/blueprint-pack
+npm install --global --prefix /tmp/blueprint-global /tmp/blueprint-pack/cli-planner-agent-0.0.0.tgz
+/tmp/blueprint-global/bin/blueprint --help
 ```
 
 Comandos ja implementados no scaffold atual:
@@ -86,9 +106,8 @@ blueprint profile validate
 Registry customizavel por projeto:
 
 ```bash
-blueprint registry export
-blueprint registry validate
 blueprint profile init --providers openai,google --planner-provider openai --project-registry --force
+blueprint registry validate
 ```
 
 Planejamento MVP:

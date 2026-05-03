@@ -25,6 +25,27 @@ describe("planner profiles", () => {
     expect(loaded.profile?.excluded_providers).toEqual(["anthropic"]);
   });
 
+  it("creates the project registry when the profile points at it", async () => {
+    const root = await makeTempProject();
+    const result = await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "google",
+      modelRegistrySource: "project",
+    });
+
+    const rawRegistry = await readFile(path.join(root, ".blueprint", "model_registry.yaml"), "utf8");
+    const loaded = await loadPlannerProfile(root);
+
+    expect(result.written).toBe(true);
+    expect(rawRegistry).toContain("gemini-cli-default");
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.profile?.model_registry).toEqual({
+      source: "project",
+      path: "model_registry.yaml",
+    });
+  });
+
   it("rejects planner providers outside the active pool", async () => {
     const profile = {
       schema_version: "1.0" as const,
