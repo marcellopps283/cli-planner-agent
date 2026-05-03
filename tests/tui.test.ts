@@ -29,8 +29,9 @@ describe("blueprint tui", () => {
     expect(actions[0]?.id).toBe("setup");
     expect(output).toContain("Blueprint not initialized");
     expect(output).toContain("Press c to choose another directory");
-    expect(actionsOutput).toContain("Setup Project");
-    expect(output).toContain("blueprint profile init --providers openai,google");
+    expect(actionsOutput).toContain("Start Here");
+    expect(actionsOutput).toContain("1 or Enter: configure Blueprint in this directory");
+    expect(actionsOutput).toContain("2: create a new project folder here");
     expect(output).not.toContain("Profile error");
   });
 

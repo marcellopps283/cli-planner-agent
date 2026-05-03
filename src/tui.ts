@@ -456,6 +456,7 @@ export function InteractiveDashboard({
   const [reviseInput, setReviseInput] = useState("");
   const [lastReviseChange, setLastReviseChange] = useState<string | undefined>();
   const [isEditingRoot, setIsEditingRoot] = useState(false);
+  const [rootInputMode, setRootInputMode] = useState<"choose" | "create">("choose");
   const [rootInput, setRootInput] = useState(dashboard.root);
   const actions = getTuiActions(dashboardState);
 
@@ -473,17 +474,41 @@ export function InteractiveDashboard({
       }
 
       if (key.return) {
-        const nextRoot = resolveUserRoot(rootInput, dashboardState.root);
+        const nextRoot =
+          rootInputMode === "create"
+            ? path.resolve(dashboardState.root, rootInput.trim())
+            : resolveUserRoot(rootInput, dashboardState.root);
+
+        if (rootInputMode === "create" && rootInput.trim().length === 0) {
+          setActionResult({
+            actionId: "setup",
+            status: "failed",
+            summary: "Directory name is required.",
+            lines: ["Type a folder name, or press Esc to cancel."],
+          });
+          return;
+        }
 
         setIsEditingRoot(false);
         setActionResult(undefined);
         setPendingConfirmation(undefined);
         setSelectedActionIndex(0);
-        void loadTuiDashboard({ root: nextRoot }).then((nextDashboard) => {
-          setDashboardState(nextDashboard);
-          setRootInput(nextDashboard.root);
-          setView(nextDashboard.setup.initialized ? "overview" : "actions");
-        });
+        void mkdir(nextRoot, { recursive: rootInputMode === "create" })
+          .then(() => loadTuiDashboard({ root: nextRoot }))
+          .then((nextDashboard) => {
+            setDashboardState(nextDashboard);
+            setRootInput(nextDashboard.root);
+            setView(nextDashboard.setup.initialized ? "overview" : "actions");
+            setPendingConfirmation(nextDashboard.setup.initialized ? undefined : "setup");
+          })
+          .catch((error: unknown) => {
+            setActionResult({
+              actionId: "setup",
+              status: "failed",
+              summary: error instanceof Error ? error.message : String(error),
+              lines: [],
+            });
+          });
         return;
       }
 
@@ -530,7 +555,45 @@ export function InteractiveDashboard({
 
     if (input.toLowerCase() === "c") {
       setRootInput("");
+      setRootInputMode("choose");
       setIsEditingRoot(true);
+      return;
+    }
+
+    if (!dashboardState.setup.initialized) {
+      if (pendingConfirmation) {
+        if (input.toLowerCase() === "y") {
+          void executeAction(pendingConfirmation);
+        }
+
+        if (input.toLowerCase() === "n") {
+          setPendingConfirmation(undefined);
+        }
+
+        return;
+      }
+
+      if (key.return || input === "1") {
+        setView("actions");
+        setSelectedActionIndex(0);
+        setPendingConfirmation("setup");
+        return;
+      }
+
+      if (input === "2") {
+        setRootInput("");
+        setRootInputMode("create");
+        setIsEditingRoot(true);
+        return;
+      }
+
+      if (input === "3") {
+        setRootInput("");
+        setRootInputMode("choose");
+        setIsEditingRoot(true);
+        return;
+      }
+
       return;
     }
 
@@ -554,7 +617,7 @@ export function InteractiveDashboard({
       return;
     }
 
-    if (pendingConfirmation && (view === "actions" || pendingConfirmation === "setup")) {
+    if (pendingConfirmation && view === "actions") {
       if (input.toLowerCase() === "y") {
         void executeAction(pendingConfirmation, {
           apply: pendingConfirmation === "revise",
@@ -588,13 +651,6 @@ export function InteractiveDashboard({
       }
 
       void executeAction(action.id, {});
-      return;
-    }
-
-    if (!dashboardState.setup.initialized && key.return) {
-      setView("actions");
-      setSelectedActionIndex(0);
-      setPendingConfirmation("setup");
       return;
     }
 
@@ -653,6 +709,7 @@ export function InteractiveDashboard({
     isEditingRevise,
     reviseInput,
     isEditingRoot,
+    rootInputMode,
     rootInput,
   });
 }
@@ -667,6 +724,7 @@ export function BlueprintDashboard({
   isEditingRevise,
   reviseInput,
   isEditingRoot,
+  rootInputMode,
   rootInput,
 }: {
   dashboard: TuiDashboard;
@@ -678,6 +736,7 @@ export function BlueprintDashboard({
   isEditingRevise?: boolean;
   reviseInput?: string;
   isEditingRoot?: boolean;
+  rootInputMode?: "choose" | "create";
   rootInput?: string;
 }): React.ReactElement {
   const lintStatus = dashboard.lint.errors.length === 0 ? "ok" : "error";
@@ -695,7 +754,7 @@ export function BlueprintDashboard({
         h(Text, null, dashboard.root),
       ),
     ),
-    h(TabBar, { activeView: view }),
+    ...(dashboard.setup.initialized ? [h(TabBar, { key: "tabs", activeView: view })] : []),
     h(ActiveView, {
       dashboard,
       view,
@@ -707,9 +766,17 @@ export function BlueprintDashboard({
       isEditingRevise,
       reviseInput,
       isEditingRoot,
+      rootInputMode,
       rootInput,
     }),
-    h(KeyHints, { view, pendingConfirmation, isEditingRevise, isEditingRoot, runningAction }),
+    h(KeyHints, {
+      view,
+      setupInitialized: dashboard.setup.initialized,
+      pendingConfirmation,
+      isEditingRevise,
+      isEditingRoot,
+      runningAction,
+    }),
   );
 }
 
@@ -724,6 +791,7 @@ function ActiveView({
   isEditingRevise,
   reviseInput,
   isEditingRoot,
+  rootInputMode,
   rootInput,
 }: {
   dashboard: TuiDashboard;
@@ -736,10 +804,19 @@ function ActiveView({
   isEditingRevise?: boolean;
   reviseInput?: string;
   isEditingRoot?: boolean;
+  rootInputMode?: "choose" | "create";
   rootInput?: string;
 }): React.ReactElement {
-  if (isEditingRoot || (!dashboard.setup.initialized && view !== "actions")) {
-    return h(SetupView, { dashboard, isEditingRoot, rootInput });
+  if (isEditingRoot || !dashboard.setup.initialized) {
+    return h(SetupView, {
+      dashboard,
+      isEditingRoot,
+      rootInputMode,
+      rootInput,
+      pendingConfirmation,
+      runningAction,
+      actionResult,
+    });
   }
 
   if (view === "tasks") {
@@ -772,11 +849,19 @@ function ActiveView({
 function SetupView({
   dashboard,
   isEditingRoot,
+  rootInputMode,
   rootInput,
+  pendingConfirmation,
+  runningAction,
+  actionResult,
 }: {
   dashboard: TuiDashboard;
   isEditingRoot?: boolean;
+  rootInputMode?: "choose" | "create";
   rootInput?: string;
+  pendingConfirmation?: TuiActionId;
+  runningAction?: TuiActionId;
+  actionResult?: TuiActionResult;
 }): React.ReactElement {
   if (isEditingRoot) {
     return h(
@@ -785,16 +870,16 @@ function SetupView({
       h(
         Box,
         { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-        h(Text, { bold: true }, "Choose Project Directory"),
+        h(Text, { bold: true }, rootInputMode === "create" ? "Create Project Directory" : "Choose Project Directory"),
         h(Text, null, `Current: ${dashboard.root}`),
-        h(Text, null, `New path: ${rootInput ?? ""}`),
+        h(Text, null, rootInputMode === "create" ? `Folder name: ${rootInput ?? ""}` : `New path: ${rootInput ?? ""}`),
       ),
       h(
         Box,
         { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
         h(Text, { bold: true }, "Controls"),
-        h(Text, null, "Enter opens the typed directory."),
-        h(Text, null, "Leave empty and press Enter to keep current."),
+        h(Text, null, rootInputMode === "create" ? "Enter creates and opens the folder." : "Enter opens the typed directory."),
+        ...(rootInputMode === "choose" ? [h(Text, { key: "empty" }, "Leave empty and press Enter to keep current.")] : []),
         h(Text, null, "Esc cancels."),
       ),
     );
@@ -812,16 +897,48 @@ function SetupView({
     h(
       Box,
       { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "Choose Directory"),
-      h(Text, null, "Enter keeps this directory and starts guided setup."),
-      h(Text, null, "Press c to choose another directory."),
+      h(Text, { bold: true }, "Start Here"),
+      h(Text, null, "1 or Enter: configure Blueprint in this directory"),
+      h(Text, null, "2: create a new project folder here"),
+      h(Text, null, "3 or c: choose another directory"),
     ),
-    h(
-      Box,
-      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "Run these commands"),
-      ...dashboard.setup.commands.map((command) => h(Text, { key: command }, command)),
-    ),
+    ...(pendingConfirmation === "setup"
+      ? [
+          h(
+            Box,
+            { key: "confirm", borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+            h(Text, { bold: true }, "Confirm Setup"),
+            h(Text, null, `Create Blueprint config in ${dashboard.root}?`),
+            h(Text, null, "Press y to confirm or n to cancel."),
+          ),
+        ]
+      : []),
+    ...(runningAction === "setup"
+      ? [
+          h(
+            Box,
+            { key: "running", borderStyle: "single", borderColor: "gray", paddingX: 1 },
+            h(Text, null, "Running setup..."),
+          ),
+        ]
+      : []),
+    ...(actionResult
+      ? [
+          h(
+            Box,
+            {
+              key: "result",
+              borderStyle: "single",
+              borderColor: actionResult.status === "ok" ? "green" : "red",
+              paddingX: 1,
+              flexDirection: "column",
+            },
+            h(Text, { bold: true }, `${actionResult.actionId} ${actionResult.status}`),
+            h(Text, null, actionResult.summary),
+            ...actionResult.lines.slice(0, 6).map((line) => h(Text, { key: line }, line)),
+          ),
+        ]
+      : []),
   );
 }
 
@@ -1535,12 +1652,14 @@ function riskIcon(riskLevel: number): string {
 
 function KeyHints({
   view,
+  setupInitialized,
   pendingConfirmation,
   isEditingRevise,
   isEditingRoot,
   runningAction,
 }: {
   view: TuiView;
+  setupInitialized: boolean;
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   isEditingRoot?: boolean;
@@ -1556,6 +1675,8 @@ function KeyHints({
     hints = "y \u2192 confirm  \u2502  n \u2192 cancel";
   } else if (runningAction) {
     hints = `Running ${runningAction}...`;
+  } else if (!setupInitialized) {
+    hints = "1/Enter \u2192 use current  \u2502  2 \u2192 new folder  \u2502  3/c \u2192 choose dir  \u2502  q quit";
   } else if (view === "actions") {
     hints = "\u2190\u2192 tab  \u2502  \u2191\u2193 select  \u2502  Enter run  \u2502  c dir  \u2502  q quit";
   } else {
