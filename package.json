@@ -6,9 +6,17 @@
   "bin": {
     "blueprint": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "AGENTS.md"
+  ],
   "scripts": {
     "build": "tsup src/cli.ts --format esm --dts --clean --sourcemap",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
     "dev": "tsx src/cli.ts",
+    "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
