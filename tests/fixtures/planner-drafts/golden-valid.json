@@ -22,7 +22,7 @@
       "id": "task-001-document-contract",
       "title": "Document planner LLM contract",
       "objective": "Update command and roadmap docs to describe the planner LLM contract and fallback behavior.",
-      "suggested_model": "gemini-cli-default",
+      "suggested_model": "gemini-3.1-pro-preview",
       "fit": "long_context",
       "dependencies": [],
       "allowed_paths": [
@@ -54,7 +54,7 @@
       "id": "task-002-harden-schema",
       "title": "Harden planner schema validation",
       "objective": "Tighten the planner draft schema and reject unavailable suggested models.",
-      "suggested_model": "openai-codex-default",
+      "suggested_model": "gpt-5.5",
       "fit": "coding_heavy",
       "dependencies": [
         "task-001-document-contract"
@@ -91,7 +91,7 @@
       "id": "task-003-verify-golden-fixtures",
       "title": "Verify golden planner fixtures",
       "objective": "Use golden fixture files to verify planner draft parsing and generated handoff linting.",
-      "suggested_model": "openai-codex-default",
+      "suggested_model": "gpt-5.5",
       "fit": "review",
       "dependencies": [
         "task-002-harden-schema"

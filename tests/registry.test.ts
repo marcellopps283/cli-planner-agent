@@ -15,7 +15,7 @@ describe("model registry", () => {
 
     expect(exported.written).toBe(true);
     expect(loaded.errors).toEqual([]);
-    expect(loaded.registry?.models.map((model) => model.id)).toContain("openai-codex-default");
+    expect(loaded.registry?.models.map((model) => model.id)).toContain("gpt-5.5");
   });
 
   it("rejects duplicate model ids", () => {
@@ -26,6 +26,8 @@ describe("model registry", () => {
           id: "duplicate",
           provider: "openai",
           access_mode: "codex_cli",
+          status: "stable",
+          tier: "utility",
           task_fit: {
             planning: 0.5,
           },
@@ -34,13 +36,18 @@ describe("model registry", () => {
           latency_class: "unknown",
           cost_class: "unknown",
           privacy_notes: "",
+          routing_tags: [],
+          benchmark_scores: [],
           recommended_uses: ["test"],
           avoid_for: ["test"],
+          source_urls: [],
         },
         {
           id: "duplicate",
           provider: "google",
           access_mode: "gemini_cli",
+          status: "stable",
+          tier: "utility",
           task_fit: {
             planning: 0.5,
           },
@@ -49,8 +56,11 @@ describe("model registry", () => {
           latency_class: "unknown",
           cost_class: "unknown",
           privacy_notes: "",
+          routing_tags: [],
+          benchmark_scores: [],
           recommended_uses: ["test"],
           avoid_for: ["test"],
+          source_urls: [],
         },
       ],
     });

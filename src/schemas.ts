@@ -18,15 +18,34 @@ export const ModelRegistryEntrySchema = z.object({
   id: z.string().min(1),
   provider: ProviderIdSchema,
   access_mode: z.string().min(1),
+  status: z.enum(["stable", "preview", "restricted"]).default("stable"),
+  tier: z.enum(["frontier", "balanced", "utility", "specialized"]).default("balanced"),
+  release_date: z.iso.date().optional(),
   task_fit: z.record(z.string(), z.number().min(0).max(1)),
   context_window: z.number().int().positive().optional(),
+  max_output_tokens: z.number().int().positive().optional(),
+  input_price_usd_per_mtok: z.number().nonnegative().optional(),
+  output_price_usd_per_mtok: z.number().nonnegative().optional(),
   strengths: z.array(z.string()).default([]),
   weaknesses: z.array(z.string()).default([]),
   latency_class: z.enum(["low", "medium", "high", "unknown"]).default("unknown"),
   cost_class: z.enum(["free", "subscription", "api_paid", "unknown"]).default("unknown"),
   privacy_notes: z.string().default(""),
+  routing_tags: z.array(z.string()).default([]),
+  benchmark_scores: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        score: z.string().min(1),
+        mode: z.string().optional(),
+        source: z.string().min(1),
+        notes: z.string().optional(),
+      }),
+    )
+    .default([]),
   recommended_uses: z.array(z.string()).default([]),
   avoid_for: z.array(z.string()).default([]),
+  source_urls: z.array(z.string().url()).default([]),
 });
 
 export type ModelRegistryEntry = z.infer<typeof ModelRegistryEntrySchema>;
@@ -44,6 +63,7 @@ export const PlannerProfileSchema = z.object({
   planner_provider: ProviderIdSchema,
   planner_model: z.string().min(1),
   available_providers: z.array(ProviderIdSchema).min(1),
+  available_models: z.array(z.string().min(1)).default([]),
   excluded_providers: z.array(ProviderIdSchema).default([]),
   model_registry: z
     .object({
@@ -80,6 +100,7 @@ export const BlueprintManifestSchema = z.object({
   planner_provider: ProviderIdSchema.optional(),
   planner_model: z.string().min(1).optional(),
   available_providers: z.array(ProviderIdSchema).default([]),
+  available_models: z.array(z.string().min(1)).default([]),
   artifact_root: z.literal(".blueprint"),
   status: z.enum(["draft", "planned", "revised"]).default("draft"),
 });

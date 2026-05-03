@@ -8,7 +8,7 @@ import { exportBlueprint } from "./export.js";
 import { lintBlueprint } from "./lint.js";
 import { DEFAULT_MODEL_REGISTRY } from "./models.js";
 import { runPlanCommand, type PlanEngine } from "./plan.js";
-import { initPlannerProfile, loadPlannerProfile, parseProviderIds } from "./profile.js";
+import { initPlannerProfile, loadPlannerProfile, parseModelIds, parseProviderIds } from "./profile.js";
 import { DEFAULT_PROVIDER_ADAPTERS, checkProviderAuth } from "./providers.js";
 import { exportModelRegistry, getRegistryPath, loadModelRegistryFile } from "./registry.js";
 import { readChangeInput, reviseBlueprint } from "./revise.js";
@@ -34,7 +34,7 @@ program
     if (options.models) {
       console.log("");
       for (const model of DEFAULT_MODEL_REGISTRY) {
-        console.log(`${model.id}\t${model.provider}\t${model.access_mode}`);
+        console.log(`${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}`);
       }
     }
   });
@@ -47,6 +47,7 @@ profileCommand
   .option("--root <path>", "target project root", ".")
   .option("--name <name>", "profile name", "default")
   .option("--providers <ids>", "comma-separated provider ids", "openai,anthropic,google")
+  .option("--models <ids>", "comma-separated exact model ids to include in the active model pool")
   .option("--planner-provider <id>", "planner provider id")
   .option("--planner-model <id>", "planner model registry id")
   .option("--project-registry", "point the profile at .blueprint/model_registry.yaml")
@@ -57,6 +58,7 @@ profileCommand
       root: string;
       name: string;
       providers: string;
+      models?: string;
       plannerProvider?: string;
       plannerModel?: string;
       projectRegistry?: boolean;
@@ -64,11 +66,13 @@ profileCommand
       force?: boolean;
     }) => {
       const providers = parseProviderIds(options.providers);
+      const models = options.models ? parseModelIds(options.models) : undefined;
       const plannerProvider = options.plannerProvider ? parseProviderId(options.plannerProvider) : undefined;
       const result = await initPlannerProfile({
         root: options.root,
         name: options.name,
         providers,
+        models,
         plannerProvider,
         plannerModel: options.plannerModel,
         modelRegistrySource: options.projectRegistry ? "project" : "bundled",
@@ -184,7 +188,7 @@ registryCommand
   .action(async (options: { root: string; project?: boolean }) => {
     if (!options.project) {
       for (const model of DEFAULT_MODEL_REGISTRY) {
-        console.log(`${model.id}\t${model.provider}\t${model.access_mode}`);
+        console.log(`${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}`);
       }
       return;
     }
@@ -201,7 +205,7 @@ registryCommand
     }
 
     for (const model of result.registry.models) {
-      console.log(`${model.id}\t${model.provider}\t${model.access_mode}`);
+      console.log(`${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}`);
     }
   });
 
@@ -493,6 +497,7 @@ function printProfile(profile: PlannerProfile): void {
   console.log(`name\t${profile.name}`);
   console.log(`planner\t${profile.planner_provider}\t${profile.planner_model}`);
   console.log(`providers\t${profile.available_providers.join(",")}`);
+  console.log(`models\t${profile.available_models.length > 0 ? profile.available_models.join(",") : "all-provider-models"}`);
   console.log(`excluded\t${profile.excluded_providers.length ? profile.excluded_providers.join(",") : "none"}`);
   console.log(
     `model_registry\t${profile.model_registry.source}${

@@ -30,8 +30,9 @@ export async function initBlueprint(options: InitBlueprintOptions): Promise<stri
     project_name: projectName,
     created_at: new Date().toISOString(),
     planner_provider: profile?.planner_provider ?? "anthropic",
-    planner_model: profile?.planner_model ?? "claude-code-default",
+    planner_model: profile?.planner_model ?? "claude-opus-4-7",
     available_providers: profile?.available_providers ?? ["openai", "anthropic", "google"],
+    available_models: profile?.available_models ?? [],
     artifact_root: ".blueprint",
     status: "draft",
   };

@@ -20,7 +20,7 @@ import { z } from "zod";
 import { BLUEPRINT_DIR } from "./blueprint.js";
 import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { lintBlueprint } from "./lint.js";
-import { loadPlannerProfile } from "./profile.js";
+import { activeModelsForProfile, loadPlannerProfile } from "./profile.js";
 import { extractJsonObject, runProviderPrompt } from "./providerPrompt.js";
 import { loadModelRegistryForProfile } from "./registry.js";
 import {
@@ -239,6 +239,7 @@ export async function generateBlueprintPlan(options: GeneratePlanOptions): Promi
     planner_provider: context.profile.planner_provider,
     planner_model: context.profile.planner_model,
     available_providers: context.profile.available_providers,
+    available_models: activeModelsForProfile(context.profile, context.registry).map((model) => model.id),
     artifact_root: ".blueprint",
     status: "planned",
   };
@@ -300,6 +301,7 @@ async function collectPlanAnswers(context: PlanContext): Promise<PlanAnswers> {
     [
       `planner: ${context.profile.planner_provider} / ${context.profile.planner_model}`,
       `providers: ${context.profile.available_providers.join(", ")}`,
+      `models: ${activeModelsForProfile(context.profile, context.registry).map((model) => model.id).join(", ")}`,
       `files visible to inventory: ${context.doctor.fileCount}`,
       `canonical docs: ${context.doctor.canonicalFiles.join(", ") || "none"}`,
     ].join("\n"),
@@ -354,7 +356,7 @@ async function confirmPlan(context: PlanContext, answers: PlanAnswers): Promise<
       `objective: ${answers.objective}`,
       `tasks: 3 sequential handoffs`,
       `planner: ${context.profile.planner_model}`,
-      `active providers: ${context.profile.available_providers.join(", ")}`,
+      `active models: ${activeModelsForProfile(context.profile, context.registry).map((model) => model.id).join(", ")}`,
       `validation: ${answers.validationCommands.join(" && ") || "manual acceptance only"}`,
     ].join("\n"),
     "Executive Summary",
@@ -492,7 +494,7 @@ function validatePlannerDraftGraph(draft: PlannerDraft): void {
 }
 
 function resolveDraftModel(context: PlanContext, suggestedModel: string | undefined, fit: string): ModelRegistryEntry {
-  const activeModels = context.registry.filter((model) => context.profile.available_providers.includes(model.provider));
+  const activeModels = activeModelsForProfile(context.profile, context.registry);
 
   if (suggestedModel) {
     const model = activeModels.find((candidate) => candidate.id === suggestedModel);
@@ -512,23 +514,32 @@ function resolveDraftModel(context: PlanContext, suggestedModel: string | undefi
 }
 
 export function buildPlannerPromptForContext(context: PlanContext, answers: PlanAnswers): string {
-  const activeModels = context.registry
-    .filter((model) => context.profile.available_providers.includes(model.provider))
-    .map((model) => ({
-      id: model.id,
-      provider: model.provider,
-      task_fit: model.task_fit,
-      strengths: model.strengths,
-      weaknesses: model.weaknesses,
-      recommended_uses: model.recommended_uses,
-      avoid_for: model.avoid_for,
-    }));
+  const activeModels = activeModelsForProfile(context.profile, context.registry).map((model) => ({
+    id: model.id,
+    provider: model.provider,
+    status: model.status,
+    tier: model.tier,
+    task_fit: model.task_fit,
+    context_window: model.context_window,
+    max_output_tokens: model.max_output_tokens,
+    input_price_usd_per_mtok: model.input_price_usd_per_mtok,
+    output_price_usd_per_mtok: model.output_price_usd_per_mtok,
+    latency_class: model.latency_class,
+    cost_class: model.cost_class,
+    routing_tags: model.routing_tags,
+    benchmark_scores: model.benchmark_scores,
+    strengths: model.strengths,
+    weaknesses: model.weaknesses,
+    recommended_uses: model.recommended_uses,
+    avoid_for: model.avoid_for,
+  }));
   const payload = {
     answers,
     profile: {
       planner_provider: context.profile.planner_provider,
       planner_model: context.profile.planner_model,
       available_providers: context.profile.available_providers,
+      available_models: context.profile.available_models,
       excluded_providers: context.profile.excluded_providers,
       fallback_requires_confirmation: context.profile.routing.require_confirmation_for_fallback,
     },
@@ -545,6 +556,7 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
 
   return [
     "You are the planner brain for a CLI that generates AI coding handoff files.",
+    "Route work by exact model id, not by provider name or generic aliases.",
     "Return ONLY a JSON object. Do not use markdown fences unless unavoidable.",
     "The JSON must be directly parseable by JSON.parse.",
     "Your JSON must match this TypeScript shape:",
@@ -576,7 +588,9 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     "Rules:",
     "- Use 2 to 8 tasks.",
     "- Task ids must match task-NNN-kebab-case and dependencies may only reference earlier task ids.",
-    "- suggested_model must be one of the active_models ids. Never use excluded providers.",
+    "- suggested_model must be one of the active_models ids. Never use excluded providers or generic provider defaults.",
+    "- Prefer the smallest active model that clears the task risk, context, and benchmark needs.",
+    "- Use benchmark_scores, routing_tags, task_fit, context_window, latency_class, and prices when choosing a model.",
     "- If a task is read-only, set allowed_paths to [] and say read-only in context_rules.",
     "- If a task edits files, allowed_paths must be the narrowest relative paths or globs needed.",
     "- Prefer small, isolated handoffs with explicit allowed_paths and acceptance_contract.",
@@ -798,6 +812,9 @@ ${answers.objective}
 - Planner provider: ${context.profile.planner_provider}
 - Planner model: ${context.profile.planner_model}
 - Available providers: ${context.profile.available_providers.join(", ")}
+- Active model pool: ${activeModelsForProfile(context.profile, context.registry)
+    .map((model) => model.id)
+    .join(", ")}
 - Excluded providers: ${context.profile.excluded_providers.join(", ") || "none"}
 
 ## Context Inventory
@@ -828,7 +845,8 @@ function renderAssumptions(context: PlanContext, answers: PlanAnswers, plan: Pla
 
 ${formatMarkdownList([
     "The active profile is the source of truth for provider availability.",
-    "Workers must not use providers outside available_providers unless the user approves fallback.",
+    "Workers must use exact IDs from available_models unless the user approves fallback.",
+    "Providers remain authentication boundaries; models are the routing unit.",
     "Secrets and ignored/generated folders remain blocked by default.",
     ...answers.notes,
     ...context.doctor.warnings,
@@ -843,7 +861,9 @@ function renderDecisions(context: PlanContext, answers: PlanAnswers, plan: PlanB
 
 ${formatMarkdownList([
     `Use ${context.profile.planner_model} as planner model for this plan.`,
-    `Restrict model routing to ${context.profile.available_providers.join(", ")}.`,
+    `Restrict model routing to ${activeModelsForProfile(context.profile, context.registry)
+      .map((model) => model.id)
+      .join(", ")}.`,
     `Generate task handoffs using ${plan.engine} planning.`,
     ...plan.tasks.map((task) => `Assign ${task.id} to ${task.suggestedModel.id}.`),
     ...answers.constraints.map((constraint) => `Respect constraint: ${constraint}`),
@@ -886,6 +906,9 @@ ${formatMarkdownList(answers.validationCommands)}
 ## Provider Rules
 
 - Active providers: ${context.profile.available_providers.join(", ")}
+- Active models: ${activeModelsForProfile(context.profile, context.registry)
+    .map((model) => model.id)
+    .join(", ")}
 - Excluded providers: ${context.profile.excluded_providers.join(", ") || "none"}
 - Fallback requires confirmation: ${context.profile.routing.require_confirmation_for_fallback ? "yes" : "no"}
 
@@ -923,7 +946,7 @@ function renderTask(task: PlannedTask): string {
 }
 
 function selectModel(context: PlanContext, fit: string): ModelRegistryEntry {
-  const activeModels = context.registry.filter((model) => context.profile.available_providers.includes(model.provider));
+  const activeModels = activeModelsForProfile(context.profile, context.registry);
   const plannerModel = activeModels.find((model) => model.id === context.profile.planner_model);
   const sorted = [...activeModels].sort((left, right) => (right.task_fit[fit] ?? 0) - (left.task_fit[fit] ?? 0));
 

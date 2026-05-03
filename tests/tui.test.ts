@@ -75,7 +75,7 @@ describe("blueprint tui", () => {
     expect(profile).toContain("planner_provider: google");
     expect(profile).toContain("- openai");
     expect(profile).toContain("- google");
-    expect(registry).toContain("gemini-cli-default");
+    expect(registry).toContain("gemini-3.1-pro-preview");
     expect(dashboard.setup.initialized).toBe(true);
     expect(dashboard.profile.errors).toEqual([]);
   });
@@ -274,7 +274,7 @@ function makeDraft(): PlannerDraft {
         id: "task-001-update-docs",
         title: "Update docs",
         objective: "Update command documentation.",
-        suggested_model: "gemini-cli-default",
+        suggested_model: "gemini-3.1-pro-preview",
         fit: "long_context",
         dependencies: [],
         allowed_paths: ["docs/SPECS/commands.md"],
@@ -289,7 +289,7 @@ function makeDraft(): PlannerDraft {
         id: "task-002-implement-api",
         title: "Implement API",
         objective: "Implement API logic.",
-        suggested_model: "openai-codex-default",
+        suggested_model: "gpt-5.5",
         fit: "coding_heavy",
         dependencies: ["task-001-update-docs"],
         allowed_paths: ["src/api.ts"],

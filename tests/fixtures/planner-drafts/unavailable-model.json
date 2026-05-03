@@ -12,7 +12,7 @@
       "id": "task-001-invalid-provider",
       "title": "Invalid provider selection",
       "objective": "This task should fail because it chooses Claude while Anthropic is excluded.",
-      "suggested_model": "claude-code-default",
+      "suggested_model": "claude-opus-4-7",
       "fit": "coding_heavy",
       "dependencies": [],
       "allowed_paths": [

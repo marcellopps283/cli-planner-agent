@@ -29,7 +29,7 @@ describe("blueprint lifecycle", () => {
         schema_version: "1.0",
         name: "default",
         planner_provider: "openai",
-        planner_model: "openai-codex-default",
+        planner_model: "gpt-5.5",
         available_providers: ["openai", "google"],
         excluded_providers: ["anthropic"],
       }),
@@ -40,7 +40,7 @@ describe("blueprint lifecycle", () => {
     const manifest = parseYaml(await readFile(path.join(root, ".blueprint", "blueprint.yaml"), "utf8"));
 
     expect(manifest.planner_provider).toBe("openai");
-    expect(manifest.planner_model).toBe("openai-codex-default");
+    expect(manifest.planner_model).toBe("gpt-5.5");
     expect(manifest.available_providers).toEqual(["openai", "google"]);
   });
 
@@ -104,7 +104,7 @@ async function writeTask(root: string, id: string, relativePath: string): Promis
   const metadata = {
     id,
     title: id,
-    suggested_model: "claude-code-default",
+    suggested_model: "claude-opus-4-7",
     dependencies: [],
     parallel_group: "same_batch",
     allowed_paths: ["src/shared.ts"],
@@ -113,7 +113,7 @@ async function writeTask(root: string, id: string, relativePath: string): Promis
     test_commands: ["pnpm test"],
   };
 
-  const content = `---\n${stringify(metadata)}---\n\n<task_objective>\nDo the task.\n</task_objective>\n\n<suggested_model>\nclaude-code-default\n</suggested_model>\n\n<context_rules>\nStay inside allowed paths.\n</context_rules>\n\n<execution_prompt>\nImplement the requested change.\n</execution_prompt>\n\n<acceptance_contract>\nTests pass.\n</acceptance_contract>\n`;
+  const content = `---\n${stringify(metadata)}---\n\n<task_objective>\nDo the task.\n</task_objective>\n\n<suggested_model>\nclaude-opus-4-7\n</suggested_model>\n\n<context_rules>\nStay inside allowed paths.\n</context_rules>\n\n<execution_prompt>\nImplement the requested change.\n</execution_prompt>\n\n<acceptance_contract>\nTests pass.\n</acceptance_contract>\n`;
 
   await writeFile(path.join(root, ".blueprint", relativePath), content, "utf8");
 }

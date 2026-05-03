@@ -10,7 +10,7 @@
       "id": "task-001-invalid-fit",
       "title": "Invalid fit",
       "objective": "This task should fail schema parsing.",
-      "suggested_model": "openai-codex-default",
+      "suggested_model": "gpt-5.5",
       "fit": "magic",
       "dependencies": [],
       "allowed_paths": [

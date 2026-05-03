@@ -3,7 +3,8 @@
 ## Objetivo
 
 Permitir que o planner mestre recomende o melhor worker para cada tarefa usando
-apenas os provedores selecionados pelo usuario.
+apenas os modelos exatos selecionados pelo usuario. Providers continuam sendo a
+fronteira de autenticacao/CLI, mas a unidade de roteamento e o model ID.
 
 ## MVP
 
@@ -11,8 +12,9 @@ Decisao por LLM com banco atualizavel de modelos.
 
 Entradas:
 
-- lista de providers disponiveis;
-- modelos/capacidades selecionados;
+- lista de providers disponiveis para auth;
+- lista de modelos exatos no pool ativo;
+- benchmarks e criterios de separacao do registry;
 - tipo da task;
 - complexidade;
 - risco;
@@ -21,8 +23,10 @@ Entradas:
 - quota/custo conhecidos.
 
 O pool ativo vem de `.blueprint/profile.yaml`. Providers sem cota, ausentes ou
-desmarcados pelo usuario ficam no registry, mas nao entram em `available_providers`
-nem podem ser escolhidos pelo roteador para novas tasks.
+desmarcados pelo usuario ficam no registry, mas nao entram em `available_providers`.
+Modelos fora de `available_models` nao podem ser escolhidos pelo roteador para
+novas tasks. Profiles antigos sem `available_models` usam todos os modelos dos
+providers disponiveis como fallback de compatibilidade.
 
 Saida:
 
@@ -40,11 +44,23 @@ models:
   - id: claude-opus-4-7
     provider: anthropic
     access_mode: claude_code
+    status: stable
+    tier: frontier
+    release_date: 2026-04-16
     task_fit:
       planning: 0.98
       coding_heavy: 0.95
       review: 0.9
     context_window: 1000000
+    input_price_usd_per_mtok: 5
+    output_price_usd_per_mtok: 25
+    routing_tags:
+      - planner_master
+      - agentic_coding
+    benchmark_scores:
+      - name: CursorBench
+        score: 70%
+        source: Anthropic Opus 4.7 launch
     strengths:
       - long horizon planning
       - difficult coding
@@ -64,6 +80,8 @@ models:
 ## Dimensoes sugeridas
 
 - fit por tipo de trabalho;
+- tier/status do modelo;
+- benchmarks relevantes;
 - complexidade;
 - contexto;
 - velocidade;
@@ -97,10 +115,18 @@ Exemplo:
 schema_version: "1.0"
 name: default
 planner_provider: openai
-planner_model: openai-codex-default
+planner_model: gpt-5.5
 available_providers:
   - openai
   - google
+available_models:
+  - gpt-5.5
+  - gpt-5.4
+  - gpt-5.4-mini
+  - gemini-3.1-pro-preview
+  - gemini-3.1-pro-preview-customtools
+  - gemini-3-flash-preview
+  - gemini-3.1-flash-lite-preview
 excluded_providers:
   - anthropic
 model_registry:

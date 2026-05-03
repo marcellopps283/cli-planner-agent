@@ -22,6 +22,7 @@ export interface InitPlannerProfileOptions {
   root: string;
   name?: string;
   providers?: ProviderId[];
+  models?: string[];
   plannerProvider?: ProviderId;
   plannerModel?: string;
   modelRegistrySource?: "bundled" | "project";
@@ -50,8 +51,9 @@ export async function initPlannerProfile(
   const root = path.resolve(options.root);
   const profilePath = getProfilePath(root);
   const availableProviders = uniqueProviders(options.providers ?? KNOWN_PROVIDER_IDS);
+  const availableModels = uniqueStrings(options.models ?? defaultModelsForProviders(availableProviders));
   const plannerProvider = options.plannerProvider ?? pickDefaultPlannerProvider(availableProviders);
-  const plannerModel = options.plannerModel ?? defaultModelForProvider(plannerProvider);
+  const plannerModel = options.plannerModel ?? defaultModelForProvider(plannerProvider, availableModels);
   const modelRegistrySource = options.modelRegistrySource ?? "bundled";
   const modelRegistry =
     modelRegistrySource === "project"
@@ -64,6 +66,7 @@ export async function initPlannerProfile(
     planner_provider: plannerProvider,
     planner_model: plannerModel,
     available_providers: availableProviders,
+    available_models: availableModels,
     excluded_providers: KNOWN_PROVIDER_IDS.filter((provider) => !availableProviders.includes(provider)),
     model_registry: modelRegistry,
     routing: {
@@ -164,6 +167,8 @@ export function validatePlannerProfile(
   const errors: string[] = [];
   const warnings: string[] = [];
   const availableProviders = new Set(profile.available_providers);
+  const activeModels = activeModelsForProfile(profile, registry);
+  const activeModelIds = new Set(activeModels.map((model) => model.id));
   const excludedProviders = new Set(profile.excluded_providers);
   const selectedModel = registry.find((model) => model.id === profile.planner_model);
 
@@ -179,6 +184,23 @@ export function validatePlannerProfile(
     if (!registry.some((model) => model.provider === provider)) {
       warnings.push(`provider ${provider} has no model in the active registry.`);
     }
+
+    if (!activeModels.some((model) => model.provider === provider)) {
+      warnings.push(`provider ${provider} has no active model in available_models.`);
+    }
+  }
+
+  for (const modelId of profile.available_models) {
+    const model = registry.find((entry) => entry.id === modelId);
+
+    if (!model) {
+      errors.push(`available_model ${modelId} was not found in the active registry.`);
+      continue;
+    }
+
+    if (!availableProviders.has(model.provider)) {
+      errors.push(`available_model ${modelId} belongs to excluded provider ${model.provider}.`);
+    }
   }
 
   if (!selectedModel) {
@@ -187,6 +209,8 @@ export function validatePlannerProfile(
     errors.push(
       `planner_model ${profile.planner_model} belongs to ${selectedModel.provider}, not ${profile.planner_provider}.`,
     );
+  } else if (profile.available_models.length > 0 && !activeModelIds.has(profile.planner_model)) {
+    errors.push(`planner_model ${profile.planner_model} is not in available_models.`);
   }
 
   if (profile.model_registry.source === "project" && !profile.model_registry.path) {
@@ -224,6 +248,31 @@ export function parseProviderIds(value: string): ProviderId[] {
   );
 }
 
+export function parseModelIds(value: string): string[] {
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    throw new Error("At least one model is required.");
+  }
+
+  return uniqueStrings(parts);
+}
+
+export function activeModelsForProfile(profile: PlannerProfile, registry: ModelRegistryEntry[]): ModelRegistryEntry[] {
+  const availableProviders = new Set(profile.available_providers);
+  const modelsForAvailableProviders = registry.filter((entry) => availableProviders.has(entry.provider));
+
+  if (profile.available_models.length === 0) {
+    return modelsForAvailableProviders;
+  }
+
+  const availableModels = new Set(profile.available_models);
+  return modelsForAvailableProviders.filter((entry) => availableModels.has(entry.id));
+}
+
 export function serializePlannerProfile(profile: PlannerProfile): string {
   return stringify(profile);
 }
@@ -244,8 +293,11 @@ function pickDefaultPlannerProvider(providers: ProviderId[]): ProviderId {
   return providers[0] ?? "google";
 }
 
-function defaultModelForProvider(provider: ProviderId): string {
-  const model = DEFAULT_MODEL_REGISTRY.find((entry) => entry.provider === provider);
+function defaultModelForProvider(provider: ProviderId, availableModels?: string[]): string {
+  const activeIds = availableModels ? new Set(availableModels) : undefined;
+  const model = DEFAULT_MODEL_REGISTRY.find(
+    (entry) => entry.provider === provider && (!activeIds || activeIds.has(entry.id)),
+  );
 
   if (!model) {
     throw new Error(`No default model is registered for provider ${provider}.`);
@@ -254,8 +306,19 @@ function defaultModelForProvider(provider: ProviderId): string {
   return model.id;
 }
 
+function defaultModelsForProviders(providers: ProviderId[]): string[] {
+  const availableProviders = new Set(providers);
+  return DEFAULT_MODEL_REGISTRY.filter(
+    (entry) => availableProviders.has(entry.provider) && entry.status !== "restricted",
+  ).map((entry) => entry.id);
+}
+
 function uniqueProviders(providers: ProviderId[]): ProviderId[] {
   return [...new Set(providers)];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function formatValidationError(scope: string, error: unknown): string {

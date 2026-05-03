@@ -38,7 +38,7 @@ describe("planner profiles", () => {
     const loaded = await loadPlannerProfile(root);
 
     expect(result.written).toBe(true);
-    expect(rawRegistry).toContain("gemini-cli-default");
+    expect(rawRegistry).toContain("gemini-3.1-pro-preview");
     expect(loaded.errors).toEqual([]);
     expect(loaded.profile?.model_registry).toEqual({
       source: "project",
@@ -51,8 +51,9 @@ describe("planner profiles", () => {
       schema_version: "1.0" as const,
       name: "default",
       planner_provider: "anthropic" as const,
-      planner_model: "claude-code-default",
+      planner_model: "claude-opus-4-7",
       available_providers: ["openai" as const, "google" as const],
+      available_models: ["gpt-5.5", "gemini-3.1-pro-preview"],
       excluded_providers: ["anthropic" as const],
       model_registry: {
         source: "bundled" as const,

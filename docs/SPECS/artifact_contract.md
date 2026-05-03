@@ -40,6 +40,7 @@ Campos:
 - `planner_provider`
 - `planner_model`
 - `available_providers`
+- `available_models`
 - `artifact_root`
 - `status`
 
@@ -54,6 +55,7 @@ Campos:
 - `planner_provider`
 - `planner_model`
 - `available_providers`
+- `available_models`
 - `excluded_providers`
 - `model_registry`
 - `routing`

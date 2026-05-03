@@ -16,13 +16,23 @@ Lista providers configurados e modelos conhecidos.
 
 ### `blueprint profile init`
 
-Cria `.blueprint/profile.yaml` com o pool local de providers, planner escolhido,
-modelo mestre e regras de fallback.
+Cria `.blueprint/profile.yaml` com o pool local de providers, pool de modelos
+exatos, planner escolhido, modelo mestre e regras de fallback.
 
 Exemplo para ambiente sem cota Claude:
 
 ```bash
 blueprint profile init --providers openai,google --planner-provider openai
+```
+
+Para restringir o roteamento a modelos especificos:
+
+```bash
+blueprint profile init \
+  --providers openai,google \
+  --models gpt-5.5,gemini-3.1-pro-preview,gemini-3.1-flash-lite-preview \
+  --planner-provider openai \
+  --planner-model gpt-5.5
 ```
 
 Quando usado com `--project-registry`, tambem cria
@@ -86,7 +96,7 @@ MVP atual:
 
 - usa `@clack/prompts` para perguntas simples;
 - exige profile valido antes de planejar;
-- respeita `available_providers` e `model_registry`;
+- respeita `available_models`, `available_providers` e `model_registry`;
 - gera `architecture.md`, `assumptions.md`, `decisions.md`, `risks.md`,
   `dependencies_graph.json`, `integration_guide.md` e `tasks/*.md`;
 - aceita `--answers <path>` para execucao nao interativa;
@@ -156,7 +166,8 @@ MVP atual:
 - mostra o diretorio atual no onboarding; `Enter` mantem o diretorio e `c`
   permite escolher outro caminho dentro da TUI;
 - mostra status de profile, blueprint, contexto e tasks;
-- lista tasks, dependencias, provider pool e fila de acoes operacionais;
+- lista tasks, dependencias, provider pool, model pool e fila de acoes
+  operacionais;
 - executa acoes locais da aba `actions`: `setup project`, `lint`, `export`,
   `revise preview` e `auth doctor`;
 - pede confirmacao antes de `setup project`; quando confirmado, cria arquivos

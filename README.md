@@ -10,8 +10,9 @@ como Codex, Claude Code e Gemini CLI.
 ## Status
 
 MVP funcional, privado no GitHub e com CI ativo em `main`. O estado atual cobre
-inicializacao, profiles, registry customizavel, doctor, planner deterministico,
-planner LLM via CLI oficial, lint, revise, export e TUI.
+inicializacao, profiles com pool de modelos exatos, registry customizavel,
+doctor, planner deterministico, planner LLM via CLI oficial, lint, revise,
+export e TUI.
 
 ## Principio central
 
@@ -88,10 +89,12 @@ Saida alvo no projeto do usuario:
     001-example.md
 ```
 
-Profile local para este ambiente, enquanto Claude estiver sem cota:
+Profile local para este ambiente, enquanto Claude estiver sem cota. O roteamento
+usa model IDs exatos; se `--models` for omitido, o CLI inclui os modelos
+self-serve conhecidos dos providers selecionados:
 
 ```bash
-blueprint profile init --providers openai,google --planner-provider openai --force
+blueprint profile init --providers openai,google --planner-provider openai --planner-model gpt-5.5 --force
 blueprint profile validate
 ```
 
@@ -101,6 +104,17 @@ planner para Gemini:
 ```bash
 blueprint profile init --providers openai,google --planner-provider google --project-registry --force
 blueprint profile validate
+```
+
+Para restringir o pool a poucos modelos:
+
+```bash
+blueprint profile init \
+  --providers openai,google \
+  --models gpt-5.5,gemini-3.1-pro-preview,gemini-3.1-flash-lite-preview \
+  --planner-provider openai \
+  --planner-model gpt-5.5 \
+  --force
 ```
 
 Registry customizavel por projeto:

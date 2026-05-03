@@ -968,6 +968,7 @@ function OverviewView({
           ? [
               `planner ${profile.planner_provider}/${profile.planner_model}`,
               `providers ${profile.available_providers.join(",")}`,
+              `models ${summarizeModels(profile.available_models)}`,
               `fallback ${profile.routing.allow_provider_fallback ? "enabled" : "disabled"}`,
             ]
           : [...dashboard.profile.errors, "", "\u2192 blueprint profile init"],
@@ -1109,6 +1110,7 @@ function ProvidersView({ dashboard }: { dashboard: TuiDashboard }): React.ReactE
       lines: [
         `provider ${profile.planner_provider}`,
         `model ${profile.planner_model}`,
+        `pool ${summarizeModels(profile.available_models)}`,
         `registry ${profile.model_registry.source}${profile.model_registry.path ? `/${profile.model_registry.path}` : ""}`,
       ],
     }),
@@ -1121,6 +1123,11 @@ function ProvidersView({ dashboard }: { dashboard: TuiDashboard }): React.ReactE
         `fallback ${profile.routing.allow_provider_fallback ? "enabled" : "disabled"}`,
         `confirmation ${profile.routing.require_confirmation_for_fallback ? "required" : "not_required"}`,
       ],
+    }),
+    h(StatusPanel, {
+      title: "Model Pool",
+      status: profile.available_models.length > 0 ? "ok" : "warn",
+      lines: profile.available_models.length > 0 ? profile.available_models : ["all provider models"],
     }),
     h(MessageList, { title: "Profile Messages", messages: [...dashboard.profile.errors, ...dashboard.profile.warnings] }),
   );
@@ -1611,6 +1618,14 @@ function summarizeList(items: string[], maxVisible: number): string {
   }
 
   return `${items.slice(0, maxVisible).join(",")}… +${items.length - maxVisible} more`;
+}
+
+function summarizeModels(models: string[]): string {
+  if (models.length === 0) {
+    return "all-provider-models";
+  }
+
+  return summarizeList(models, 3);
 }
 
 function summarizeManifests(manifests: string[]): string {

@@ -43,8 +43,8 @@ describe("blueprint plan generation", () => {
     ]);
     expect(lint.errors).toEqual([]);
     expect(manifest).toContain("status: planned");
-    expect(implementationTask).toContain("suggested_model: openai-codex-default");
-    expect(implementationTask).not.toContain("claude-code-default");
+    expect(implementationTask).toContain("suggested_model: gpt-5.5");
+    expect(implementationTask).not.toContain("claude-opus-4-7");
   });
 
   it("requires force before replacing existing task files", async () => {
@@ -109,7 +109,7 @@ describe("blueprint plan generation", () => {
     expect(result.engine).toBe("llm");
     expect(result.taskIds).toEqual(["task-001-custom-analysis", "task-002-custom-build"]);
     expect(lint.errors).toEqual([]);
-    expect(firstTask).toContain("suggested_model: gemini-cli-default");
+    expect(firstTask).toContain("suggested_model: gemini-3.1-pro-preview");
   });
 
   it("parses planner drafts from fenced JSON", () => {
@@ -158,7 +158,7 @@ describe("blueprint plan generation", () => {
         answers: makeAnswers(),
         draft,
       }),
-    ).rejects.toThrow("Planner draft suggested unavailable model claude-code-default");
+    ).rejects.toThrow("Planner draft suggested unavailable model claude-opus-4-7");
   });
 
   it("rejects planner drafts with unsupported fit values", async () => {
@@ -172,9 +172,9 @@ describe("blueprint plan generation", () => {
 
     expect(prompt).toContain("Example of the expected style:");
     expect(prompt).toContain("task-001-map-context");
-    expect(prompt).toContain("openai-codex-default");
-    expect(prompt).toContain("gemini-cli-default");
-    expect(prompt).not.toContain("claude-code-default");
+    expect(prompt).toContain("gpt-5.5");
+    expect(prompt).toContain("gemini-3.1-pro-preview");
+    expect(prompt).not.toContain("claude-opus-4-7");
   });
 });
 
@@ -225,7 +225,7 @@ function makeDraft(): PlannerDraft {
         id: "task-001-custom-analysis",
         title: "Custom analysis",
         objective: "Analyze the current planner flow.",
-        suggested_model: "gemini-cli-default",
+        suggested_model: "gemini-3.1-pro-preview",
         fit: "long_context",
         dependencies: [],
         allowed_paths: [],
@@ -240,7 +240,7 @@ function makeDraft(): PlannerDraft {
         id: "task-002-custom-build",
         title: "Custom build",
         objective: "Implement the planned change.",
-        suggested_model: "openai-codex-default",
+        suggested_model: "gpt-5.5",
         fit: "coding_heavy",
         dependencies: ["task-001-custom-analysis"],
         allowed_paths: ["src/plan.ts", "tests/plan.test.ts"],
@@ -270,8 +270,9 @@ function makePlanContext(): PlanContext {
       schema_version: "1.0",
       name: "default",
       planner_provider: "google",
-      planner_model: "gemini-cli-default",
+      planner_model: "gemini-3.1-pro-preview",
       available_providers: ["openai", "google"],
+      available_models: ["gpt-5.5", "gemini-3.1-pro-preview"],
       excluded_providers: ["anthropic"],
       model_registry: {
         source: "bundled",
