@@ -1,0 +1,299 @@
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { lintBlueprint } from "../src/lint.js";
+import { DEFAULT_MODEL_REGISTRY } from "../src/models.js";
+import {
+  buildPlannerPromptForContext,
+  generateBlueprintPlan,
+  parsePlannerDraft,
+  type PlanAnswers,
+  type PlanContext,
+  type PlannerDraft,
+} from "../src/plan.js";
+import { initPlannerProfile } from "../src/profile.js";
+
+describe("blueprint plan generation", () => {
+  it("generates lintable task handoffs using the active provider pool", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+
+    const result = await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+    });
+    const lint = await lintBlueprint(root);
+    const implementationTask = await readFile(
+      path.join(root, ".blueprint", "tasks", "002-implement-core-work.md"),
+      "utf8",
+    );
+    const manifest = await readFile(path.join(root, ".blueprint", "blueprint.yaml"), "utf8");
+
+    expect(result.taskIds).toEqual([
+      "task-001-context-map",
+      "task-002-implement-core-work",
+      "task-003-integrate-and-validate",
+    ]);
+    expect(lint.errors).toEqual([]);
+    expect(manifest).toContain("status: planned");
+    expect(implementationTask).toContain("suggested_model: openai-codex-default");
+    expect(implementationTask).not.toContain("claude-code-default");
+  });
+
+  it("requires force before replacing existing task files", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+    await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+    });
+
+    await expect(
+      generateBlueprintPlan({
+        root,
+        answers: makeAnswers(),
+      }),
+    ).rejects.toThrow("Existing task files found");
+  });
+
+  it("clears previous task files when force is enabled", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+    await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+    });
+    await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft: makeDraft(),
+      force: true,
+    });
+
+    const taskFiles = await readdir(path.join(root, ".blueprint", "tasks"));
+
+    expect(taskFiles.sort()).toEqual(["001-custom-analysis.md", "002-custom-build.md", "README.md"]);
+  });
+
+  it("generates handoffs from a validated LLM planner draft", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+
+    const result = await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft: makeDraft(),
+    });
+    const lint = await lintBlueprint(root);
+    const firstTask = await readFile(path.join(root, ".blueprint", "tasks", "001-custom-analysis.md"), "utf8");
+
+    expect(result.engine).toBe("llm");
+    expect(result.taskIds).toEqual(["task-001-custom-analysis", "task-002-custom-build"]);
+    expect(lint.errors).toEqual([]);
+    expect(firstTask).toContain("suggested_model: gemini-cli-default");
+  });
+
+  it("parses planner drafts from fenced JSON", () => {
+    const draft = parsePlannerDraft(`\`\`\`json\n${JSON.stringify(makeDraft())}\n\`\`\``);
+
+    expect(draft.tasks).toHaveLength(2);
+  });
+
+  it("loads the golden planner fixture and generates lintable artifacts", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "google",
+    });
+
+    const draft = await loadDraftFixture("golden-valid.json");
+    const result = await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft,
+    });
+    const lint = await lintBlueprint(root);
+
+    expect(result.engine).toBe("llm");
+    expect(result.taskIds).toEqual([
+      "task-001-document-contract",
+      "task-002-harden-schema",
+      "task-003-verify-golden-fixtures",
+    ]);
+    expect(lint.errors).toEqual([]);
+  });
+
+  it("rejects planner drafts that suggest models outside the active pool", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "google",
+    });
+    const draft = await loadDraftFixture("unavailable-model.json");
+
+    await expect(
+      generateBlueprintPlan({
+        root,
+        answers: makeAnswers(),
+        draft,
+      }),
+    ).rejects.toThrow("Planner draft suggested unavailable model claude-code-default");
+  });
+
+  it("rejects planner drafts with unsupported fit values", async () => {
+    const raw = await readFixture("invalid-fit.json");
+
+    expect(() => parsePlannerDraft(raw)).toThrow("Invalid option");
+  });
+
+  it("includes a concrete schema example and active model ids in the planner prompt", () => {
+    const prompt = buildPlannerPromptForContext(makePlanContext(), makeAnswers());
+
+    expect(prompt).toContain("Example of the expected style:");
+    expect(prompt).toContain("task-001-map-context");
+    expect(prompt).toContain("openai-codex-default");
+    expect(prompt).toContain("gemini-cli-default");
+    expect(prompt).not.toContain("claude-code-default");
+  });
+});
+
+async function makeTempProject(): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-plan-test-"));
+  await writeFile(path.join(root, "README.md"), "# Temp project\n", "utf8");
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify(
+      {
+        scripts: {
+          typecheck: "tsc --noEmit",
+          test: "vitest run",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  return root;
+}
+
+function makeAnswers(): PlanAnswers {
+  return {
+    projectSummary: "A TypeScript CLI that generates AI handoff plans.",
+    objective: "Add a simple planning flow that writes task handoffs.",
+    successCriteria: ["The plan creates architecture, graph, and task files.", "The generated blueprint passes lint."],
+    constraints: ["Do not use Anthropic while quota is unavailable."],
+    outOfScope: ["Running workers automatically."],
+    targetPaths: ["src/plan.ts", "src/cli.ts", "tests/plan.test.ts"],
+    validationCommands: ["corepack pnpm typecheck", "corepack pnpm test"],
+    riskLevel: 5,
+    notes: ["Keep the flow deterministic for tests."],
+  };
+}
+
+function makeDraft(): PlannerDraft {
+  return {
+    schema_version: "1.0",
+    overview: "Custom LLM generated plan.",
+    assumptions: ["Use the active provider pool."],
+    decisions: ["Split analysis and implementation."],
+    risks: ["Provider output must stay schema-valid."],
+    integration_notes: ["Run lint after writing artifacts."],
+    tasks: [
+      {
+        id: "task-001-custom-analysis",
+        title: "Custom analysis",
+        objective: "Analyze the current planner flow.",
+        suggested_model: "gemini-cli-default",
+        fit: "long_context",
+        dependencies: [],
+        allowed_paths: [],
+        forbidden_paths: [".env"],
+        risk_level: 2,
+        test_commands: [],
+        context_rules: ["Read-only task."],
+        execution_prompt: "Inspect the planner flow and summarize relevant contracts.",
+        acceptance_contract: ["No files are modified."],
+      },
+      {
+        id: "task-002-custom-build",
+        title: "Custom build",
+        objective: "Implement the planned change.",
+        suggested_model: "openai-codex-default",
+        fit: "coding_heavy",
+        dependencies: ["task-001-custom-analysis"],
+        allowed_paths: ["src/plan.ts", "tests/plan.test.ts"],
+        forbidden_paths: [".env"],
+        risk_level: 4,
+        test_commands: ["corepack pnpm test"],
+        context_rules: ["Stay in allowed paths."],
+        execution_prompt: "Implement the planned change and keep it scoped.",
+        acceptance_contract: ["Tests pass."],
+      },
+    ],
+  };
+}
+
+async function loadDraftFixture(name: string): Promise<PlannerDraft> {
+  return parsePlannerDraft(await readFixture(name));
+}
+
+async function readFixture(name: string): Promise<string> {
+  return readFile(path.join(process.cwd(), "tests", "fixtures", "planner-drafts", name), "utf8");
+}
+
+function makePlanContext(): PlanContext {
+  return {
+    root: "/tmp/example",
+    profile: {
+      schema_version: "1.0",
+      name: "default",
+      planner_provider: "google",
+      planner_model: "gemini-cli-default",
+      available_providers: ["openai", "google"],
+      excluded_providers: ["anthropic"],
+      model_registry: {
+        source: "bundled",
+      },
+      routing: {
+        prefer_available_only: true,
+        allow_provider_fallback: true,
+        require_confirmation_for_fallback: true,
+      },
+      live_checks: {
+        require_before_plan: false,
+      },
+      notes: [],
+    },
+    registry: DEFAULT_MODEL_REGISTRY,
+    doctor: {
+      root: "/tmp/example",
+      canonicalFiles: ["README.md", "package.json"],
+      manifests: ["package.json"],
+      fileCount: 4,
+      blockedPatterns: [".env", "node_modules/**"],
+      warnings: [],
+    },
+  };
+}

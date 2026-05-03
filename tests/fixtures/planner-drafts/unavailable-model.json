@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "overview": "Invalid draft that attempts to route work to an excluded provider.",
+  "assumptions": [],
+  "decisions": [],
+  "risks": [
+    "Anthropic is not in the active pool."
+  ],
+  "integration_notes": [],
+  "tasks": [
+    {
+      "id": "task-001-invalid-provider",
+      "title": "Invalid provider selection",
+      "objective": "This task should fail because it chooses Claude while Anthropic is excluded.",
+      "suggested_model": "claude-code-default",
+      "fit": "coding_heavy",
+      "dependencies": [],
+      "allowed_paths": [
+        "src/plan.ts"
+      ],
+      "forbidden_paths": [
+        ".env"
+      ],
+      "risk_level": 5,
+      "test_commands": [
+        "corepack pnpm test"
+      ],
+      "context_rules": [
+        "This fixture is intentionally invalid."
+      ],
+      "execution_prompt": "Do not execute. This fixture is expected to fail validation.",
+      "acceptance_contract": [
+        "Planner rejects unavailable model suggestions."
+      ]
+    }
+  ]
+}

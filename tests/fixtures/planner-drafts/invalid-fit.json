@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "overview": "Invalid draft with unsupported fit value.",
+  "assumptions": [],
+  "decisions": [],
+  "risks": [],
+  "integration_notes": [],
+  "tasks": [
+    {
+      "id": "task-001-invalid-fit",
+      "title": "Invalid fit",
+      "objective": "This task should fail schema parsing.",
+      "suggested_model": "openai-codex-default",
+      "fit": "magic",
+      "dependencies": [],
+      "allowed_paths": [
+        "src/plan.ts"
+      ],
+      "forbidden_paths": [
+        ".env"
+      ],
+      "risk_level": 4,
+      "test_commands": [],
+      "context_rules": [
+        "This fixture is intentionally invalid."
+      ],
+      "execution_prompt": "Do not execute. This fixture is expected to fail schema validation.",
+      "acceptance_contract": [
+        "Planner rejects unsupported fit values."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0",
+  "overview": "Plan a provider-aware CLI planning improvement with isolated docs, implementation, CLI wiring, and validation tasks.",
+  "assumptions": [
+    "The active provider pool is limited to OpenAI and Gemini.",
+    "Anthropic remains in the registry but is excluded from routing while quota is unavailable."
+  ],
+  "decisions": [
+    "Use Gemini for read-heavy planning context and OpenAI/Codex for implementation-oriented work.",
+    "Keep all handoffs manual in MVP 1.0; do not plan worker execution."
+  ],
+  "risks": [
+    "The planner prompt can drift unless fixtures cover the expected JSON shape.",
+    "Generated task files must remain lintable after force-regeneration."
+  ],
+  "integration_notes": [
+    "Run blueprint lint after generation.",
+    "Run typecheck, tests, and build before accepting the plan implementation."
+  ],
+  "tasks": [
+    {
+      "id": "task-001-document-contract",
+      "title": "Document planner LLM contract",
+      "objective": "Update command and roadmap docs to describe the planner LLM contract and fallback behavior.",
+      "suggested_model": "gemini-cli-default",
+      "fit": "long_context",
+      "dependencies": [],
+      "allowed_paths": [
+        "README.md",
+        "docs/SPECS/commands.md",
+        "docs/MVP_ROADMAP.md"
+      ],
+      "forbidden_paths": [
+        ".env",
+        ".env.*",
+        "*.pem",
+        "*.key",
+        "id_rsa*",
+        "id_ed25519*"
+      ],
+      "risk_level": 2,
+      "test_commands": [],
+      "context_rules": [
+        "Documentation-only task.",
+        "Do not edit source files."
+      ],
+      "execution_prompt": "Update the relevant docs to describe the schema-validated planner LLM mode, deterministic fallback, and active provider pool behavior.",
+      "acceptance_contract": [
+        "Docs mention schema validation before writing artifacts.",
+        "Docs mention deterministic fallback and provider exclusion rules."
+      ]
+    },
+    {
+      "id": "task-002-harden-schema",
+      "title": "Harden planner schema validation",
+      "objective": "Tighten the planner draft schema and reject unavailable suggested models.",
+      "suggested_model": "openai-codex-default",
+      "fit": "coding_heavy",
+      "dependencies": [
+        "task-001-document-contract"
+      ],
+      "allowed_paths": [
+        "src/plan.ts",
+        "tests/plan.test.ts"
+      ],
+      "forbidden_paths": [
+        ".env",
+        ".env.*",
+        "*.pem",
+        "*.key",
+        "id_rsa*",
+        "id_ed25519*"
+      ],
+      "risk_level": 4,
+      "test_commands": [
+        "corepack pnpm typecheck",
+        "corepack pnpm test"
+      ],
+      "context_rules": [
+        "Keep deterministic planning as a fallback.",
+        "Do not broaden provider access beyond available_providers."
+      ],
+      "execution_prompt": "Update planner draft validation so fit values are enumerated and suggested_model must be active when provided. Add focused tests for accepted and rejected drafts.",
+      "acceptance_contract": [
+        "Invalid fit values fail schema parsing.",
+        "Unavailable suggested models fail before artifacts are written.",
+        "Existing deterministic planner tests continue to pass."
+      ]
+    },
+    {
+      "id": "task-003-verify-golden-fixtures",
+      "title": "Verify golden planner fixtures",
+      "objective": "Use golden fixture files to verify planner draft parsing and generated handoff linting.",
+      "suggested_model": "openai-codex-default",
+      "fit": "review",
+      "dependencies": [
+        "task-002-harden-schema"
+      ],
+      "allowed_paths": [
+        "tests/fixtures/planner-drafts/**",
+        "tests/plan.test.ts"
+      ],
+      "forbidden_paths": [
+        ".env",
+        ".env.*",
+        "*.pem",
+        "*.key",
+        "id_rsa*",
+        "id_ed25519*"
+      ],
+      "risk_level": 3,
+      "test_commands": [
+        "corepack pnpm test"
+      ],
+      "context_rules": [
+        "Fixtures must be plain JSON.",
+        "Generated handoffs from fixtures must pass blueprint lint."
+      ],
+      "execution_prompt": "Add or update tests that load planner draft fixtures from disk, parse them through the production schema, generate .blueprint artifacts, and run blueprint lint.",
+      "acceptance_contract": [
+        "Golden valid fixture parses and generates lintable artifacts.",
+        "Invalid fixture fails with a specific error.",
+        "Tests do not require live provider calls."
+      ]
+    }
+  ]
+}

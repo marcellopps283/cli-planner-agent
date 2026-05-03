@@ -1,0 +1,33 @@
+{
+  "projectSummary": "TypeScript CLI planner-agent for generating rigorous AI coding handoffs.",
+  "objective": "Validate the MVP planning flow by generating blueprint artifacts for this project.",
+  "successCriteria": [
+    "The command writes architecture, graph, integration guide, and task handoff files.",
+    "The generated blueprint passes blueprint lint.",
+    "The active provider pool excludes Anthropic while Claude quota is unavailable."
+  ],
+  "constraints": [
+    "Use OpenAI and Gemini as active providers in this environment.",
+    "Keep Claude in the registry but outside the active routing pool."
+  ],
+  "outOfScope": [
+    "Running worker agents automatically.",
+    "Replacing the simple prompts with the final Ink TUI."
+  ],
+  "targetPaths": [
+    "src/plan.ts",
+    "src/cli.ts",
+    "tests/plan.test.ts",
+    "docs/SPECS/commands.md",
+    "docs/MVP_ROADMAP.md"
+  ],
+  "validationCommands": [
+    "corepack pnpm typecheck",
+    "corepack pnpm test",
+    "corepack pnpm build"
+  ],
+  "riskLevel": 5,
+  "notes": [
+    "This smoke should exercise non-interactive planning through --answers."
+  ]
+}
