@@ -690,7 +690,7 @@ export function BlueprintDashboard({
       h(
         Box,
         { flexDirection: "column" },
-        h(Text, { bold: true }, "Blueprint TUI"),
+        h(Text, { bold: true }, `${statusIcon(lintStatus === "ok" ? "ok" : "error")} Blueprint TUI`),
         h(Text, null, dashboard.root),
       ),
     ),
@@ -708,6 +708,7 @@ export function BlueprintDashboard({
       isEditingRoot,
       rootInput,
     }),
+    h(KeyHints, { view, pendingConfirmation, isEditingRevise, isEditingRoot, runningAction }),
   );
 }
 
@@ -851,7 +852,7 @@ function OverviewView({
               `providers ${profile.available_providers.join(",")}`,
               `fallback ${profile.routing.allow_provider_fallback ? "enabled" : "disabled"}`,
             ]
-          : dashboard.profile.errors,
+          : [...dashboard.profile.errors, "", "\u2192 blueprint profile init"],
       }),
       h(StatusPanel, {
         title: "Blueprint",
@@ -861,7 +862,7 @@ function OverviewView({
           `lint ${dashboard.lint.errors.length} error(s), ${dashboard.lint.warnings.length} warning(s)`,
           `graph ${graphStatus}`,
           `exports ${exportStatus}`,
-          `sessions ${sessionStatus}`,
+          ...(lintStatus === "error" ? ["\u2192 blueprint lint"] : []),
         ],
       }),
     ),
@@ -875,6 +876,7 @@ function OverviewView({
           `files ${dashboard.doctor.fileCount}`,
           `canonical ${dashboard.doctor.canonicalFiles.length}`,
           `manifests ${summarizeManifests(dashboard.doctor.manifests)}`,
+          ...(dashboard.doctor.fileCount > 10_000 ? ["\u2192 use --root <project>"] : []),
         ],
       }),
       h(StatusPanel, {
@@ -887,7 +889,7 @@ function OverviewView({
                 `high risk ${dashboard.tasks.filter((task) => task.riskLevel >= 7).length}`,
                 `models ${unique(dashboard.tasks.map((task) => task.suggestedModel)).join(",")}`,
               ]
-            : ["no generated task handoffs"],
+            : ["no generated task handoffs", "\u2192 blueprint plan"],
       }),
     ),
     h(TaskList, { tasks: dashboard.tasks }),
@@ -900,6 +902,19 @@ function OverviewView({
 }
 
 function TaskView({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
+  if (dashboard.tasks.length === 0) {
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true, color: "yellow" }, "\u{1F4CB} Tasks"),
+      h(Text, null, ""),
+      h(Text, null, "No task handoffs generated yet."),
+      h(Text, null, "Run blueprint plan to generate the task graph."),
+      h(Text, null, ""),
+      h(Text, { color: "cyan" }, "Tip: use --engine llm for AI-assisted planning."),
+    );
+  }
+
   return h(
     Box,
     { flexDirection: "column", gap: 1 },
@@ -917,8 +932,17 @@ function TaskView({ dashboard }: { dashboard: TuiDashboard }): React.ReactElemen
 }
 
 function GraphView({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
-  if (!dashboard.graph) {
-    return h(EmptyPanel, { title: "Graph", message: "dependencies_graph.json is missing." });
+  if (!dashboard.graph || dashboard.graph.nodes.length === 0) {
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true, color: "yellow" }, "\u{1F310} Dependency Graph"),
+      h(Text, null, ""),
+      h(Text, null, !dashboard.graph ? "dependencies_graph.json not found." : "Graph is empty \u2014 no nodes defined yet."),
+      h(Text, null, "Run blueprint plan to populate the dependency graph."),
+      h(Text, null, ""),
+      h(Text, { color: "cyan" }, "The graph maps task execution order and risk."),
+    );
   }
 
   return h(
@@ -927,7 +951,7 @@ function GraphView({ dashboard }: { dashboard: TuiDashboard }): React.ReactEleme
     h(
       Box,
       { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "Graph Nodes"),
+      h(Text, { bold: true }, `\u{1F310} Graph Nodes (${dashboard.graph.nodes.length})`),
       ...dashboard.graph.nodes.map((node) =>
         h(
           Text,
@@ -939,9 +963,9 @@ function GraphView({ dashboard }: { dashboard: TuiDashboard }): React.ReactEleme
     h(
       Box,
       { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "Graph Edges"),
+      h(Text, { bold: true }, `\u{1F517} Graph Edges (${dashboard.graph.edges.length})`),
       ...(dashboard.graph.edges.length > 0
-        ? dashboard.graph.edges.map((edge) => h(Text, { key: `${edge.from}-${edge.to}` }, `${edge.from} -> ${edge.to}`))
+        ? dashboard.graph.edges.map((edge) => h(Text, { key: `${edge.from}-${edge.to}` }, `${edge.from} \u2192 ${edge.to}`))
         : [h(Text, { key: "none" }, "none")]),
     ),
   );
@@ -1119,6 +1143,7 @@ function StatusPanel({
   lines: string[];
 }): React.ReactElement {
   const color = status === "ok" ? "green" : status === "warn" ? "yellow" : "red";
+  const icon = statusIcon(status);
   const maxLineWidth = 40; // 44 panel width minus 2x paddingX minus 2 border chars
 
   return h(
@@ -1127,7 +1152,7 @@ function StatusPanel({
     h(
       Box,
       { flexDirection: "column" },
-      h(Text, { bold: true, color }, `${title} ${status}`),
+      h(Text, { bold: true, color }, `${icon} ${title}`),
       ...lines.slice(0, 5).map((line) => h(Text, { key: line, wrap: "truncate" }, truncateLine(line, maxLineWidth))),
     ),
   );
@@ -1141,12 +1166,12 @@ function TaskList({ tasks }: { tasks: TuiTaskSummary[] }): React.ReactElement | 
   return h(
     Box,
     { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Execution Graph"),
+    h(Text, { bold: true }, `\u{1F4CB} Execution Graph (${tasks.length} tasks)`),
     ...tasks.map((task) =>
       h(
         Text,
         { key: task.id },
-        `${task.id} | risk ${task.riskLevel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"} | ${task.title}`,
+        `${riskIcon(task.riskLevel)} ${task.id} | risk ${task.riskLevel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"} | ${task.title}`,
       ),
     ),
   );
@@ -1481,4 +1506,64 @@ function summarizeManifests(manifests: string[]): string {
   }
 
   return `${manifests.length} found`;
+}
+
+function statusIcon(status: "ok" | "warn" | "error"): string {
+  if (status === "ok") {
+    return "\u2705";
+  }
+
+  if (status === "warn") {
+    return "\u26A0\uFE0F";
+  }
+
+  return "\u274C";
+}
+
+function riskIcon(riskLevel: number): string {
+  if (riskLevel >= 7) {
+    return "\u{1F534}";
+  }
+
+  if (riskLevel >= 4) {
+    return "\u{1F7E1}";
+  }
+
+  return "\u{1F7E2}";
+}
+
+function KeyHints({
+  view,
+  pendingConfirmation,
+  isEditingRevise,
+  isEditingRoot,
+  runningAction,
+}: {
+  view: TuiView;
+  pendingConfirmation?: TuiActionId;
+  isEditingRevise?: boolean;
+  isEditingRoot?: boolean;
+  runningAction?: TuiActionId;
+}): React.ReactElement {
+  let hints: string;
+
+  if (isEditingRoot) {
+    hints = "Enter \u2192 open dir  \u2502  Esc \u2192 cancel";
+  } else if (isEditingRevise) {
+    hints = "Enter \u2192 submit  \u2502  Esc \u2192 cancel";
+  } else if (pendingConfirmation) {
+    hints = "y \u2192 confirm  \u2502  n \u2192 cancel";
+  } else if (runningAction) {
+    hints = `Running ${runningAction}...`;
+  } else if (view === "actions") {
+    hints = "\u2190\u2192 tab  \u2502  \u2191\u2193 select  \u2502  Enter run  \u2502  c dir  \u2502  q quit";
+  } else {
+    hints = "\u2190\u2192 tab  \u2502  1-5 jump  \u2502  c dir  \u2502  q quit";
+  }
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "gray", paddingX: 1 },
+    h(Text, { color: "gray" }, hints),
+  );
 }

@@ -101,7 +101,7 @@ describe("blueprint tui", () => {
     const output = renderTuiDashboardToString(dashboard);
 
     expect(output).toContain("Blueprint TUI");
-    expect(output).toContain("Profile ok");
+    expect(output).toContain("\u2705 Profile");
     expect(output).toContain("overview");
     expect(output).toContain("Next");
   });
@@ -118,7 +118,7 @@ describe("blueprint tui", () => {
     expect(tasksOutput).toContain("Execution Graph");
     expect(tasksOutput).toContain("task-001-update-docs");
     expect(graphOutput).toContain("Graph Edges");
-    expect(graphOutput).toContain("task-001-update-docs -> task-002-implement-api");
+    expect(graphOutput).toContain("task-001-update-docs \u2192 task-002-implement-api");
     expect(providersOutput).toContain("Provider Pool");
     expect(providersOutput).toContain("available openai,google");
     expect(actionsOutput).toContain("Action Queue");

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import fg from "fast-glob";
@@ -83,6 +83,18 @@ export async function inspectProject(rootInput: string): Promise<ProjectDoctorRe
     warnings.push("No canonical project docs were found.");
   }
 
+  const hasGitDir = await directoryExists(path.join(root, ".git"));
+
+  if (!hasGitDir) {
+    warnings.push("No .git directory found. This may not be a project root.");
+  }
+
+  if (visibleFiles.length > 10_000) {
+    warnings.push(
+      `${visibleFiles.length.toLocaleString()} files detected. This directory looks too large — use --root to target a project.`,
+    );
+  }
+
   return {
     root,
     canonicalFiles,
@@ -91,6 +103,15 @@ export async function inspectProject(rootInput: string): Promise<ProjectDoctorRe
     blockedPatterns: [...DEFAULT_IGNORES, ...SECRET_PATTERNS],
     warnings,
   };
+}
+
+async function directoryExists(dirPath: string): Promise<boolean> {
+  try {
+    const info = await stat(dirPath);
+    return info.isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 async function readGitignore(root: string): Promise<string[]> {
