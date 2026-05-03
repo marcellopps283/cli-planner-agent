@@ -152,10 +152,14 @@ MVP atual:
 
 - le profile, inventario de contexto, lint, manifest, grafo, tasks e exports;
 - navega por abas `overview`, `tasks`, `graph`, `providers` e `actions`;
+- mostra onboarding quando o diretorio atual ainda nao tem `.blueprint/`;
 - mostra status de profile, blueprint, contexto e tasks;
 - lista tasks, dependencias, provider pool e fila de acoes operacionais;
-- executa acoes locais da aba `actions`: `lint`, `export`, `revise preview`
-  e `auth doctor`;
+- executa acoes locais da aba `actions`: `setup project`, `lint`, `export`,
+  `revise preview` e `auth doctor`;
+- pede confirmacao antes de `setup project`; quando confirmado, cria arquivos
+  locais faltantes (`.blueprint/`, `profile.yaml`, `model_registry.yaml`) sem
+  chamada de modelo;
 - captura texto para `revise`, roda preview/dry-run, mostra classificacao e so
   permite apply depois de confirmacao;
 - registra cada acao executada em `.blueprint/tui_sessions/*.json`;

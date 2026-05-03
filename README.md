@@ -154,6 +154,10 @@ blueprint tui --view actions
 blueprint tui --json
 ```
 
+Se a TUI for aberta em um diretorio sem `.blueprint/`, ela entra em modo de
+onboarding: mostra o que falta e oferece a acao `Setup Project`, que pede
+confirmacao antes de criar `.blueprint/`, `profile.yaml` e `model_registry.yaml`.
+
 Na aba `actions`, a TUI executa `lint`, `export`, `auth doctor` e um fluxo
 guiado de `revise`: digita a mudanca, revisa o dry-run e confirma antes de
 aplicar. Cada acao executada pela TUI fica auditada em

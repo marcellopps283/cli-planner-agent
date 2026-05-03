@@ -21,12 +21,59 @@ describe("blueprint tui", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-empty-test-"));
     const dashboard = await loadTuiDashboard({ root });
     const output = renderTuiDashboardToString(dashboard, "providers");
+    const actionsOutput = renderTuiDashboardToString(dashboard, "actions");
+    const actions = getTuiActions(dashboard);
 
     expect(dashboard.setup.initialized).toBe(false);
     expect(dashboard.nextAction).toContain("blueprint init");
+    expect(actions[0]?.id).toBe("setup");
     expect(output).toContain("Blueprint not initialized");
+    expect(actionsOutput).toContain("Setup Project");
     expect(output).toContain("blueprint profile init --providers openai,google");
     expect(output).not.toContain("Profile error");
+  });
+
+  it("runs guided setup from an empty project", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-setup-test-"));
+    const result = await runTuiAction({
+      root,
+      actionId: "setup",
+      providerChecker: async () => [
+        {
+          id: "openai",
+          cli: "codex",
+          installed: true,
+          authCheck: "not_checked",
+          detail: "installed",
+        },
+        {
+          id: "google",
+          cli: "gemini",
+          installed: true,
+          authCheck: "not_checked",
+          detail: "installed",
+        },
+        {
+          id: "anthropic",
+          cli: "claude",
+          installed: false,
+          authCheck: "failed",
+          detail: "missing",
+        },
+      ],
+    });
+    const profile = await readFile(path.join(root, ".blueprint", "profile.yaml"), "utf8");
+    const registry = await readFile(path.join(root, ".blueprint", "model_registry.yaml"), "utf8");
+    const dashboard = await loadTuiDashboard({ root });
+
+    expect(result.status).toBe("ok");
+    expect(result.summary).toContain("Blueprint setup completed");
+    expect(profile).toContain("planner_provider: google");
+    expect(profile).toContain("- openai");
+    expect(profile).toContain("- google");
+    expect(registry).toContain("gemini-cli-default");
+    expect(dashboard.setup.initialized).toBe(true);
+    expect(dashboard.profile.errors).toEqual([]);
   });
 
   it("loads a dashboard model from a generated blueprint", async () => {

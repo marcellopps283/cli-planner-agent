@@ -9,12 +9,13 @@ import React, { createElement, useState } from "react";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
-import { BLUEPRINT_DIR } from "./blueprint.js";
+import { BLUEPRINT_DIR, initBlueprint } from "./blueprint.js";
 import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
 import { lintBlueprint, type BlueprintLintResult } from "./lint.js";
-import { loadPlannerProfile, type PlannerProfileValidationResult } from "./profile.js";
+import { initPlannerProfile, loadPlannerProfile, type PlannerProfileValidationResult } from "./profile.js";
 import { DEFAULT_PROVIDER_ADAPTERS, checkProviderAuth, type ProviderDoctorResult } from "./providers.js";
+import { exportModelRegistry } from "./registry.js";
 import { reviseBlueprint, type ReviseResult } from "./revise.js";
 import {
   BlueprintManifestSchema,
@@ -23,6 +24,7 @@ import {
   type BlueprintManifest,
   type BlueprintTaskMetadata,
   type DependencyGraph,
+  type ProviderId,
 } from "./schemas.js";
 
 export interface TuiDashboardOptions {
@@ -59,7 +61,7 @@ export interface TuiDashboard {
   nextAction: string;
 }
 
-export const TUI_ACTION_IDS = ["lint", "export", "revise", "auth-doctor", "auth-doctor-live"] as const;
+export const TUI_ACTION_IDS = ["setup", "lint", "export", "revise", "auth-doctor", "auth-doctor-live"] as const;
 export type TuiActionId = (typeof TUI_ACTION_IDS)[number];
 
 export interface TuiAction {
@@ -181,8 +183,18 @@ export function parseTuiView(value: string): TuiView {
 
 export function getTuiActions(dashboard: TuiDashboard): TuiAction[] {
   const lintOk = dashboard.lint.errors.length === 0;
+  const needsSetup =
+    !dashboard.setup.initialized || !dashboard.profile.profile || dashboard.profile.errors.length > 0 || !dashboard.manifest;
+  const setupAction: TuiAction = {
+    id: "setup",
+    label: "Setup Project",
+    command: "blueprint init + profile init",
+    description: "Create missing local Blueprint files after confirmation.",
+    enabled: true,
+    requiresConfirmation: true,
+  };
 
-  return [
+  const actions: TuiAction[] = [
     {
       id: "lint",
       label: "Lint Blueprint",
@@ -225,6 +237,8 @@ export function getTuiActions(dashboard: TuiDashboard): TuiAction[] {
       requiresConfirmation: true,
     },
   ];
+
+  return needsSetup ? [setupAction, ...actions] : actions;
 }
 
 export async function runTuiAction(options: RunTuiActionOptions): Promise<TuiActionResult> {
@@ -250,6 +264,10 @@ export async function runTuiAction(options: RunTuiActionOptions): Promise<TuiAct
 }
 
 async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiActionResult> {
+  if (options.actionId === "setup") {
+    return setupBlueprintProject(options);
+  }
+
   if (options.actionId === "lint") {
     const result = await lintBlueprint(options.root);
 
@@ -320,6 +338,102 @@ async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiAction
     summary: `Unknown action ${options.actionId}.`,
     lines: [],
   };
+}
+
+async function setupBlueprintProject(options: RunTuiActionOptions): Promise<TuiActionResult> {
+  const root = path.resolve(options.root);
+  const providerResults = options.providerChecker
+    ? await options.providerChecker(false)
+    : await Promise.all(DEFAULT_PROVIDER_ADAPTERS.map((adapter) => checkProviderAuth(adapter)));
+  const providers = chooseSetupProviders(providerResults);
+  const plannerProvider = chooseSetupPlanner(providers);
+  const initializedFiles = await initBlueprint({ root });
+  let profileResult = await loadPlannerProfile(root);
+  let createdProfile = false;
+  const lines = [
+    `providers ${providers.join(",")}`,
+    `planner ${plannerProvider}`,
+    `blueprint ${initializedFiles.length > 0 ? `created ${initializedFiles.length} file(s)` : "already exists"}`,
+  ];
+
+  if (!profileResult.profile) {
+    const written = await initPlannerProfile({
+      root,
+      providers,
+      plannerProvider,
+      modelRegistrySource: "project",
+    });
+
+    createdProfile = written.written;
+    lines.push(`${written.written ? "created" : "exists"} ${path.relative(root, written.path)}`);
+
+    for (const warning of written.warnings) {
+      lines.push(`warning ${warning}`);
+    }
+  }
+
+  profileResult = await loadPlannerProfile(root);
+
+  if (profileResult.profile?.model_registry.source === "project" && !createdProfile) {
+    const registry = await exportModelRegistry({
+      root,
+      path: profileResult.profile.model_registry.path,
+    });
+
+    lines.push(`${registry.written ? "created" : "exists"} ${path.relative(root, registry.path)}`);
+
+    for (const warning of registry.warnings) {
+      lines.push(`warning ${warning}`);
+    }
+  }
+
+  const finalProfile = await loadPlannerProfile(root);
+
+  for (const error of finalProfile.errors) {
+    lines.push(`error ${error}`);
+  }
+
+  for (const warning of finalProfile.warnings) {
+    lines.push(`warning ${warning}`);
+  }
+
+  return {
+    actionId: options.actionId,
+    status: finalProfile.errors.length === 0 ? "ok" : "failed",
+    summary:
+      finalProfile.errors.length === 0
+        ? "Blueprint setup completed. Run blueprint plan next."
+        : "Blueprint setup needs manual attention.",
+    lines,
+  };
+}
+
+function chooseSetupProviders(results: ProviderDoctorResult[]): ProviderId[] {
+  const installed = new Set(results.filter((result) => result.installed).map((result) => result.id));
+  const preferred = (["openai", "google", "anthropic"] as ProviderId[]).filter((provider) => installed.has(provider));
+  const withoutAnthropic = preferred.filter((provider) => provider !== "anthropic");
+
+  if (withoutAnthropic.length > 0) {
+    return withoutAnthropic;
+  }
+
+  if (preferred.length > 0) {
+    return preferred;
+  }
+
+  return ["google"];
+}
+
+function chooseSetupPlanner(providers: ProviderId[]): ProviderId {
+  if (providers.includes("google")) {
+    return "google";
+  }
+
+  if (providers.includes("openai")) {
+    return "openai";
+  }
+
+  return providers[0] ?? "google";
 }
 
 export function InteractiveDashboard({
@@ -396,7 +510,7 @@ export function InteractiveDashboard({
       return;
     }
 
-    if (view === "actions" && pendingConfirmation) {
+    if (pendingConfirmation && (view === "actions" || pendingConfirmation === "setup")) {
       if (input.toLowerCase() === "y") {
         void executeAction(pendingConfirmation, {
           apply: pendingConfirmation === "revise",
@@ -408,6 +522,13 @@ export function InteractiveDashboard({
         setPendingConfirmation(undefined);
       }
 
+      return;
+    }
+
+    if (!dashboardState.setup.initialized && key.return) {
+      setView("actions");
+      setSelectedActionIndex(0);
+      setPendingConfirmation("setup");
       return;
     }
 
@@ -560,7 +681,7 @@ function ActiveView({
   isEditingRevise?: boolean;
   reviseInput?: string;
 }): React.ReactElement {
-  if (!dashboard.setup.initialized) {
+  if (!dashboard.setup.initialized && view !== "actions") {
     return h(SetupView, { dashboard });
   }
 
@@ -1074,6 +1195,7 @@ async function inspectBlueprintSetup(root: string, blueprintRoot: string): Promi
       `Current directory: ${root}`,
       "This directory has no .blueprint folder yet.",
       "Open the project root or initialize Blueprint here.",
+      "Press Enter in this screen to start the guided setup.",
     ],
     commands: [
       "blueprint init",
@@ -1127,6 +1249,10 @@ async function writeTuiSessionRecord(options: RunTuiActionOptions, result: TuiAc
 }
 
 function commandForAction(actionId: TuiActionId): string {
+  if (actionId === "setup") {
+    return "blueprint init + profile init";
+  }
+
   if (actionId === "lint") {
     return "blueprint lint";
   }
