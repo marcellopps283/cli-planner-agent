@@ -874,7 +874,7 @@ function OverviewView({
         lines: [
           `files ${dashboard.doctor.fileCount}`,
           `canonical ${dashboard.doctor.canonicalFiles.length}`,
-          `manifests ${dashboard.doctor.manifests.join(",") || "none"}`,
+          `manifests ${summarizeManifests(dashboard.doctor.manifests)}`,
         ],
       }),
       h(StatusPanel, {
@@ -1119,15 +1119,16 @@ function StatusPanel({
   lines: string[];
 }): React.ReactElement {
   const color = status === "ok" ? "green" : status === "warn" ? "yellow" : "red";
+  const maxLineWidth = 40; // 44 panel width minus 2x paddingX minus 2 border chars
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: color, paddingX: 1, width: 44 },
+    { borderStyle: "single", borderColor: color, paddingX: 1, width: 44, overflowX: "hidden" as any },
     h(
       Box,
       { flexDirection: "column" },
       h(Text, { bold: true, color }, `${title} ${status}`),
-      ...lines.slice(0, 5).map((line) => h(Text, { key: line }, line)),
+      ...lines.slice(0, 5).map((line) => h(Text, { key: line, wrap: "truncate" }, truncateLine(line, maxLineWidth))),
     ),
   );
 }
@@ -1447,4 +1448,37 @@ function formatReviseActionResult(
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
+}
+
+function truncateLine(line: string, maxWidth: number): string {
+  if (line.length <= maxWidth) {
+    return line;
+  }
+
+  return `${line.slice(0, maxWidth - 1)}…`;
+}
+
+function summarizeList(items: string[], maxVisible: number): string {
+  if (items.length === 0) {
+    return "none";
+  }
+
+  if (items.length <= maxVisible) {
+    return items.join(",");
+  }
+
+  return `${items.slice(0, maxVisible).join(",")}… +${items.length - maxVisible} more`;
+}
+
+function summarizeManifests(manifests: string[]): string {
+  if (manifests.length === 0) {
+    return "none";
+  }
+
+  if (manifests.length <= 3) {
+    const short = manifests.map((m) => path.basename(m));
+    return `${manifests.length} (${short.join(", ")})`;
+  }
+
+  return `${manifests.length} found`;
 }
