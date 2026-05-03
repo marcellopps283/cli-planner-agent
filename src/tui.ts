@@ -15,7 +15,7 @@ import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
 import { lintBlueprint, type BlueprintLintResult } from "./lint.js";
 import { initPlannerProfile, loadPlannerProfile, type PlannerProfileValidationResult } from "./profile.js";
-import { DEFAULT_PROVIDER_ADAPTERS, checkProviderAuth, type ProviderDoctorResult } from "./providers.js";
+import { DEFAULT_PROVIDER_ADAPTERS, checkProvider, checkProviderAuth, type ProviderDoctorResult } from "./providers.js";
 import { exportModelRegistry } from "./registry.js";
 import { reviseBlueprint, type ReviseResult } from "./revise.js";
 import {
@@ -345,16 +345,14 @@ async function setupBlueprintProject(options: RunTuiActionOptions): Promise<TuiA
   const root = path.resolve(options.root);
   const providerResults = options.providerChecker
     ? await options.providerChecker(false)
-    : await Promise.all(DEFAULT_PROVIDER_ADAPTERS.map((adapter) => checkProviderAuth(adapter)));
+    : await Promise.all(DEFAULT_PROVIDER_ADAPTERS.map((adapter) => checkProvider(adapter)));
   const providers = chooseSetupProviders(providerResults);
   const plannerProvider = chooseSetupPlanner(providers);
-  const initializedFiles = await initBlueprint({ root });
   let profileResult = await loadPlannerProfile(root);
   let createdProfile = false;
   const lines = [
     `providers ${providers.join(",")}`,
     `planner ${plannerProvider}`,
-    `blueprint ${initializedFiles.length > 0 ? `created ${initializedFiles.length} file(s)` : "already exists"}`,
   ];
 
   if (!profileResult.profile) {
@@ -372,6 +370,9 @@ async function setupBlueprintProject(options: RunTuiActionOptions): Promise<TuiA
       lines.push(`warning ${warning}`);
     }
   }
+
+  const initializedFiles = await initBlueprint({ root });
+  lines.push(`blueprint ${initializedFiles.length > 0 ? `created ${initializedFiles.length} file(s)` : "already exists"}`);
 
   profileResult = await loadPlannerProfile(root);
 
@@ -568,13 +569,6 @@ export function InteractiveDashboard({
       return;
     }
 
-    if (!dashboardState.setup.initialized && key.return) {
-      setView("actions");
-      setSelectedActionIndex(0);
-      setPendingConfirmation("setup");
-      return;
-    }
-
     if (view === "actions" && key.return) {
       const action = actions[selectedActionIndex];
 
@@ -594,6 +588,13 @@ export function InteractiveDashboard({
       }
 
       void executeAction(action.id, {});
+      return;
+    }
+
+    if (!dashboardState.setup.initialized && key.return) {
+      setView("actions");
+      setSelectedActionIndex(0);
+      setPendingConfirmation("setup");
       return;
     }
 

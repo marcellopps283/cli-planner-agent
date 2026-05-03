@@ -63,12 +63,14 @@ describe("blueprint tui", () => {
         },
       ],
     });
+    const manifest = await readFile(path.join(root, ".blueprint", "blueprint.yaml"), "utf8");
     const profile = await readFile(path.join(root, ".blueprint", "profile.yaml"), "utf8");
     const registry = await readFile(path.join(root, ".blueprint", "model_registry.yaml"), "utf8");
     const dashboard = await loadTuiDashboard({ root });
 
     expect(result.status).toBe("ok");
     expect(result.summary).toContain("Blueprint setup completed");
+    expect(manifest).toContain("planner_provider: google");
     expect(profile).toContain("planner_provider: google");
     expect(profile).toContain("- openai");
     expect(profile).toContain("- google");
