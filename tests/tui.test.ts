@@ -17,6 +17,18 @@ import {
 } from "../src/tui.js";
 
 describe("blueprint tui", () => {
+  it("renders onboarding when the current directory has no blueprint", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-empty-test-"));
+    const dashboard = await loadTuiDashboard({ root });
+    const output = renderTuiDashboardToString(dashboard, "providers");
+
+    expect(dashboard.setup.initialized).toBe(false);
+    expect(dashboard.nextAction).toContain("blueprint init");
+    expect(output).toContain("Blueprint not initialized");
+    expect(output).toContain("blueprint profile init --providers openai,google");
+    expect(output).not.toContain("Profile error");
+  });
+
   it("loads a dashboard model from a generated blueprint", async () => {
     const root = await makePlannedProject();
     await exportBlueprint({
@@ -26,6 +38,7 @@ describe("blueprint tui", () => {
 
     const dashboard = await loadTuiDashboard({ root });
 
+    expect(dashboard.setup.initialized).toBe(true);
     expect(dashboard.profile.profile?.planner_provider).toBe("google");
     expect(dashboard.lint.errors).toEqual([]);
     expect(dashboard.tasks).toHaveLength(2);

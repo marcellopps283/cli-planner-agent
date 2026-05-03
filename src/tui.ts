@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import fg from "fast-glob";
@@ -39,8 +39,15 @@ export interface TuiTaskSummary {
   riskLevel: number;
 }
 
+export interface TuiSetupStatus {
+  initialized: boolean;
+  messages: string[];
+  commands: string[];
+}
+
 export interface TuiDashboard {
   root: string;
+  setup: TuiSetupStatus;
   profile: PlannerProfileValidationResult;
   doctor: ProjectDoctorReport;
   lint: BlueprintLintResult;
@@ -114,7 +121,8 @@ const h = createElement;
 export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<TuiDashboard> {
   const root = path.resolve(options.root);
   const blueprintRoot = path.join(root, BLUEPRINT_DIR);
-  const [profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions] = await Promise.all([
+  const [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions] = await Promise.all([
+    inspectBlueprintSetup(root, blueprintRoot),
     loadPlannerProfile(root),
     inspectProject(root),
     lintBlueprint(root),
@@ -127,6 +135,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
 
   return {
     root,
+    setup,
     profile,
     doctor,
     lint,
@@ -135,7 +144,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     tasks,
     exports,
     tuiSessions,
-    nextAction: inferNextAction({ profile, lint, tasks, manifest }),
+    nextAction: inferNextAction({ setup, profile, lint, tasks, manifest }),
   };
 }
 
@@ -551,6 +560,10 @@ function ActiveView({
   isEditingRevise?: boolean;
   reviseInput?: string;
 }): React.ReactElement {
+  if (!dashboard.setup.initialized) {
+    return h(SetupView, { dashboard });
+  }
+
   if (view === "tasks") {
     return h(TaskView, { dashboard });
   }
@@ -576,6 +589,25 @@ function ActiveView({
   }
 
   return h(OverviewView, { dashboard, lintStatus });
+}
+
+function SetupView({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
+  return h(
+    Box,
+    { flexDirection: "column", gap: 1 },
+    h(
+      Box,
+      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Blueprint not initialized"),
+      ...dashboard.setup.messages.map((message) => h(Text, { key: message }, message)),
+    ),
+    h(
+      Box,
+      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Run these commands"),
+      ...dashboard.setup.commands.map((command) => h(Text, { key: command }, command)),
+    ),
+  );
 }
 
 function OverviewView({
@@ -996,11 +1028,16 @@ function toTaskSummary(metadata: BlueprintTaskMetadata): TuiTaskSummary {
 }
 
 function inferNextAction(input: {
+  setup: TuiSetupStatus;
   profile: PlannerProfileValidationResult;
   lint: BlueprintLintResult;
   tasks: TuiTaskSummary[];
   manifest?: BlueprintManifest;
 }): string {
+  if (!input.setup.initialized) {
+    return "Run blueprint init, then blueprint profile init, then blueprint plan.";
+  }
+
   if (input.profile.errors.length > 0 || !input.profile.profile) {
     return "Run blueprint profile init or blueprint profile validate.";
   }
@@ -1014,6 +1051,37 @@ function inferNextAction(input: {
   }
 
   return "Run blueprint export, or use blueprint revise for a targeted plan update.";
+}
+
+async function inspectBlueprintSetup(root: string, blueprintRoot: string): Promise<TuiSetupStatus> {
+  try {
+    const info = await stat(blueprintRoot);
+
+    if (info.isDirectory()) {
+      return {
+        initialized: true,
+        messages: [],
+        commands: [],
+      };
+    }
+  } catch {
+    // Missing .blueprint is handled by the onboarding state below.
+  }
+
+  return {
+    initialized: false,
+    messages: [
+      `Current directory: ${root}`,
+      "This directory has no .blueprint folder yet.",
+      "Open the project root or initialize Blueprint here.",
+    ],
+    commands: [
+      "blueprint init",
+      "blueprint profile init --providers openai,google --planner-provider google --project-registry --force",
+      "blueprint plan",
+      "blueprint tui",
+    ],
+  };
 }
 
 function nextView(view: TuiView): TuiView {
