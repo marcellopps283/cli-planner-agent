@@ -260,6 +260,109 @@ describe("blueprint tui", () => {
     expect(dashboard.lint.errors).toEqual([]);
   });
 
+  it("offers an LLM planner fallback inside the TUI action flow", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-plan-fallback-test-"));
+    await writeFile(path.join(root, "README.md"), "# Plan fallback\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+
+    const failed = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      planEngine: "llm",
+      plannerPromptRunner: async () => {
+        throw new Error("quota unavailable");
+      },
+      recordHistory: false,
+    });
+
+    expect(failed.status).toBe("failed");
+    expect(failed.canApply).toBe(true);
+    expect(failed.summary).toContain("Fallback available: google/gemini-3.1-pro-preview");
+    expect(failed.lines).toContain("failed_model gpt-5.5");
+    expect(failed.planContinuation).toMatchObject({
+      type: "fallback",
+      engine: "llm",
+      plannerProvider: "google",
+      plannerModel: "gemini-3.1-pro-preview",
+      attemptedModels: ["gpt-5.5"],
+    });
+
+    const fallbackPreview = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      planEngine: "llm",
+      plannerProvider: failed.planContinuation?.plannerProvider,
+      plannerModel: failed.planContinuation?.plannerModel,
+      planAttemptedModels: failed.planContinuation?.attemptedModels,
+      plannerPromptRunner: async (options) => ({
+        provider: options.provider,
+        model: options.model,
+        response: JSON.stringify(makeDraft()),
+        rawOutput: "",
+      }),
+      recordHistory: false,
+    });
+
+    expect(fallbackPreview.status).toBe("ok");
+    expect(fallbackPreview.lines).toContain("planner google/gemini-3.1-pro-preview fallback");
+    expect(fallbackPreview.planContinuation).toMatchObject({
+      type: "apply",
+      engine: "llm",
+      plannerProvider: "google",
+      plannerModel: "gemini-3.1-pro-preview",
+      attemptedModels: ["gpt-5.5", "gemini-3.1-pro-preview"],
+    });
+  });
+
+  it("offers deterministic preview when no LLM fallback model remains", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-deterministic-fallback-test-"));
+    await writeFile(path.join(root, "README.md"), "# Deterministic fallback\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai"],
+      models: ["gpt-5.5"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+
+    const failed = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      planEngine: "llm",
+      plannerPromptRunner: async () => {
+        throw new Error("quota unavailable");
+      },
+      recordHistory: false,
+    });
+
+    expect(failed.status).toBe("failed");
+    expect(failed.summary).toContain("Deterministic fallback available");
+    expect(failed.planContinuation).toMatchObject({
+      type: "fallback",
+      engine: "deterministic",
+      attemptedModels: ["gpt-5.5"],
+    });
+
+    const deterministicPreview = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      planEngine: "deterministic",
+      recordHistory: false,
+    });
+
+    expect(deterministicPreview.status).toBe("ok");
+    expect(deterministicPreview.lines).toContain("engine deterministic");
+  });
+
   it("updates the active model pool through a TUI action", async () => {
     const root = await makePlannedProject();
     const result = await runTuiAction({
@@ -414,6 +517,8 @@ function makeDraft(): PlannerDraft {
         title: "Update docs",
         objective: "Update command documentation.",
         suggested_model: "gemini-3.1-pro-preview",
+        model_rationale: "Best long-context model in the active fixture pool.",
+        acceptable_alternatives: ["gpt-5.5"],
         fit: "long_context",
         dependencies: [],
         allowed_paths: ["docs/SPECS/commands.md"],
@@ -429,6 +534,8 @@ function makeDraft(): PlannerDraft {
         title: "Implement API",
         objective: "Implement API logic.",
         suggested_model: "gpt-5.5",
+        model_rationale: "Best coding-heavy model in the active fixture pool.",
+        acceptable_alternatives: ["gemini-3.1-pro-preview"],
         fit: "coding_heavy",
         dependencies: ["task-001-update-docs"],
         allowed_paths: ["src/api.ts"],

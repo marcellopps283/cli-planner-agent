@@ -123,6 +123,8 @@ MVP atual:
 - usa `@clack/prompts` para perguntas simples;
 - exige profile valido antes de planejar;
 - respeita `available_models`, `available_providers` e `model_registry`;
+- envia ao planner um inventario compacto com stack detectada, scripts,
+  top-level dirs, arquivos priorizados e headings dos docs canonicos;
 - gera `architecture.md`, `assumptions.md`, `decisions.md`, `risks.md`,
   `dependencies_graph.json`, `integration_guide.md` e `tasks/*.md`;
 - aceita `--answers <path>` para execucao nao interativa;
@@ -131,7 +133,8 @@ MVP atual:
 - no engine `llm`, passa o model ID exato para o CLI oficial do provider e faz
   uma tentativa de reparo quando a resposta nao passa no contrato JSON;
 - em modo interativo, monta um preview em memoria com task graph e
-  `suggested_model` por task, pede confirmacao e so entao escreve os handoffs;
+  `suggested_model`, justificativa e alternativas por task, pede confirmacao e
+  so entao escreve os handoffs;
 - aceita `--fallback` para pedir confirmacao e tentar outro modelo ativo do
   pool antes de usar o plano deterministico caso o planner LLM falhe;
 - aceita `--planner-timeout-ms <number>` para chamadas LLM;
@@ -203,6 +206,8 @@ MVP atual:
   doctor`;
 - `Start Planning Chat` usa o PlannerEngine LLM do profile, mantendo o modo
   deterministico apenas para fallback, automacao e testes;
+- quando o PlannerEngine LLM falha dentro da TUI, o resultado sugere o proximo
+  modelo ativo ou o fallback deterministico e pede confirmacao antes de tentar;
 - `configure model pool` aceita IDs exatos separados por virgula ou `all` para
   voltar aos defaults dos providers ativos, e regrava `available_models` em
   `profile.yaml`;

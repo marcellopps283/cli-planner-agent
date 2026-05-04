@@ -65,6 +65,8 @@ const PlannerDraftTaskSchema = z.object({
   title: z.string().min(1),
   objective: z.string().min(1),
   suggested_model: z.string().min(1).optional(),
+  model_rationale: z.string().min(1).optional(),
+  acceptable_alternatives: z.array(z.string().min(1)).default([]),
   fit: PlannerTaskFitSchema.default("coding_heavy"),
   dependencies: z.array(z.string().min(1)).default([]),
   allowed_paths: z.array(z.string().min(1)).default([]),
@@ -122,6 +124,8 @@ export interface PlanPreviewTask {
   id: string;
   title: string;
   suggestedModel: string;
+  modelRationale: string;
+  acceptableAlternatives: string[];
   dependencies: string[];
   allowedPaths: string[];
   riskLevel: number;
@@ -151,11 +155,18 @@ export interface PlannerFallbackCandidate {
   reason: string;
 }
 
+export interface PlannerFallbackLookupOptions {
+  root: string;
+  failedModel?: string;
+}
+
 interface PlannedTask {
   id: string;
   title: string;
   filename: string;
   suggestedModel: ModelRegistryEntry;
+  modelRationale: string;
+  acceptableAlternatives: string[];
   dependencies: string[];
   allowedPaths: string[];
   forbiddenPaths: string[];
@@ -427,6 +438,8 @@ function toPreviewTask(task: PlannedTask): PlanPreviewTask {
     id: task.id,
     title: task.title,
     suggestedModel: task.suggestedModel.id,
+    modelRationale: task.modelRationale,
+    acceptableAlternatives: task.acceptableAlternatives,
     dependencies: task.dependencies,
     allowedPaths: task.allowedPaths,
     riskLevel: task.riskLevel,
@@ -454,6 +467,13 @@ async function loadPlanContext(root: string): Promise<PlanContext> {
     registry: registryResult.registry.models,
     doctor,
   };
+}
+
+export async function getPlannerFallbackCandidatesForRoot(
+  options: PlannerFallbackLookupOptions,
+): Promise<PlannerFallbackCandidate[]> {
+  const context = await loadPlanContext(path.resolve(options.root));
+  return getPlannerFallbackCandidates(context, options.failedModel);
 }
 
 async function collectPlanAnswers(context: PlanContext): Promise<PlanAnswers> {
@@ -666,12 +686,21 @@ function buildPlanFromDraft(
 
   const tasks = draft.tasks.map((task) => {
     const suggestedModel = resolveDraftModel(context, task.suggested_model, task.fit);
+    const acceptableAlternatives = resolveDraftAlternatives(
+      context,
+      task.acceptable_alternatives,
+      suggestedModel,
+      task.fit,
+    );
 
     return {
       id: task.id,
       title: task.title,
       filename: `${task.id.replace(/^task-/u, "")}.md`,
       suggestedModel,
+      modelRationale:
+        task.model_rationale ?? defaultModelRationale(suggestedModel, task.fit, task.risk_level),
+      acceptableAlternatives,
       dependencies: task.dependencies,
       allowedPaths: task.allowed_paths,
       forbiddenPaths: task.forbidden_paths.length > 0 ? task.forbidden_paths : defaultForbiddenPaths(),
@@ -744,6 +773,59 @@ function resolveDraftModel(context: PlanContext, suggestedModel: string | undefi
   return selectModel(context, fit);
 }
 
+function resolveDraftAlternatives(
+  context: PlanContext,
+  alternatives: string[],
+  selectedModel: ModelRegistryEntry,
+  fit: string,
+): string[] {
+  if (alternatives.length === 0) {
+    return defaultModelAlternatives(context, selectedModel, fit);
+  }
+
+  const activeModelIds = new Set(activeModelsForProfile(context.profile, context.registry).map((model) => model.id));
+  const resolved: string[] = [];
+
+  for (const alternative of alternatives) {
+    if (!activeModelIds.has(alternative)) {
+      throw new Error(
+        `Planner draft suggested unavailable alternative model ${alternative}. Active models: ${
+          [...activeModelIds].join(", ") || "none"
+        }.`,
+      );
+    }
+
+    if (alternative !== selectedModel.id) {
+      resolved.push(alternative);
+    }
+  }
+
+  return uniqueStrings(resolved).slice(0, 3);
+}
+
+function defaultModelRationale(model: ModelRegistryEntry, fit: string, riskLevel: number): string {
+  return [
+    `Selected ${model.id} for ${fit}.`,
+    `fit=${formatScore(model.task_fit[fit])}`,
+    `tier=${model.tier}`,
+    `risk=${riskLevel}`,
+    `latency=${model.latency_class}`,
+    `cost=${model.cost_class}`,
+  ].join(" ");
+}
+
+function defaultModelAlternatives(
+  context: PlanContext,
+  selectedModel: ModelRegistryEntry,
+  fit: string,
+): string[] {
+  return activeModelsForProfile(context.profile, context.registry)
+    .filter((model) => model.id !== selectedModel.id && model.status !== "restricted")
+    .sort((left, right) => (right.task_fit[fit] ?? 0) - (left.task_fit[fit] ?? 0))
+    .slice(0, 2)
+    .map((model) => model.id);
+}
+
 function resolvePlannerExecutionModel(context: PlanContext, options: GeneratePlanOptions): ModelRegistryEntry {
   const activeModels = activeModelsForProfile(context.profile, context.registry);
   const requestedModelId = options.plannerModel ?? context.profile.planner_model;
@@ -779,6 +861,10 @@ export function getPlannerFallbackCandidates(
   context: PlanContext,
   failedModel = context.profile.planner_model,
 ): PlannerFallbackCandidate[] {
+  if (!context.profile.routing.allow_provider_fallback) {
+    return [];
+  }
+
   const activeModels = activeModelsForProfile(context.profile, context.registry);
 
   return activeModels
@@ -830,8 +916,13 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     project_inventory: {
       root_name: path.basename(context.root),
       visible_file_count: context.doctor.fileCount,
+      stack: context.doctor.stack,
       canonical_files: context.doctor.canonicalFiles,
       manifests: context.doctor.manifests,
+      scripts: context.doctor.scripts,
+      top_level_dirs: context.doctor.topLevelDirs,
+      inventory_files: context.doctor.inventoryFiles,
+      markdown_headings: context.doctor.markdownHeadings,
       blocked_patterns: context.doctor.blockedPatterns,
       warnings: context.doctor.warnings,
     },
@@ -857,6 +948,8 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
       "title": "...",
       "objective": "...",
       "suggested_model": "one active model id",
+      "model_rationale": "short reason using fit, risk, context, cost, latency, benchmarks, or provider availability",
+      "acceptable_alternatives": ["other active model id"],
       "fit": "planning|architecture|coding_heavy|review|refactor|tiny_edit|long_context",
       "dependencies": [],
       "allowed_paths": ["relative/path/or/glob"],
@@ -873,6 +966,8 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     "- Use 2 to 8 tasks.",
     "- Task ids must match task-NNN-kebab-case and dependencies may only reference earlier task ids.",
     "- suggested_model must be one of the active_models ids. Never use excluded providers or generic provider defaults.",
+    "- model_rationale must explain why the exact suggested_model fits this task better than smaller or excluded options.",
+    "- acceptable_alternatives may contain up to 3 active model ids that can execute the same task if the primary model is unavailable.",
     "- Prefer the smallest active model that clears the task risk, context, and benchmark needs.",
     "- Use benchmark_scores, routing_tags, task_fit, context_window, latency_class, and prices when choosing a model.",
     "- If a task is read-only, set allowed_paths to [] and say read-only in context_rules.",
@@ -909,6 +1004,8 @@ function getPlannerPromptExample(
         title: "Map relevant context",
         objective: "Identify the files and contracts needed for the requested change.",
         suggested_model: readModel,
+        model_rationale: "Best active long_context fit for read-only context mapping with low edit risk.",
+        acceptable_alternatives: getExampleAlternatives(activeModels, readModel, "long_context"),
         fit: "long_context",
         dependencies: [],
         allowed_paths: [],
@@ -924,6 +1021,8 @@ function getPlannerPromptExample(
         title: "Implement scoped feature",
         objective: "Implement the requested feature within the declared paths.",
         suggested_model: writeModel,
+        model_rationale: "Best active coding_heavy fit for implementation risk and test-oriented changes.",
+        acceptable_alternatives: getExampleAlternatives(activeModels, writeModel, "coding_heavy"),
         fit: "coding_heavy",
         dependencies: ["task-001-map-context"],
         allowed_paths: ["src/feature.ts", "tests/feature.test.ts"],
@@ -949,6 +1048,18 @@ function selectExampleModel(activeModels: Array<{ id: string; task_fit: Record<s
   return selected.id;
 }
 
+function getExampleAlternatives(
+  activeModels: Array<{ id: string; task_fit: Record<string, number> }>,
+  selectedModel: string,
+  fit: string,
+): string[] {
+  return [...activeModels]
+    .filter((model) => model.id !== selectedModel)
+    .sort((left, right) => (right.task_fit[fit] ?? 0) - (left.task_fit[fit] ?? 0))
+    .slice(0, 2)
+    .map((model) => model.id);
+}
+
 function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedTask[] {
   const implementationPaths = answers.targetPaths.length > 0 ? answers.targetPaths : ["src/**", "tests/**", "docs/**"];
   const validationPaths = uniqueStrings([
@@ -965,6 +1076,8 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
       title: "Map current context and contracts",
       filename: "001-context-map.md",
       suggestedModel: selectModel(context, "long_context"),
+      modelRationale: defaultModelRationale(selectModel(context, "long_context"), "long_context", clampRisk(answers.riskLevel - 2)),
+      acceptableAlternatives: defaultModelAlternatives(context, selectModel(context, "long_context"), "long_context"),
       dependencies: [],
       allowedPaths: [],
       forbiddenPaths,
@@ -974,7 +1087,9 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
       contextRules: [
         "This is a read-only task. Do not edit files.",
         `Use only visible project context under ${context.root}.`,
+        `Detected stack: ${context.doctor.stack.join(", ") || "unknown"}.`,
         `Canonical docs detected: ${context.doctor.canonicalFiles.join(", ") || "none"}.`,
+        `Top-level dirs detected: ${context.doctor.topLevelDirs.join(", ") || "none"}.`,
         `Respect blocked patterns: ${context.doctor.blockedPatterns.join(", ")}.`,
       ],
       executionPrompt: [
@@ -994,6 +1109,8 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
       title: "Implement the core project change",
       filename: "002-implement-core-work.md",
       suggestedModel: selectModel(context, "coding_heavy"),
+      modelRationale: defaultModelRationale(selectModel(context, "coding_heavy"), "coding_heavy", answers.riskLevel),
+      acceptableAlternatives: defaultModelAlternatives(context, selectModel(context, "coding_heavy"), "coding_heavy"),
       dependencies: ["task-001-context-map"],
       allowedPaths: implementationPaths,
       forbiddenPaths,
@@ -1025,6 +1142,8 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
       title: "Integrate results and validate acceptance",
       filename: "003-integrate-and-validate.md",
       suggestedModel: selectModel(context, "review"),
+      modelRationale: defaultModelRationale(selectModel(context, "review"), "review", clampRisk(answers.riskLevel - 1)),
+      acceptableAlternatives: defaultModelAlternatives(context, selectModel(context, "review"), "review"),
       dependencies: ["task-002-implement-core-work"],
       allowedPaths: validationPaths,
       forbiddenPaths,
@@ -1109,8 +1228,11 @@ ${answers.objective}
 
 - Project root: ${context.root}
 - Visible files: ${context.doctor.fileCount}
+- Detected stack: ${context.doctor.stack.join(", ") || "unknown"}
 - Canonical files: ${context.doctor.canonicalFiles.join(", ") || "none"}
 - Manifests: ${context.doctor.manifests.join(", ") || "none"}
+- Scripts: ${Object.keys(context.doctor.scripts).join(", ") || "none"}
+- Top-level dirs: ${context.doctor.topLevelDirs.join(", ") || "none"}
 - Blocked patterns: ${context.doctor.blockedPatterns.join(", ")}
 
 ## Work Breakdown
@@ -1224,6 +1346,8 @@ function renderTask(task: PlannedTask): string {
     id: task.id,
     title: task.title,
     suggested_model: task.suggestedModel.id,
+    model_rationale: task.modelRationale,
+    acceptable_alternatives: task.acceptableAlternatives,
     dependencies: task.dependencies,
     allowed_paths: task.allowedPaths,
     forbidden_paths: task.forbiddenPaths,
@@ -1231,7 +1355,7 @@ function renderTask(task: PlannedTask): string {
     test_commands: task.testCommands,
   };
 
-  return `---\n${stringify(metadata)}---\n\n<task_objective>\n${escapeXmlText(task.objective)}\n</task_objective>\n\n<suggested_model>\n${escapeXmlText(`${task.suggestedModel.id} (${task.suggestedModel.provider})`)}\n</suggested_model>\n\n<context_rules>\n${escapeXmlText(formatMarkdownList(task.contextRules))}\n</context_rules>\n\n<execution_prompt>\n${escapeXmlText(task.executionPrompt)}\n</execution_prompt>\n\n<acceptance_contract>\n${escapeXmlText(formatMarkdownList(task.acceptanceContract))}\n</acceptance_contract>\n`;
+  return `---\n${stringify(metadata)}---\n\n<task_objective>\n${escapeXmlText(task.objective)}\n</task_objective>\n\n<suggested_model>\n${escapeXmlText(`${task.suggestedModel.id} (${task.suggestedModel.provider})`)}\n</suggested_model>\n\n<model_rationale>\n${escapeXmlText(task.modelRationale)}\n\nAcceptable alternatives: ${escapeXmlText(task.acceptableAlternatives.join(", ") || "none")}\n</model_rationale>\n\n<context_rules>\n${escapeXmlText(formatMarkdownList(task.contextRules))}\n</context_rules>\n\n<execution_prompt>\n${escapeXmlText(task.executionPrompt)}\n</execution_prompt>\n\n<acceptance_contract>\n${escapeXmlText(formatMarkdownList(task.acceptanceContract))}\n</acceptance_contract>\n`;
 }
 
 function selectModel(context: PlanContext, fit: string): ModelRegistryEntry {

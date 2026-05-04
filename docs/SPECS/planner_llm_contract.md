@@ -48,6 +48,8 @@ ou schema sao expostas com os attempts para auditoria e fallback.
       "title": "...",
       "objective": "...",
       "suggested_model": "active-model-id",
+      "model_rationale": "why this exact model fits the task",
+      "acceptable_alternatives": ["other-active-model-id"],
       "fit": "planning",
       "dependencies": [],
       "allowed_paths": [],
@@ -67,6 +69,10 @@ ou schema sao expostas com os attempts para auditoria e fallback.
 - `fit` deve ser um dos valores conhecidos: `planning`, `architecture`,
   `coding_heavy`, `review`, `refactor`, `tiny_edit`, `long_context`.
 - `suggested_model`, quando informado, deve existir no pool ativo.
+- `model_rationale` deve explicar a escolha usando fit, risco, contexto, custo,
+  latencia, benchmark ou disponibilidade.
+- `acceptable_alternatives`, quando informado, so pode conter model IDs ativos
+  no pool do usuario.
 - Providers excluidos pelo profile nao podem aparecer em tasks.
 - Dependencias so podem apontar para tasks anteriores.
 - IDs de task devem seguir `task-NNN-kebab-case`.

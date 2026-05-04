@@ -136,8 +136,9 @@ blueprint export
 ```
 
 No modo interativo, o planner monta um preview do grafo e mostra o modelo
-sugerido por task antes de escrever os handoffs. Com `--answers` e `--yes`, o
-fluxo continua proprio para automacao e testes.
+sugerido, a justificativa e alternativas por task antes de escrever os
+handoffs. Com `--answers` e `--yes`, o fluxo continua proprio para automacao e
+testes.
 
 Quando `--engine llm` e usado, o PlannerEngine chama o provider oficial com o
 model ID exato do profile (`codex -m`, `gemini -m`, `claude --model`), valida a
@@ -145,6 +146,10 @@ resposta JSON com Zod e faz uma tentativa curta de reparo se o modelo devolver
 JSON fora do contrato. Com `--fallback`, o CLI tenta primeiro outro modelo ativo
 do pool, pedindo confirmacao no modo interativo, e so depois oferece fallback
 deterministico.
+
+O pacote de contexto enviado ao planner continua compacto: stack detectada,
+scripts de validacao, top-level dirs, docs canonicos, headings curtos e ate 80
+arquivos priorizados com markers. O repositorio inteiro nao e enviado.
 
 Para automacao ou testes, o mesmo comando aceita respostas em JSON:
 
@@ -198,6 +203,8 @@ handoffs, configura o model pool por IDs exatos, executa `lint`, `export`,
 `auth doctor` e um fluxo guiado de
 `revise`: digita a mudanca, revisa o dry-run e confirma antes de aplicar. Cada
 acao executada pela TUI fica auditada em `.blueprint/tui_sessions/*.json`.
+Se o planner LLM falhar nessa tela, a TUI sugere outro modelo ativo ou o preview
+deterministico e espera confirmacao antes de continuar.
 Quando o plano e gerado, o resultado destaca `.blueprint/`, `.blueprint/tasks`,
 `dependencies_graph.json` e `integration_guide.md` antes da lista completa de
 arquivos.

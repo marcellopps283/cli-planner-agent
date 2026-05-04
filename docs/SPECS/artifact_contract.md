@@ -182,6 +182,9 @@ Formato:
 id: task-001
 title: Example
 suggested_model: claude-opus-4-7
+model_rationale: Highest active coding fit for this high-risk task.
+acceptable_alternatives:
+  - claude-sonnet-4-6
 dependencies: []
 parallel_group: foundation
 allowed_paths:
@@ -200,6 +203,10 @@ test_commands:
 <suggested_model>
 ...
 </suggested_model>
+
+<model_rationale>
+...
+</model_rationale>
 
 <context_rules>
 ...

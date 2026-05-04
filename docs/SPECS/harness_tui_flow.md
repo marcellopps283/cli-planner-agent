@@ -51,5 +51,9 @@ automacao, smoke e debugging.
   confirmacao antes de persistir handoffs no modo interativo.
 - O PlannerEngine passa o model ID exato ao CLI oficial e tenta reparar uma
   resposta JSON invalida antes de acionar fallback.
+- O preview de planejamento inclui justificativa de modelo e alternativas
+  aceitaveis por task.
+- Falhas do planner na TUI viram um proximo passo confirmavel: outro modelo do
+  pool ativo ou preview deterministico.
 - Depois da geracao, a TUI destaca artifact root, tasks dir, graph e integration
   guide antes de listar os arquivos completos.

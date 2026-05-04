@@ -127,6 +127,8 @@ export const BlueprintTaskMetadataSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   suggested_model: z.string().min(1),
+  model_rationale: z.string().min(1).optional(),
+  acceptable_alternatives: z.array(z.string().min(1)).optional(),
   dependencies: z.array(z.string()).default([]),
   parallel_group: z.string().optional(),
   allowed_paths: z.array(z.string()).default([]),

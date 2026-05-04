@@ -91,8 +91,19 @@ Checkpoint:
   YAML.
 - [x] Definir politica ou comando de atualizacao do model registry, ja que
   disponibilidade, precos e benchmarks mudam rapido.
-- [ ] Smoke final de uso real: `blueprint tui` -> setup -> profile/model pool ->
-  `plan --engine llm --fallback` -> `lint` -> `export`.
+- [x] Planner preview e handoffs com justificativa de modelo e alternativas.
+- [x] Inventario compacto com stack, scripts, top-level dirs, arquivos
+  priorizados e headings canonicos.
+- [ ] Smoke final TUI de uso real: `blueprint tui` -> setup -> profile/model
+  pool -> `plan --engine llm --fallback` -> `lint` -> `export`.
+
+Smoke real parcial em 2026-05-04: `blueprint auth doctor --provider openai
+--live` retornou `response=OK` fora do sandbox; `node dist/cli.js plan --engine
+llm --fallback --yes --force` com profile OpenAI gerou 5 tasks via `gpt-5.5`,
+incluindo `model_rationale` e `acceptable_alternatives`, e `blueprint lint`
+passou. `blueprint export` no mesmo projeto gerou pacote com 14 arquivos.
+Gemini no WSL ainda abriu o fluxo de auth do navegador antes do modo headless;
+precisa de login do usuario para smoke live.
 
 Checkpoint:
 

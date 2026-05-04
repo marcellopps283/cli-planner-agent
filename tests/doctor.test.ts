@@ -24,4 +24,42 @@ describe("project doctor", () => {
       await chmod(privateDir, 0o700);
     }
   });
+
+  it("summarizes stack, scripts, top-level dirs, files, and markdown headings", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-doctor-summary-test-"));
+
+    await mkdir(path.join(root, "src"));
+    await mkdir(path.join(root, "tests"));
+    await writeFile(path.join(root, "README.md"), "# Test\n\n## Usage\n", "utf8");
+    await writeFile(path.join(root, "src", "index.ts"), "export const ok = true;\n", "utf8");
+    await writeFile(path.join(root, "tests", "index.test.ts"), "import '../src/index';\n", "utf8");
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify(
+        {
+          scripts: {
+            test: "vitest run",
+            typecheck: "tsc --noEmit",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await writeFile(path.join(root, "tsconfig.json"), "{}", "utf8");
+
+    const report = await inspectProject(root);
+
+    expect(report.stack).toEqual(["node", "typescript"]);
+    expect(report.scripts).toEqual({
+      test: "vitest run",
+      typecheck: "tsc --noEmit",
+    });
+    expect(report.topLevelDirs).toEqual(["src", "tests"]);
+    expect(report.inventoryFiles.some((file) => file.path === "src/index.ts" && file.markers.includes("source"))).toBe(
+      true,
+    );
+    expect(report.markdownHeadings["README.md"]).toEqual(["Test", "Usage"]);
+  });
 });

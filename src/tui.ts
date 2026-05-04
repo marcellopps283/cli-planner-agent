@@ -15,7 +15,14 @@ import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
 import { lintBlueprint, type BlueprintLintResult } from "./lint.js";
 import { DEFAULT_MODEL_REGISTRY } from "./models.js";
-import { generateBlueprintPlan, previewBlueprintPlan, type PlanAnswers, type PlanEngine } from "./plan.js";
+import type { PlannerPromptRunner } from "./plannerEngine.js";
+import {
+  generateBlueprintPlan,
+  getPlannerFallbackCandidatesForRoot,
+  previewBlueprintPlan,
+  type PlanAnswers,
+  type PlanEngine,
+} from "./plan.js";
 import {
   initPlannerProfile,
   loadPlannerProfile,
@@ -174,7 +181,17 @@ export interface TuiActionResult {
   lines: string[];
   canApply?: boolean;
   change?: string;
+  planContinuation?: PlanContinuation;
   sessionPath?: string;
+}
+
+interface PlanContinuation {
+  type: "apply" | "fallback";
+  engine: PlanEngine;
+  plannerProvider?: ProviderId;
+  plannerModel?: string;
+  force?: boolean;
+  attemptedModels?: string[];
 }
 
 export interface RunTuiActionOptions {
@@ -185,6 +202,8 @@ export interface RunTuiActionOptions {
   planAnswers?: PlanAnswers;
   planEngine?: PlanEngine;
   planForce?: boolean;
+  planAttemptedModels?: string[];
+  plannerPromptRunner?: PlannerPromptRunner;
   providers?: ProviderId[];
   models?: string[];
   plannerProvider?: ProviderId;
@@ -539,18 +558,43 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
   const force = Boolean(options.planForce);
 
   if (!options.apply) {
-    const preview = await previewBlueprintPlan({
-      root: options.root,
-      answers: options.planAnswers,
-      engine,
-      force,
-    });
+    let preview: Awaited<ReturnType<typeof previewBlueprintPlan>>;
+
+    try {
+      preview = await previewBlueprintPlan({
+        root: options.root,
+        answers: options.planAnswers,
+        engine,
+        plannerProvider: options.plannerProvider,
+        plannerModel: options.plannerModel,
+        plannerPromptRunner: options.plannerPromptRunner,
+        force,
+      });
+    } catch (error) {
+      if (engine !== "llm") {
+        throw error;
+      }
+
+      return buildPlanTuiFallbackResult(options, error, force);
+    }
+    const attemptedModels = uniqueStrings([
+      ...(options.planAttemptedModels ?? []),
+      preview.plannerModel,
+    ]);
 
     return {
       actionId: "plan",
       status: "ok",
       summary: `Plan preview ready with ${preview.tasks.length} task(s).`,
       canApply: true,
+      planContinuation: {
+        type: "apply",
+        engine: preview.engine,
+        plannerProvider: preview.plannerProvider,
+        plannerModel: preview.plannerModel,
+        force,
+        attemptedModels,
+      },
       lines: [
         `engine ${preview.engine}`,
         `planner ${preview.plannerProvider}/${preview.plannerModel}${preview.plannerFallback ? " fallback" : ""}`,
@@ -558,7 +602,9 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
         ...preview.tasks.map((task) => {
           const deps = task.dependencies.length > 0 ? task.dependencies.join(",") : "none";
           const paths = task.allowedPaths.length > 0 ? task.allowedPaths.join(",") : "read-only";
-          return `${task.id} model ${task.suggestedModel} risk ${task.riskLevel} deps ${deps} paths ${paths}`;
+          const alternatives =
+            task.acceptableAlternatives.length > 0 ? task.acceptableAlternatives.join(",") : "none";
+          return `${task.id} model ${task.suggestedModel} risk ${task.riskLevel} deps ${deps} paths ${paths} alternatives ${alternatives} reason ${task.modelRationale}`;
         }),
         force ? "warning existing generated tasks will be replaced after confirmation" : "write pending confirmation",
       ],
@@ -569,6 +615,9 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
     root: options.root,
     answers: options.planAnswers,
     engine,
+    plannerProvider: options.plannerProvider,
+    plannerModel: options.plannerModel,
+    plannerPromptRunner: options.plannerPromptRunner,
     force,
   });
   const lint = await lintBlueprint(options.root);
@@ -590,6 +639,71 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
       ...result.files.map((file) => `file ${file}`),
       ...lint.errors.map((error) => `error ${error}`),
       ...lint.warnings.map((warning) => `warning ${warning}`),
+    ],
+  };
+}
+
+async function buildPlanTuiFallbackResult(
+  options: RunTuiActionOptions,
+  error: unknown,
+  force: boolean,
+): Promise<TuiActionResult> {
+  const profile = await loadPlannerProfile(options.root);
+  const failedModel = options.plannerModel ?? profile.profile?.planner_model;
+  const attemptedModels = uniqueStrings([
+    ...(options.planAttemptedModels ?? []),
+    ...(failedModel ? [failedModel] : []),
+  ]);
+  const candidates = (
+    await getPlannerFallbackCandidatesForRoot({
+      root: options.root,
+      failedModel,
+    })
+  ).filter((candidate) => !attemptedModels.includes(candidate.model));
+  const message = summarizeTuiError(error);
+
+  if (candidates.length > 0) {
+    const next = candidates[0]!;
+
+    return {
+      actionId: "plan",
+      status: "failed",
+      summary: `Planner ${failedModel ?? "LLM"} failed. Fallback available: ${next.provider}/${next.model}.`,
+      canApply: true,
+      planContinuation: {
+        type: "fallback",
+        engine: "llm",
+        plannerProvider: next.provider,
+        plannerModel: next.model,
+        force,
+        attemptedModels,
+      },
+      lines: [
+        `error ${message}`,
+        `failed_model ${failedModel ?? "unknown"}`,
+        `fallback ${next.provider}/${next.model}`,
+        `reason ${next.reason}`,
+        "press y to try this fallback or n to cancel",
+      ],
+    };
+  }
+
+  return {
+    actionId: "plan",
+    status: "failed",
+    summary: `Planner ${failedModel ?? "LLM"} failed. Deterministic fallback available.`,
+    canApply: true,
+    planContinuation: {
+      type: "fallback",
+      engine: "deterministic",
+      force,
+      attemptedModels,
+    },
+    lines: [
+      `error ${message}`,
+      `failed_model ${failedModel ?? "unknown"}`,
+      "fallback deterministic",
+      "press y to preview deterministic handoffs or n to cancel",
     ],
   };
 }
@@ -834,6 +948,7 @@ export function InteractiveDashboard({
   const [lastPlanAnswers, setLastPlanAnswers] = useState<PlanAnswers | undefined>();
   const [lastPlanForce, setLastPlanForce] = useState(false);
   const [lastPlanEngine, setLastPlanEngine] = useState<PlanEngine>("llm");
+  const [lastPlanContinuation, setLastPlanContinuation] = useState<PlanContinuation | undefined>();
   const [isEditingModelPool, setIsEditingModelPool] = useState(false);
   const [modelPoolInput, setModelPoolInput] = useState("");
   const [isEditingRoot, setIsEditingRoot] = useState(false);
@@ -1054,11 +1169,24 @@ export function InteractiveDashboard({
     if (pendingConfirmation && view === "actions") {
       if (input.toLowerCase() === "y") {
         void executeAction(pendingConfirmation, {
-          apply: pendingConfirmation === "revise" || pendingConfirmation === "plan",
+          apply:
+            pendingConfirmation === "revise"
+              ? true
+              : pendingConfirmation === "plan"
+                ? lastPlanContinuation?.type === "apply"
+                : false,
           change: pendingConfirmation === "revise" ? lastReviseChange : undefined,
           planAnswers: pendingConfirmation === "plan" ? lastPlanAnswers : undefined,
           planForce: pendingConfirmation === "plan" ? lastPlanForce : undefined,
-          planEngine: pendingConfirmation === "plan" ? lastPlanEngine : undefined,
+          planEngine:
+            pendingConfirmation === "plan"
+              ? lastPlanContinuation?.engine ?? lastPlanEngine
+              : undefined,
+          planAttemptedModels:
+            pendingConfirmation === "plan" ? lastPlanContinuation?.attemptedModels : undefined,
+          plannerProvider:
+            pendingConfirmation === "plan" ? lastPlanContinuation?.plannerProvider : undefined,
+          plannerModel: pendingConfirmation === "plan" ? lastPlanContinuation?.plannerModel : undefined,
         });
       }
 
@@ -1115,6 +1243,7 @@ export function InteractiveDashboard({
     setLastPlanAnswers(undefined);
     setLastPlanForce(false);
     setLastPlanEngine("llm");
+    setLastPlanContinuation(undefined);
     setPendingConfirmation(undefined);
     setActionResult(undefined);
     setPlanChatStep("projectSummary");
@@ -1395,6 +1524,7 @@ export function InteractiveDashboard({
       planAnswers?: PlanAnswers;
       planEngine?: PlanEngine;
       planForce?: boolean;
+      planAttemptedModels?: string[];
       providers?: ProviderId[];
       models?: string[];
       plannerProvider?: ProviderId;
@@ -1415,6 +1545,7 @@ export function InteractiveDashboard({
         planAnswers: options.planAnswers,
         planEngine: options.planEngine,
         planForce: options.planForce,
+        planAttemptedModels: options.planAttemptedModels,
         providers: options.providers,
         models: options.models,
         plannerProvider: options.plannerProvider,
@@ -1432,6 +1563,8 @@ export function InteractiveDashboard({
       }
 
       if (result.actionId === "plan" && result.canApply && !options.apply) {
+        setLastPlanContinuation(result.planContinuation);
+        setLastPlanEngine(result.planContinuation?.engine ?? options.planEngine ?? lastPlanEngine);
         setPendingConfirmation("plan");
       }
 
@@ -2007,8 +2140,10 @@ function OverviewView({
         status: dashboard.doctor.warnings.length === 0 ? "ok" : "warn",
         lines: [
           `files ${dashboard.doctor.fileCount}`,
+          `stack ${dashboard.doctor.stack.join(",") || "unknown"}`,
           `canonical ${dashboard.doctor.canonicalFiles.length}`,
           `manifests ${summarizeManifests(dashboard.doctor.manifests)}`,
+          `top_dirs ${summarizeList(dashboard.doctor.topLevelDirs, 4)}`,
           ...(dashboard.doctor.fileCount > 10_000 ? ["\u2192 use --root <project>"] : []),
         ],
       }),
@@ -2901,6 +3036,21 @@ function formatReviseActionResult(
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function summarizeTuiError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cleaned = message.replace(/\s+/gu, " ").trim();
+
+  if (!cleaned) {
+    return "unknown error";
+  }
+
+  return cleaned.length > 500 ? `${cleaned.slice(0, 500)}...` : cleaned;
 }
 
 function truncateLine(line: string, maxWidth: number): string {

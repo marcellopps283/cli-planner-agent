@@ -112,6 +112,9 @@ describe("blueprint plan generation", () => {
     expect(result.taskIds).toEqual(["task-001-custom-analysis", "task-002-custom-build"]);
     expect(lint.errors).toEqual([]);
     expect(firstTask).toContain("suggested_model: gemini-3.1-pro-preview");
+    expect(firstTask).toContain("model_rationale: Best long-context model in the active fixture pool.");
+    expect(firstTask).toContain("<model_rationale>");
+    expect(firstTask).toContain("Acceptable alternatives: gpt-5.5");
   });
 
   it("calls the LLM planner through the selected exact planner model", async () => {
@@ -163,6 +166,8 @@ describe("blueprint plan generation", () => {
       "task-001-custom-analysis:gemini-3.1-pro-preview",
       "task-002-custom-build:gpt-5.5",
     ]);
+    expect(preview.tasks[0]?.modelRationale).toContain("Best long-context model");
+    expect(preview.tasks[0]?.acceptableAlternatives).toEqual(["gpt-5.5"]);
     expect(blueprintFiles).not.toContain("dependencies_graph.json");
     expect(blueprintFiles).not.toContain("tasks");
   });
@@ -216,6 +221,25 @@ describe("blueprint plan generation", () => {
     ).rejects.toThrow("Planner draft suggested unavailable model claude-opus-4-7");
   });
 
+  it("rejects planner drafts that list unavailable alternative models", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "google",
+    });
+    const draft = makeDraft();
+    draft.tasks[0]!.acceptable_alternatives = ["claude-opus-4-7"];
+
+    await expect(
+      generateBlueprintPlan({
+        root,
+        answers: makeAnswers(),
+        draft,
+      }),
+    ).rejects.toThrow("Planner draft suggested unavailable alternative model claude-opus-4-7");
+  });
+
   it("rejects planner drafts with unsupported fit values", async () => {
     const raw = await readFixture("invalid-fit.json");
 
@@ -227,6 +251,8 @@ describe("blueprint plan generation", () => {
 
     expect(prompt).toContain("Example of the expected style:");
     expect(prompt).toContain("task-001-map-context");
+    expect(prompt).toContain("model_rationale");
+    expect(prompt).toContain("acceptable_alternatives");
     expect(prompt).toContain("gpt-5.5");
     expect(prompt).toContain("gemini-3.1-pro-preview");
     expect(prompt).not.toContain("claude-opus-4-7");
@@ -288,6 +314,8 @@ function makeDraft(): PlannerDraft {
         title: "Custom analysis",
         objective: "Analyze the current planner flow.",
         suggested_model: "gemini-3.1-pro-preview",
+        model_rationale: "Best long-context model in the active fixture pool.",
+        acceptable_alternatives: ["gpt-5.5"],
         fit: "long_context",
         dependencies: [],
         allowed_paths: [],
@@ -303,6 +331,8 @@ function makeDraft(): PlannerDraft {
         title: "Custom build",
         objective: "Implement the planned change.",
         suggested_model: "gpt-5.5",
+        model_rationale: "Best coding-heavy model in the active fixture pool.",
+        acceptable_alternatives: ["gemini-3.1-pro-preview"],
         fit: "coding_heavy",
         dependencies: ["task-001-custom-analysis"],
         allowed_paths: ["src/plan.ts", "tests/plan.test.ts"],
@@ -354,6 +384,23 @@ function makePlanContext(): PlanContext {
       root: "/tmp/example",
       canonicalFiles: ["README.md", "package.json"],
       manifests: ["package.json"],
+      stack: ["node", "typescript"],
+      scripts: {
+        test: "vitest run",
+        typecheck: "tsc --noEmit",
+      },
+      topLevelDirs: ["src", "tests"],
+      inventoryFiles: [
+        {
+          path: "src/plan.ts",
+          extension: "ts",
+          sizeBytes: 1200,
+          markers: ["source"],
+        },
+      ],
+      markdownHeadings: {
+        "README.md": ["Example"],
+      },
       fileCount: 4,
       blockedPatterns: [".env", "node_modules/**"],
       warnings: [],

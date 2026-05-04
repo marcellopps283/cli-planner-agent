@@ -296,6 +296,10 @@ program
     console.log(`files\t${report.fileCount}`);
     console.log(`canonical\t${report.canonicalFiles.length ? report.canonicalFiles.join(", ") : "none"}`);
     console.log(`manifests\t${report.manifests.length ? report.manifests.join(", ") : "none"}`);
+    console.log(`stack\t${report.stack.length ? report.stack.join(", ") : "unknown"}`);
+    console.log(`scripts\t${Object.keys(report.scripts).length ? Object.keys(report.scripts).join(", ") : "none"}`);
+    console.log(`top_dirs\t${report.topLevelDirs.length ? report.topLevelDirs.join(", ") : "none"}`);
+    console.log(`inventory\t${report.inventoryFiles.length}`);
     console.log(`blocked\t${report.blockedPatterns.join(", ")}`);
 
     for (const warning of report.warnings) {
