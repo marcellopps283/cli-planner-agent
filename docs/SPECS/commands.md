@@ -100,8 +100,9 @@ Opcoes:
 
 Regra do MVP: o Gemini permanece `not_checked` no modo padrao. A validacao real
 usa `blueprint auth doctor --provider google --live`, que deve rodar em um
-diretorio temporario vazio e em modo read-only/plan. O mesmo padrao de `--live`
-tambem valida inferencia de OpenAI/Codex e Anthropic/Claude quando solicitado.
+diretorio temporario vazio, em modo read-only/plan e com `--skip-trust` para o
+Gemini headless. O mesmo padrao de `--live` tambem valida inferencia de
+OpenAI/Codex e Anthropic/Claude quando solicitado.
 
 ### `blueprint doctor`
 

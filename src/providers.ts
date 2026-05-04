@@ -52,6 +52,7 @@ export const DEFAULT_PROVIDER_ADAPTERS: ProviderAdapter[] = [
       "gemini",
       "-p",
       "Reply with exactly OK.",
+      "--skip-trust",
       "--output-format",
       "json",
       "--approval-mode",

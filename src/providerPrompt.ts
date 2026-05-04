@@ -139,6 +139,7 @@ async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Pro
       ...providerPromptModelArgs("google", options.model),
       "-p",
       options.prompt,
+      "--skip-trust",
       "--output-format",
       "json",
       "--approval-mode",

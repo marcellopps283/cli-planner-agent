@@ -246,4 +246,5 @@ blueprint auth doctor --provider anthropic --live
 Essas verificacoes rodam em diretorio temporario vazio, com modos read-only/plan
 quando o CLI oficial oferece essa opcao. Elas consomem uma chamada curta do
 provider. No Gemini, o modo padrao continua `not_checked` porque o CLI local nao
-expoe um comando de auth/status sem inferencia.
+expoe um comando de auth/status sem inferencia. Chamadas headless do Gemini usam
+`--skip-trust` para permitir smokes seguros em diretorios temporarios.

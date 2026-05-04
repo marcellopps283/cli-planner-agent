@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_PROVIDER_ADAPTERS } from "../src/providers.js";
 import { extractJsonObject, providerPromptModelArgs } from "../src/providerPrompt.js";
 
 describe("provider prompt parsing", () => {
@@ -30,5 +31,11 @@ describe("provider prompt parsing", () => {
       "claude-opus-4-7",
     ]);
     expect(providerPromptModelArgs("openai")).toEqual([]);
+  });
+
+  it("keeps Gemini headless calls trusted in temporary planner directories", () => {
+    const gemini = DEFAULT_PROVIDER_ADAPTERS.find((adapter) => adapter.id === "google");
+
+    expect(gemini?.liveCheckCommand).toContain("--skip-trust");
   });
 });
