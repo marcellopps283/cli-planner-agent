@@ -183,6 +183,7 @@ describe("blueprint tui", () => {
     const actions = getTuiActions(dashboard);
 
     expect(actions.map((action) => action.id)).toEqual([
+      "plan",
       "model-pool",
       "registry-refresh",
       "lint",
@@ -192,6 +193,7 @@ describe("blueprint tui", () => {
       "auth-doctor-live",
     ]);
     expect(actions.find((action) => action.id === "model-pool")?.requiresInput).toBe(true);
+    expect(actions.find((action) => action.id === "plan")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "registry-refresh")?.requiresConfirmation).toBe(true);
     expect(actions.find((action) => action.id === "export")?.enabled).toBe(true);
     expect(actions.find((action) => action.id === "revise")?.requiresInput).toBe(true);
@@ -208,6 +210,45 @@ describe("blueprint tui", () => {
     expect(exported.status).toBe("ok");
     expect(exported.summary).toContain("Exported");
     expect(exported.lines.some((line) => line.startsWith("output "))).toBe(true);
+  });
+
+  it("previews and applies planning through a TUI action", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-plan-action-test-"));
+    await writeFile(path.join(root, "README.md"), "# Plan action\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+
+    const preview = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      recordHistory: false,
+    });
+    let dashboard = await loadTuiDashboard({ root });
+
+    expect(preview.status).toBe("ok");
+    expect(preview.canApply).toBe(true);
+    expect(preview.summary).toContain("Plan preview ready");
+    expect(preview.lines.some((line) => line.includes("task-002-implement-core-work model gpt-5.5"))).toBe(true);
+    expect(dashboard.tasks).toEqual([]);
+
+    const applied = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      apply: true,
+      recordHistory: false,
+    });
+    dashboard = await loadTuiDashboard({ root });
+
+    expect(applied.status).toBe("ok");
+    expect(applied.summary).toContain("Generated");
+    expect(applied.lines).toContain("file .blueprint/dependencies_graph.json");
+    expect(dashboard.tasks).toHaveLength(3);
+    expect(dashboard.lint.errors).toEqual([]);
   });
 
   it("updates the active model pool through a TUI action", async () => {

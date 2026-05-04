@@ -104,7 +104,7 @@ Checkpoint:
   provider -> planner -> confirmacao.
 - [ ] Painel operacional moderno para configuracoes, status, metricas e
   artefatos.
-- [ ] Fluxo de inicio de tarefa em formato chat, semelhante a Codex/Claude
+- [x] Fluxo de inicio de tarefa em formato chat, semelhante a Codex/Claude
   Code/Hermes.
 - [x] Antes de gerar handoffs, mostrar task graph + modelo sugerido por task e
   pedir confirmacao.

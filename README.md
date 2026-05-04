@@ -181,11 +181,11 @@ guia a selecao de providers, modelos por provider e modelo planner antes de cria
 `Enter` mantem o diretorio atual e `c` permite escolher outro diretorio sem sair
 do app.
 
-Na aba `actions`, a TUI configura o model pool por IDs exatos, executa `lint`,
-`export`, `auth doctor` e um fluxo guiado de `revise`: digita a mudanca, revisa
-o dry-run e confirma antes de aplicar. Cada acao executada pela TUI fica
-auditada em
-`.blueprint/tui_sessions/*.json`.
+Na aba `actions`, a TUI inicia um fluxo de planejamento em estilo chat, mostra o
+preview `task -> modelo` antes de escrever handoffs, configura o model pool por
+IDs exatos, executa `lint`, `export`, `auth doctor` e um fluxo guiado de
+`revise`: digita a mudanca, revisa o dry-run e confirma antes de aplicar. Cada
+acao executada pela TUI fica auditada em `.blueprint/tui_sessions/*.json`.
 
 ## Leitura inicial
 
