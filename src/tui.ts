@@ -386,7 +386,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
 
 export async function runTuiDashboard(options: TuiDashboardOptions): Promise<void> {
   const dashboard = await loadTuiDashboard(options);
-  const view = options.initialView ?? "main";
+  const view = options.initialView ?? "actions";
 
   if (!process.stdout.isTTY) {
     console.log(renderTuiDashboardToString(dashboard, view));
@@ -403,7 +403,7 @@ export async function runTuiDashboard(options: TuiDashboardOptions): Promise<voi
   await instance.waitUntilExit();
 }
 
-export function renderTuiDashboardToString(dashboard: TuiDashboard, view: TuiView = "main"): string {
+export function renderTuiDashboardToString(dashboard: TuiDashboard, view: TuiView = "actions"): string {
   return renderToString(h(BlueprintDashboard, { dashboard, view }));
 }
 
@@ -1042,7 +1042,6 @@ export function InteractiveDashboard({
   const [dashboardState, setDashboardState] = useState<TuiDashboard>(dashboard);
   const [view, setView] = useState<TuiView>(initialView);
   const [selectedMainMenuIndex, setSelectedMainMenuIndex] = useState(() => mainMenuIndexForView(initialView));
-  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [actionResult, setActionResult] = useState<TuiActionResult | undefined>();
   const [runningAction, setRunningAction] = useState<TuiActionId | undefined>();
   const [pendingConfirmation, setPendingConfirmation] = useState<TuiActionId | undefined>();
@@ -1068,7 +1067,6 @@ export function InteractiveDashboard({
   const [setupModelProviderCursor, setSetupModelProviderCursor] = useState(0);
   const [setupModelCursor, setSetupModelCursor] = useState(0);
   const [setupPlannerCursor, setSetupPlannerCursor] = useState(0);
-  const actions = getTuiActions(dashboardState);
 
   useInput((input, key) => {
     if (isEditingRoot) {
@@ -1102,7 +1100,6 @@ export function InteractiveDashboard({
         setIsEditingRoot(false);
         setActionResult(undefined);
         setPendingConfirmation(undefined);
-        setSelectedActionIndex(0);
         void mkdir(nextRoot, { recursive: rootInputMode === "create" })
           .then(() => loadTuiDashboard({ root: nextRoot }))
           .then((nextDashboard) => {
@@ -1270,16 +1267,6 @@ export function InteractiveDashboard({
         return;
       }
 
-      if (key.downArrow) {
-        setSelectedActionIndex((index) => Math.min(index + 1, actions.length - 1));
-        return;
-      }
-
-      if (key.upArrow) {
-        setSelectedActionIndex((index) => Math.max(index - 1, 0));
-        return;
-      }
-
       if (key.backspace || key.delete) {
         setChatCommandInput((current) => current.slice(0, -1));
         return;
@@ -1322,7 +1309,6 @@ export function InteractiveDashboard({
     if (!dashboardState.setup.initialized) {
       if (key.return || input === "1") {
         setView("actions");
-        setSelectedActionIndex(0);
         beginSetupFlow();
         return;
       }
@@ -1401,7 +1387,18 @@ export function InteractiveDashboard({
     setChatCommandInput("");
 
     if (value.length === 0) {
-      triggerSelectedAction();
+      if (isLandingChatSurface({
+        dashboard: dashboardState,
+        actionResult,
+        pendingConfirmation,
+        isEditingRevise,
+        isEditingModelPool,
+        planChatStep,
+      })) {
+        beginPlanChat();
+        return;
+      }
+
       return;
     }
 
@@ -1481,40 +1478,8 @@ export function InteractiveDashboard({
     setActionResult(buildHelpSlashResult());
   }
 
-  function triggerSelectedAction(): void {
-    const action = actions[selectedActionIndex];
-
-    if (!action || !action.enabled || runningAction) {
-      return;
-    }
-
-    if (action.requiresConfirmation) {
-      setPendingConfirmation(action.id);
-      return;
-    }
-
-    if (action.requiresInput) {
-      if (action.id === "plan") {
-        beginPlanChat();
-        return;
-      }
-
-      if (action.id === "model-pool") {
-        setModelPoolInput(dashboardState.profile.profile?.available_models.join(",") || "all");
-        setIsEditingModelPool(true);
-        return;
-      }
-
-      setReviseInput(lastReviseChange ?? "");
-      setIsEditingRevise(true);
-      return;
-    }
-
-    void executeAction(action.id, {});
-  }
-
   function beginPlanChat(initialBrief?: string): void {
-    setPlanChatDraft(initialBrief ? { brief: initialBrief } : {});
+    const draft = initialBrief ? { brief: initialBrief } : {};
     setPlanChatInput("");
     setLastPlanAnswers(undefined);
     setLastPlanForce(false);
@@ -1522,7 +1487,8 @@ export function InteractiveDashboard({
     setLastPlanContinuation(undefined);
     setPendingConfirmation(undefined);
     setActionResult(undefined);
-    setPlanChatStep(initialBrief ? "projectSummary" : "brief");
+    setPlanChatDraft(draft);
+    setPlanChatStep(firstPlanChatStep(draft));
   }
 
   function submitPlanChatInput(): void {
@@ -1544,7 +1510,7 @@ export function InteractiveDashboard({
       return;
     }
 
-    const nextStep = nextPlanChatStep(planChatStep);
+    const nextStep = nextPlanChatStep(planChatStep, nextDraft);
     setPlanChatDraft(nextDraft);
     setPlanChatInput("");
     setActionResult(undefined);
@@ -1867,7 +1833,6 @@ export function InteractiveDashboard({
     dashboard: dashboardState,
     view,
     selectedMainMenuIndex,
-    selectedActionIndex,
     actionResult,
     runningAction,
     pendingConfirmation,
@@ -1893,9 +1858,8 @@ export function InteractiveDashboard({
 
 export function BlueprintDashboard({
   dashboard,
-  view = "main",
+  view = "actions",
   selectedMainMenuIndex = 0,
-  selectedActionIndex = 0,
   actionResult,
   runningAction,
   pendingConfirmation,
@@ -1920,7 +1884,6 @@ export function BlueprintDashboard({
   dashboard: TuiDashboard;
   view?: TuiView;
   selectedMainMenuIndex?: number;
-  selectedActionIndex?: number;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
   pendingConfirmation?: TuiActionId;
@@ -1944,31 +1907,50 @@ export function BlueprintDashboard({
 }): React.ReactElement {
   const lintStatus = dashboard.lint.errors.length === 0 ? "ok" : "error";
   const appStatus = dashboard.setup.initialized ? lintStatus : "warn";
+  const chatSurface = dashboard.setup.initialized && view === "actions";
 
   return h(
     Box,
     { flexDirection: "column", gap: 1 },
-    h(
-      Box,
-      {
-        borderStyle: "round",
-        borderColor: appStatus === "ok" ? "green" : appStatus === "warn" ? "yellow" : "red",
-        paddingX: 1,
-      },
-      h(
-        Box,
-        { flexDirection: "column" },
-        h(Text, { bold: true }, `${statusIcon(appStatus)} Blueprint Agent Harness`),
-        h(Text, null, dashboard.root),
-      ),
-    ),
-    ...(dashboard.setup.initialized && view !== "main" ? [h(SectionHeader, { key: "section", view })] : []),
+    ...(!chatSurface
+      ? [
+          h(
+            Box,
+            {
+              key: "header",
+              borderStyle: "round",
+              borderColor: appStatus === "ok" ? "green" : appStatus === "warn" ? "yellow" : "red",
+              paddingX: 1,
+            },
+            h(
+              Box,
+              { flexDirection: "column" },
+              h(Text, { bold: true }, `${statusIcon(appStatus)} Blueprint Agent Harness`),
+              h(Text, null, dashboard.root),
+            ),
+          ),
+        ]
+      : []),
+    ...(dashboard.setup.initialized && view !== "main" && view !== "actions" ? [h(SectionHeader, { key: "section", view })] : []),
+    ...(chatSurface
+      ? [
+          h(
+            Box,
+            { key: "chat-header", flexDirection: "column" },
+            h(
+              Text,
+              { bold: true },
+              "Blueprint",
+            ),
+            h(Text, { color: "gray" }, dashboard.root),
+          ),
+        ]
+      : []),
     h(ActiveView, {
       dashboard,
       view,
       lintStatus,
       selectedMainMenuIndex,
-      selectedActionIndex,
       actionResult,
       runningAction,
       pendingConfirmation,
@@ -2009,7 +1991,6 @@ function ActiveView({
   view,
   lintStatus,
   selectedMainMenuIndex,
-  selectedActionIndex,
   actionResult,
   runningAction,
   pendingConfirmation,
@@ -2035,7 +2016,6 @@ function ActiveView({
   view: TuiView;
   lintStatus: "ok" | "error";
   selectedMainMenuIndex: number;
-  selectedActionIndex: number;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
   pendingConfirmation?: TuiActionId;
@@ -2094,7 +2074,6 @@ function ActiveView({
   if (view === "actions") {
     return h(ActionsView, {
       dashboard,
-      selectedActionIndex,
       actionResult,
       runningAction,
       pendingConfirmation,
@@ -2777,7 +2756,6 @@ function ProvidersView({ dashboard }: { dashboard: TuiDashboard }): React.ReactE
 
 function ActionsView({
   dashboard,
-  selectedActionIndex,
   actionResult,
   runningAction,
   pendingConfirmation,
@@ -2791,7 +2769,6 @@ function ActionsView({
   modelPoolInput,
 }: {
   dashboard: TuiDashboard;
-  selectedActionIndex: number;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
   pendingConfirmation?: TuiActionId;
@@ -2804,7 +2781,14 @@ function ActionsView({
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
 }): React.ReactElement {
-  const actions = getTuiActions(dashboard);
+  const landing = isLandingChatSurface({
+    dashboard,
+    actionResult,
+    pendingConfirmation,
+    isEditingRevise,
+    isEditingModelPool,
+    planChatStep,
+  });
 
   return h(
     Box,
@@ -2817,15 +2801,28 @@ function ActionsView({
       isEditingModelPool,
       planChatStep,
     }),
-    h(PlanChatPanel, {
-      dashboard,
-      planChatStep,
-      planChatDraft,
-      planChatInput,
-      chatCommandInput,
-      actionResult,
-    }),
-    h(SlashCommandPanel, { chatCommandInput }),
+    landing
+      ? h(LandingChatPanel, { dashboard, chatCommandInput })
+      : h(PlanChatPanel, {
+          dashboard,
+          planChatStep,
+          planChatDraft,
+          planChatInput,
+          chatCommandInput,
+          actionResult,
+        }),
+    ...(landing
+      ? [h(LandingConfigPanel, { key: "landing-config" })]
+      : [
+          h(WorkbenchArtifactPanel, {
+            key: "artifact",
+            dashboard,
+            planChatStep,
+            planChatDraft,
+            actionResult,
+          }),
+        ]),
+    h(SlashCommandPanel, { chatCommandInput, landing }),
     h(FocusOverlay, {
       pendingConfirmation,
       isEditingRevise,
@@ -2835,20 +2832,46 @@ function ActionsView({
       planChatStep,
       planChatInput,
     }),
-    h(ActionHint, {
-      actions,
-      selectedActionIndex,
-      runningAction,
-      pendingConfirmation,
-      isEditingRevise,
-      reviseInput,
-      chatCommandInput,
-      planChatStep,
-      planChatInput,
-      isEditingModelPool,
-      modelPoolInput,
-    }),
     h(ActionResultPanel, { result: actionResult }),
+  );
+}
+
+function LandingChatPanel({
+  dashboard,
+  chatCommandInput,
+}: {
+  dashboard: TuiDashboard;
+  chatCommandInput: string;
+}): React.ReactElement {
+  const profile = dashboard.profile.profile;
+
+  return h(
+    Box,
+    { borderStyle: "round", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "What are we planning today?"),
+    h(Text, { color: "gray" }, "Describe the work in natural language. If context is thin, the planner will ask for gaps."),
+    h(Text, null, `Project: ${path.basename(dashboard.root) || dashboard.root}`),
+    h(
+      Text,
+      null,
+      `Planner: ${profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing profile"} | Model pool: ${
+        profile?.available_models.length || "default"
+      }`,
+    ),
+    h(Text, { color: "cyan" }, `> ${chatCommandInput}`),
+  );
+}
+
+function LandingConfigPanel(): React.ReactElement {
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "Configure Before Starting"),
+    h(Text, null, "/providers  provider status and active planner"),
+    h(Text, null, "/models     choose exact model pool"),
+    h(Text, null, "/registry   refresh model registry"),
+    h(Text, null, "/auth       local provider CLI check"),
+    h(Text, { color: "gray" }, "Type / for autocomplete. Tab completes the first match."),
   );
 }
 
@@ -2887,7 +2910,67 @@ function PlanChatPanel({
       `Planner: ${isCollectingPlan ? PLAN_STEP_PROMPTS[planChatStep] : dashboard.nextAction}`,
     ),
     h(Text, { color: "cyan" }, `You: ${isCollectingPlan ? planChatInput : chatCommandInput}`),
-    h(Text, { color: "gray" }, isCollectingPlan ? "Enter sends the answer. Esc cancels this chat." : "Enter sends. Empty Enter runs the selected quick action."),
+    h(Text, { color: "gray" }, isCollectingPlan ? "Enter sends the answer. Esc cancels this chat." : "Enter sends. Use / for commands and /menu for navigation."),
+  );
+}
+
+function WorkbenchArtifactPanel({
+  dashboard,
+  planChatStep = "idle",
+  planChatDraft,
+  actionResult,
+}: {
+  dashboard: TuiDashboard;
+  planChatStep?: PlanChatStep;
+  planChatDraft: PlanChatDraft;
+  actionResult?: TuiActionResult;
+}): React.ReactElement {
+  if (planChatStep !== "idle") {
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "magenta", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Planning Artifact"),
+      ...adaptivePlanChatSteps(planChatDraft).map((step) =>
+        h(Text, { key: step }, `${planStepComplete(planChatDraft, step) ? "[x]" : "[ ]"} ${PLAN_STEP_PROMPTS[step]}`),
+      ),
+    );
+  }
+
+  if (actionResult?.actionId === "plan" && actionResult.canApply) {
+    const taskLines = actionResult.lines.filter((line) => line.startsWith("task-")).slice(0, 6);
+
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "magenta", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Plan Preview Artifact"),
+      h(Text, null, actionResult.summary),
+      ...(taskLines.length > 0 ? taskLines.map((line) => h(Text, { key: line }, `[ ] ${truncateLine(line, 110)}`)) : [h(Text, { key: "pending" }, "[ ] waiting for preview tasks")]),
+      h(Text, { color: "gray" }, "Confirm to write .blueprint artifacts."),
+    );
+  }
+
+  if (dashboard.tasks.length > 0) {
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "magenta", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Blueprint Artifact"),
+      ...dashboard.tasks.slice(0, 8).map((task) =>
+        h(
+          Text,
+          { key: task.id },
+          `[x] ${task.id} | ${task.suggestedModel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"} | ${task.title}`,
+        ),
+      ),
+      ...(dashboard.tasks.length > 8 ? [h(Text, { key: "more", color: "gray" }, `+${dashboard.tasks.length - 8} more task(s)`)] : []),
+      h(Text, { color: "gray" }, dashboard.nextAction),
+    );
+  }
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "magenta", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "Blueprint Artifact"),
+    h(Text, null, "[ ] waiting for first planning request"),
   );
 }
 
@@ -2907,6 +2990,7 @@ function ChatStatusLine({
   planChatStep?: PlanChatStep;
 }): React.ReactElement {
   const profile = dashboard.profile.profile;
+  const projectLabel = truncateLine(path.basename(dashboard.root) || "project", 24);
   const status = chatRuntimeStatus({
     dashboard,
     runningAction,
@@ -2923,17 +3007,32 @@ function ChatStatusLine({
     h(
       Text,
       null,
-      `status ${status} | planner ${profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing"} | model_pool ${
+      `${status} | ${profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing planner"} | pool ${
         profile?.available_models.length || "default"
-      }`,
+      } | quota n/a | ${projectLabel}`,
     ),
   );
 }
 
-function SlashCommandPanel({ chatCommandInput }: { chatCommandInput: string }): React.ReactElement {
+function SlashCommandPanel({ chatCommandInput, landing = false }: { chatCommandInput: string; landing?: boolean }): React.ReactElement {
   const suggestions = getSlashCommandSuggestions(chatCommandInput);
-  const commandsToRender = suggestions.length > 0 ? suggestions : TUI_SLASH_COMMANDS;
   const isFiltering = chatCommandInput.trim().startsWith("/");
+
+  if (!isFiltering) {
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "gray", paddingX: 1 },
+      h(
+        Text,
+        { color: "gray" },
+        landing
+          ? "Type / to configure providers, models, auth, registry, or help."
+          : "Type / for commands, /menu for navigation, /help for the full command list.",
+      ),
+    );
+  }
+
+  const commandsToRender = suggestions.length > 0 ? suggestions : TUI_SLASH_COMMANDS;
 
   return h(
     Box,
@@ -2983,57 +3082,6 @@ function FocusOverlay({
     h(Text, { bold: true }, state.title),
     h(Text, null, state.body),
     h(Text, { color: "gray" }, state.hint),
-  );
-}
-
-function ActionHint({
-  actions,
-  selectedActionIndex,
-  runningAction,
-  pendingConfirmation,
-  isEditingRevise,
-  reviseInput,
-  chatCommandInput,
-  planChatStep = "idle",
-  planChatInput,
-  isEditingModelPool,
-  modelPoolInput,
-}: {
-  actions: TuiAction[];
-  selectedActionIndex: number;
-  runningAction?: TuiActionId;
-  pendingConfirmation?: TuiActionId;
-  isEditingRevise?: boolean;
-  reviseInput?: string;
-  chatCommandInput?: string;
-  planChatStep?: PlanChatStep;
-  planChatInput?: string;
-  isEditingModelPool?: boolean;
-  modelPoolInput?: string;
-}): React.ReactElement {
-  const selectedAction = actions[selectedActionIndex];
-  const message = isEditingRevise
-    ? `Change: ${reviseInput ?? ""}`
-    : planChatStep !== "idle"
-    ? `Planner chat: ${PLAN_STEP_PROMPTS[planChatStep]}: ${planChatInput ?? ""}`
-    : isEditingModelPool
-    ? `Models: ${modelPoolInput ?? ""}`
-    : runningAction
-    ? `Running ${runningAction}...`
-    : pendingConfirmation
-      ? `Confirm ${pendingConfirmation}? press y or n.`
-      : selectedAction
-        ? `Quick action ${selectedAction.label}: ${selectedAction.description} ${chatCommandInput ? "Enter sends input." : "Empty Enter runs it."}`
-        : "No action selected.";
-
-  return h(
-    Box,
-    {
-      borderStyle: "single",
-      borderColor: pendingConfirmation || isEditingRevise || isEditingModelPool || planChatStep !== "idle" ? "yellow" : "gray",
-      paddingX: 1,
-    },
-    h(Text, null, message),
   );
 }
 
@@ -3123,6 +3171,41 @@ function chatRuntimeStatus({
   }
 
   return "ready";
+}
+
+function isLandingChatSurface({
+  dashboard,
+  actionResult,
+  pendingConfirmation,
+  isEditingRevise,
+  isEditingModelPool,
+  planChatStep = "idle",
+}: {
+  dashboard: TuiDashboard;
+  actionResult?: TuiActionResult;
+  pendingConfirmation?: TuiActionId;
+  isEditingRevise?: boolean;
+  isEditingModelPool?: boolean;
+  planChatStep?: PlanChatStep;
+}): boolean {
+  return (
+    dashboard.tasks.length === 0
+    && !actionResult
+    && !pendingConfirmation
+    && !isEditingRevise
+    && !isEditingModelPool
+    && planChatStep === "idle"
+  );
+}
+
+function planStepComplete(draft: PlanChatDraft, step: Exclude<PlanChatStep, "idle">): boolean {
+  const value = draft[step];
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  return value !== undefined && value !== "";
 }
 
 function StatusPanel({
@@ -3374,15 +3457,70 @@ function updatePlanChatDraft(
   return { ...draft, [step]: items };
 }
 
-function nextPlanChatStep(step: Exclude<PlanChatStep, "idle">): Exclude<PlanChatStep, "idle"> | undefined {
-  const index = PLAN_CHAT_STEPS.indexOf(step);
-  return PLAN_CHAT_STEPS[index + 1];
+function firstPlanChatStep(draft: PlanChatDraft): Exclude<PlanChatStep, "idle"> {
+  return adaptivePlanChatSteps(draft)[0] ?? "brief";
+}
+
+function nextPlanChatStep(
+  step: Exclude<PlanChatStep, "idle">,
+  draft: PlanChatDraft,
+): Exclude<PlanChatStep, "idle"> | undefined {
+  const steps = adaptivePlanChatSteps(draft);
+  const index = steps.indexOf(step);
+
+  return steps[index + 1];
+}
+
+function adaptivePlanChatSteps(draft: PlanChatDraft): Exclude<PlanChatStep, "idle">[] {
+  if (!draft.brief) {
+    return [...PLAN_CHAT_STEPS];
+  }
+
+  if (!isRichPlanningBrief(draft.brief)) {
+    return PLAN_CHAT_STEPS.filter((step) => step !== "brief");
+  }
+
+  return [
+    "successCriteria",
+    "constraints",
+    "outOfScope",
+    "targetPaths",
+    "validationCommands",
+    "riskLevel",
+    "notes",
+  ];
+}
+
+function isRichPlanningBrief(brief: string): boolean {
+  const normalized = brief.toLowerCase();
+  const signals = [
+    "objetivo",
+    "escopo",
+    "critério",
+    "criterio",
+    "requisito",
+    "stack",
+    "valid",
+    "teste",
+    "arquivo",
+    "rota",
+    "model",
+    "provider",
+  ];
+
+  return brief.length >= 240 || signals.filter((signal) => normalized.includes(signal)).length >= 3;
+}
+
+function inferPlanText(draft: PlanChatDraft, fallback: string): string {
+  return truncateLine(draft.brief?.replace(/\s+/gu, " ").trim() || fallback, 160);
 }
 
 function buildPlanAnswersFromDraft(draft: PlanChatDraft): PlanAnswers {
+  const inferredSummary = inferPlanText(draft, "Planejar trabalho descrito no brief.");
+
   return {
-    projectSummary: draft.projectSummary ?? "",
-    objective: draft.objective ?? "",
+    projectSummary: draft.projectSummary ?? inferredSummary,
+    objective: draft.objective ?? inferredSummary,
     successCriteria: draft.successCriteria ?? [],
     constraints: draft.constraints ?? [],
     outOfScope: draft.outOfScope ?? [],
@@ -3839,7 +3977,7 @@ function KeyHints({
   } else if (view === "main") {
     hints = "\u2191\u2193 select  \u2502  Enter open  \u2502  1-5 open  \u2502  c dir  \u2502  q quit";
   } else if (view === "actions") {
-    hints = "type or /cmd  \u2502  Enter send  \u2502  \u2191\u2193 quick  \u2502  Esc menu";
+    hints = "type or /cmd  \u2502  Enter send  \u2502  Tab complete  \u2502  Esc menu";
   } else {
     hints = "m/Esc menu  \u2502  c dir  \u2502  q quit";
   }

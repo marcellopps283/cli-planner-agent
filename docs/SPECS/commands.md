@@ -8,14 +8,14 @@ Definir a superficie inicial da CLI.
 
 ### `blueprint`
 
-Abre a TUI diretamente. Esta e a frente principal do produto: onboarding,
-configuracoes, model pool, status, acoes operacionais e, no proximo passo,
+Abre a TUI diretamente no chat `Plan / Actions`. Esta e a frente principal do
+produto: onboarding, configuracoes, model pool, status, acoes operacionais e
 inicio de planejamento em formato chat.
 
 Opcoes:
 
 - `--root <path>` escolhe o projeto alvo.
-- `--view <view>` abre uma tela inicial especifica.
+- `--view <view>` abre uma tela inicial especifica; `--view main` abre o menu.
 - `--json` imprime o modelo do dashboard para automacao.
 
 ## MVP commands
@@ -197,17 +197,19 @@ Abre o dashboard Ink do blueprint atual.
 MVP atual:
 
 - le profile, inventario de contexto, lint, manifest, grafo, tasks e exports;
-- abre no `main menu` e esconde `overview`, `tasks`, `graph`, `providers` e
-  `actions` atras desse menu;
-- exige retorno ao `main menu` com `m` ou `Esc` para trocar de tela
-  operacional;
+- abre no chat `actions` e deixa `main menu`, `overview`, `tasks`, `graph` e
+  `providers` sob demanda;
+- o `main menu` e invocado por `/menu`, `--view main` ou `Esc` a partir do
+  chat;
 - mostra onboarding quando o diretorio atual ainda nao tem `.blueprint/`;
 - mostra o diretorio atual no onboarding; `Enter` mantem o diretorio e `c`
   permite escolher outro caminho dentro da TUI;
 - mostra status de profile, blueprint, contexto e tasks;
 - lista tasks, dependencias, provider pool, model pool e chat operacional;
-- a tela `actions` abre como `Planning Chat`, com status line, historico
-  recente e input permanente;
+- a tela `actions` e a superficie padrao: abre como landing "What are we
+  planning today?" e vira workbench depois da primeira mensagem;
+- o workbench exibe chat, status line, historico recente, input permanente e
+  artefato de planejamento com checklist/progresso;
 - aceita slash commands locais: `/plan`, `/providers`, `/models`, `/registry`,
   `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e `/menu`;
 - filtra slash commands quando o input comeca com `/` e completa a primeira
@@ -216,6 +218,8 @@ MVP atual:
   pool e revise;
 - texto livre no chat inicia planejamento; `/plan [brief]` faz o mesmo de forma
   explicita;
+- o intake e adaptativo: brief curto aprofunda perguntas; brief rico pula
+  campos derivaveis e pede apenas lacunas estruturais;
 - o planejamento usa o PlannerEngine LLM do profile, mantendo o modo
   deterministico apenas para fallback, automacao e testes;
 - quando o PlannerEngine LLM falha dentro da TUI, o resultado sugere o proximo
@@ -234,7 +238,7 @@ MVP atual:
   quota de provider;
 - calcula uma proxima acao operacional;
 - aceita `--view <view>` para diagnostico ou automacao, mas a jornada normal
-  abre em `main`;
+  abre em `actions`;
 - aceita `--json` para imprimir o modelo de dashboard sem renderizar Ink.
 
 ## Futuro 2.0

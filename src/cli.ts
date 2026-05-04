@@ -421,7 +421,7 @@ program
   .command("tui", { isDefault: true })
   .description("Open the Ink dashboard for the current blueprint.")
   .option("--root <path>", "target project root", ".")
-  .option("--view <view>", "initial view: main, overview, tasks, graph, providers, actions", parseTuiView, "main")
+  .option("--view <view>", "initial view: actions, main, overview, tasks, graph, providers", parseTuiView, "actions")
   .option("--json", "print the dashboard model as JSON instead of rendering Ink")
   .action(async (options: { root: string; view: TuiView; json?: boolean }) => {
     await runTuiCommand(options);

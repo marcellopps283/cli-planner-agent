@@ -149,8 +149,8 @@ deterministico.
 
 O registry bundled guarda benchmarks, precos, `task_fit` e esforcos de
 raciocinio suportados por modelo. A pesquisa operacional fica em
-`docs/SPECS/model_pool_research.md`; a direcao de TUI inspirada no Hermes Agent
-fica em `docs/SPECS/hermes_tui_reference.md`.
+`docs/SPECS/model_pool_research.md`; a direcao principal de TUI inspirada no
+OpenCode fica em `docs/SPECS/opencode_tui_reference.md`.
 
 O pacote de contexto enviado ao planner continua compacto: stack detectada,
 scripts de validacao, top-level dirs, docs canonicos, headings curtos e ate 80
@@ -190,13 +190,12 @@ blueprint tui --view main
 blueprint tui --json
 ```
 
-Por padrao, a TUI abre no `Main Menu`. As telas operacionais ficam atras desse
-menu: `Plan / Actions`, `Overview`, `Tasks`, `Dependency Graph` e
-`Providers / Models`. O overview continua disponivel e mostra o painel
-`Operations` com status operacional, planner, provider pool, model pool, tasks,
-modelos usados e sessoes TUI recentes.
-Dentro de uma tela operacional, `m` ou `Esc` volta ao `Main Menu`; a navegacao
-entre telas passa sempre por esse menu.
+Por padrao, a TUI abre direto no chat `Plan / Actions`, inspirado no fluxo do
+OpenCode: primeiro aparece uma tela inicial "What are we planning today?", e a
+primeira mensagem transforma a superficie em workbench com chat, status line e
+artefato de planejamento. O `Main Menu` fica sob demanda em `/menu` ou
+`--view main`, com acesso a `Overview`, `Tasks`, `Dependency Graph` e
+`Providers / Models`.
 
 Se a TUI for aberta em um diretorio sem `.blueprint/`, ela entra em modo de
 onboarding: mostra o diretorio atual, permite manter/trocar/criar pasta e depois
@@ -210,12 +209,16 @@ Na tela `Plan / Actions`, a TUI funciona como um chat operacional. O usuario
 digita uma descricao livre para iniciar planejamento ou usa slash commands como
 `/plan`, `/providers`, `/models`, `/registry`, `/lint`, `/export`, `/revise`,
 `/auth` e `/help`. A status line mostra `ready`, `planning`, `running`,
-`needs-confirmation` ou `blocked`, junto do planner e tamanho do model pool. O
-chat filtra slash commands enquanto o usuario digita `/`, completa o primeiro
-match com `Tab` e usa overlays para perguntas, confirmacoes, model pool e
-revise. O fluxo coleta os campos estruturados minimos e mostra o preview
+`needs-confirmation` ou `blocked`, junto do planner, tamanho do model pool e
+campo de quota. O chat filtra slash commands enquanto o usuario digita `/`,
+completa o primeiro match com `Tab` e usa overlays para perguntas,
+confirmacoes, model pool e revise. O workbench mostra um artefato com checklist
+de perguntas, preview de tarefas ou handoffs ja gerados. O intake e adaptativo:
+briefs curtos abrem perguntas de aprofundamento, enquanto textos ricos pulam
+campos derivaveis e pedem apenas lacunas estruturais. O fluxo mostra o preview
 `task -> modelo` antes de escrever handoffs. Cada acao executada pela TUI fica
-auditada em `.blueprint/tui_sessions/*.json`.
+auditada em
+`.blueprint/tui_sessions/*.json`.
 Se o planner LLM falhar nessa tela, a TUI sugere outro modelo ativo ou o preview
 deterministico e espera confirmacao antes de continuar.
 Quando o plano e gerado, o resultado destaca `.blueprint/`, `.blueprint/tasks`,

@@ -153,16 +153,20 @@ describe("blueprint tui", () => {
     const root = await makePlannedProject();
     const dashboard = await loadTuiDashboard({ root });
     const output = renderTuiDashboardToString(dashboard);
+    const mainOutput = renderTuiDashboardToString(dashboard, "main");
     const overviewOutput = renderTuiDashboardToString(dashboard, "overview");
 
-    expect(output).toContain("Blueprint Agent Harness");
-    expect(output).toContain("Operations");
-    expect(output).toContain("status handoffs ready");
-    expect(output).toContain("provider_pool openai,google");
-    expect(output).toContain("Main Menu");
-    expect(output).toContain("Plan / Actions");
-    expect(output).toContain("Overview");
-    expect(output).toContain("Providers / Models");
+    expect(output).toContain("Blueprint");
+    expect(output).toContain("ready |");
+    expect(output).toContain("Blueprint Artifact");
+    expect(output).toContain("[x] task-001-update-docs");
+    expect(mainOutput).toContain("Operations");
+    expect(mainOutput).toContain("status handoffs ready");
+    expect(mainOutput).toContain("provider_pool openai,google");
+    expect(mainOutput).toContain("Main Menu");
+    expect(mainOutput).toContain("Plan / Actions");
+    expect(mainOutput).toContain("Overview");
+    expect(mainOutput).toContain("Providers / Models");
     expect(overviewOutput).toContain("\u2705 Profile");
     expect(overviewOutput).toContain("Artifacts");
     expect(overviewOutput).toContain(".blueprint/tasks");
@@ -186,11 +190,30 @@ describe("blueprint tui", () => {
     expect(providersOutput).toContain("available openai,google");
     expect(providersOutput).toContain("Model Catalog");
     expect(actionsOutput).toContain("Planning Chat");
-    expect(actionsOutput).toContain("status ready");
-    expect(actionsOutput).toContain("Slash Commands");
-    expect(actionsOutput).toContain("/plan [brief]");
-    expect(actionsOutput).toContain("/models <ids|all>");
-    expect(actionsOutput).toContain("Empty Enter runs it");
+    expect(actionsOutput).toContain("ready |");
+    expect(actionsOutput).toContain("Blueprint Artifact");
+    expect(actionsOutput).toContain("Type / for commands");
+    expect(actionsOutput).toContain("Use / for commands and /menu for navigation");
+    expect(actionsOutput).not.toContain("Quick action");
+  });
+
+  it("renders an OpenCode-like landing screen before the first planning request", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-landing-test-"));
+    await writeFile(path.join(root, "README.md"), "# Landing\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+    const dashboard = await loadTuiDashboard({ root });
+    const output = renderTuiDashboardToString(dashboard);
+
+    expect(output).toContain("What are we planning today?");
+    expect(output).toContain("Configure Before Starting");
+    expect(output).toContain("/providers");
+    expect(output).toContain("/models");
+    expect(output).not.toContain("Main Menu");
+    expect(output).not.toContain("Quick action");
   });
 
   it("parses local TUI slash commands", () => {
@@ -217,6 +240,8 @@ describe("blueprint tui", () => {
   it("renders slash autocomplete and focused overlays", async () => {
     const root = await makePlannedProject();
     const dashboard = await loadTuiDashboard({ root });
+    const richBrief =
+      "Objetivo: refazer o layout da TUI. Escopo: chat fullscreen inspirado no OpenCode. Requisitos: status line, slash commands, artifact checklist, providers configuraveis, paths claros e validacao com testes. Stack TypeScript.";
     const autocompleteOutput = renderToString(
       createElement(BlueprintDashboard, {
         dashboard,
@@ -232,12 +257,23 @@ describe("blueprint tui", () => {
         modelPoolInput: "all",
       }),
     );
+    const adaptiveOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        planChatStep: "successCriteria",
+        planChatDraft: { brief: richBrief },
+      }),
+    );
 
     expect(autocompleteOutput).toContain("Slash Autocomplete");
     expect(autocompleteOutput).toContain("> /models <ids|all>");
     expect(autocompleteOutput).toContain("Tab completes the first match");
     expect(overlayOutput).toContain("Model Pool Overlay");
     expect(overlayOutput).toContain("Enter saves the model pool");
+    expect(adaptiveOutput).toContain("Planning Artifact");
+    expect(adaptiveOutput).toContain("[ ] Criterios de sucesso");
+    expect(adaptiveOutput).not.toContain("Resumo do projeto em uma frase");
   });
 
   it("builds executable TUI actions with quota confirmation metadata", async () => {

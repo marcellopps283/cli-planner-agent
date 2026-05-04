@@ -23,8 +23,9 @@ metricas aparecem como comandos ou overlays, sem competir com o prompt principal
 ## Decisoes para o Blueprint
 
 - O comando unico continua sendo `blueprint`.
-- `Main Menu` fica como camada de orientacao e configuracao, mas o destino
-  principal deve ser `Plan / Actions` em formato chat.
+- `Plan / Actions` e a primeira superficie, seguindo o fluxo do OpenCode:
+  abrir no chat, digitar uma mensagem e entao entrar em uma tela de trabalho.
+- `Main Menu` fica sob demanda, invocado por `/menu` ou `--view main`.
 - A fase de planejamento deve evoluir de wizard pergunta-a-pergunta para input
   livre com comandos slash.
 - Configuracoes e metricas devem abrir como overlays ou telas temporarias:
@@ -33,6 +34,8 @@ metricas aparecem como comandos ou overlays, sem competir com o prompt principal
   ou `blocked`, junto de planner/modelo atual.
 - Output de acoes deve streamar dentro do painel de conversa, preservando
   historico e o caminho dos artefatos gerados.
+- O workbench deve manter um artefato visivel para a IA: checklist de
+  requisitos, preview de tarefas e handoffs gerados.
 - Interrupcao deve ser natural: `Esc` volta ao menu/overlay anterior; `Ctrl+C`
   cancela a acao atual antes de sair do app.
 
