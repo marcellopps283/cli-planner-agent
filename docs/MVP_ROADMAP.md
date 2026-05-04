@@ -108,7 +108,7 @@ Checkpoint:
   Code/Hermes.
 - [x] Antes de gerar handoffs, mostrar task graph + modelo sugerido por task e
   pedir confirmacao.
-- [ ] Handoffs tecnicos completos e aviso claro de onde os arquivos foram
+- [x] Handoffs tecnicos completos e aviso claro de onde os arquivos foram
   criados.
 
 Checkpoint:

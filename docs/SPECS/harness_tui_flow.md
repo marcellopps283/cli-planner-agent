@@ -45,3 +45,5 @@ automacao, smoke e debugging.
   comando.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
   confirmacao antes de persistir handoffs no modo interativo.
+- Depois da geracao, a TUI destaca artifact root, tasks dir, graph e integration
+  guide antes de listar os arquivos completos.

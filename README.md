@@ -186,6 +186,9 @@ preview `task -> modelo` antes de escrever handoffs, configura o model pool por
 IDs exatos, executa `lint`, `export`, `auth doctor` e um fluxo guiado de
 `revise`: digita a mudanca, revisa o dry-run e confirma antes de aplicar. Cada
 acao executada pela TUI fica auditada em `.blueprint/tui_sessions/*.json`.
+Quando o plano e gerado, o resultado destaca `.blueprint/`, `.blueprint/tasks`,
+`dependencies_graph.json` e `integration_guide.md` antes da lista completa de
+arquivos.
 
 ## Leitura inicial
 

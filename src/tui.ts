@@ -575,6 +575,10 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
     lines: [
       `engine ${result.engine}`,
       `tasks ${result.taskIds.join(",")}`,
+      `artifact_root ${BLUEPRINT_DIR}`,
+      `tasks_dir ${BLUEPRINT_DIR}/tasks`,
+      `graph ${BLUEPRINT_DIR}/dependencies_graph.json`,
+      `integration ${BLUEPRINT_DIR}/integration_guide.md`,
       ...result.files.map((file) => `file ${file}`),
       ...lint.errors.map((error) => `error ${error}`),
       ...lint.warnings.map((warning) => `warning ${warning}`),
@@ -1992,6 +1996,29 @@ function OverviewView({
             : ["no generated task handoffs", "\u2192 blueprint plan"],
       }),
     ),
+    h(
+      Box,
+      { gap: 2 },
+      h(StatusPanel, {
+        title: "Artifacts",
+        status: dashboard.manifest && dashboard.tasks.length > 0 ? "ok" : "warn",
+        lines: [
+          `root ${BLUEPRINT_DIR}`,
+          `tasks ${BLUEPRINT_DIR}/tasks`,
+          `graph ${dashboard.graph ? `${BLUEPRINT_DIR}/dependencies_graph.json` : "missing"}`,
+          `guide ${dashboard.manifest ? `${BLUEPRINT_DIR}/integration_guide.md` : "missing"}`,
+        ],
+      }),
+      h(StatusPanel, {
+        title: "Sessions",
+        status: dashboard.tuiSessions.length > 0 ? "ok" : "warn",
+        lines: [
+          `records ${sessionStatus}`,
+          `latest ${dashboard.tuiSessions.at(-1) ?? "none"}`,
+          `exports ${exportStatus}`,
+        ],
+      }),
+    ),
     h(TaskList, { tasks: dashboard.tasks }),
     h(
       Box,
@@ -2273,12 +2300,16 @@ function ActionResultPanel({ result }: { result?: TuiActionResult }): React.Reac
     return null;
   }
 
+  const visibleLines = result.lines.slice(0, 8);
+  const hiddenCount = result.lines.length - visibleLines.length;
+
   return h(
     Box,
     { borderStyle: "single", borderColor: result.status === "ok" ? "green" : "red", paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, `${result.actionId} ${result.status}`),
     h(Text, null, result.summary),
-    ...result.lines.slice(0, 8).map((line) => h(Text, { key: line }, line)),
+    ...visibleLines.map((line) => h(Text, { key: line }, line)),
+    ...(hiddenCount > 0 ? [h(Text, { key: "more", color: "gray" }, `+${hiddenCount} more line(s)`)] : []),
     ...(result.sessionPath ? [h(Text, { key: "session" }, `session ${result.sessionPath}`)] : []),
   );
 }

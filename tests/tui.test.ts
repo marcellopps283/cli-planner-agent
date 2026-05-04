@@ -150,6 +150,8 @@ describe("blueprint tui", () => {
 
     expect(output).toContain("Blueprint Agent Harness");
     expect(output).toContain("\u2705 Profile");
+    expect(output).toContain("Artifacts");
+    expect(output).toContain(".blueprint/tasks");
     expect(output).toContain("overview");
     expect(output).toContain("Next");
   });
@@ -246,6 +248,9 @@ describe("blueprint tui", () => {
 
     expect(applied.status).toBe("ok");
     expect(applied.summary).toContain("Generated");
+    expect(applied.lines).toContain("artifact_root .blueprint");
+    expect(applied.lines).toContain("tasks_dir .blueprint/tasks");
+    expect(applied.lines).toContain("integration .blueprint/integration_guide.md");
     expect(applied.lines).toContain("file .blueprint/dependencies_graph.json");
     expect(dashboard.tasks).toHaveLength(3);
     expect(dashboard.lint.errors).toEqual([]);
