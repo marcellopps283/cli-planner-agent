@@ -239,8 +239,42 @@ export const TuiSessionRecordSchema = z.object({
 
 export type TuiSessionRecord = z.infer<typeof TuiSessionRecordSchema>;
 
-export const TUI_VIEWS = ["overview", "tasks", "graph", "providers", "actions"] as const;
+export const TUI_SECTION_VIEWS = ["overview", "tasks", "graph", "providers", "actions"] as const;
+export const TUI_VIEWS = ["main", ...TUI_SECTION_VIEWS] as const;
+const TUI_MAIN_MENU_ITEMS = [
+  {
+    view: "actions",
+    label: "Plan / Actions",
+    description: "Planner chat, revise, lint, export, and auth checks.",
+  },
+  {
+    view: "overview",
+    label: "Overview",
+    description: "Operational health, project context, artifacts, and next action.",
+  },
+  {
+    view: "tasks",
+    label: "Tasks",
+    description: "Generated worker handoffs and model assignments.",
+  },
+  {
+    view: "graph",
+    label: "Dependency Graph",
+    description: "Execution order, blockers, and task dependencies.",
+  },
+  {
+    view: "providers",
+    label: "Providers / Models",
+    description: "Planner provider, model pool, fallback policy, and registry.",
+  },
+] as const satisfies readonly {
+  view: (typeof TUI_SECTION_VIEWS)[number];
+  label: string;
+  description: string;
+}[];
 export type TuiView = (typeof TUI_VIEWS)[number];
+type TuiSectionView = (typeof TUI_SECTION_VIEWS)[number];
+type TuiMainMenuItem = (typeof TUI_MAIN_MENU_ITEMS)[number];
 
 const h = createElement;
 
@@ -284,7 +318,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
 
 export async function runTuiDashboard(options: TuiDashboardOptions): Promise<void> {
   const dashboard = await loadTuiDashboard(options);
-  const view = options.initialView ?? "overview";
+  const view = options.initialView ?? "main";
 
   if (!process.stdout.isTTY) {
     console.log(renderTuiDashboardToString(dashboard, view));
@@ -301,7 +335,7 @@ export async function runTuiDashboard(options: TuiDashboardOptions): Promise<voi
   await instance.waitUntilExit();
 }
 
-export function renderTuiDashboardToString(dashboard: TuiDashboard, view: TuiView = "overview"): string {
+export function renderTuiDashboardToString(dashboard: TuiDashboard, view: TuiView = "main"): string {
   return renderToString(h(BlueprintDashboard, { dashboard, view }));
 }
 
@@ -939,6 +973,7 @@ export function InteractiveDashboard({
   const { exit } = useApp();
   const [dashboardState, setDashboardState] = useState<TuiDashboard>(dashboard);
   const [view, setView] = useState<TuiView>(initialView);
+  const [selectedMainMenuIndex, setSelectedMainMenuIndex] = useState(() => mainMenuIndexForView(initialView));
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [actionResult, setActionResult] = useState<TuiActionResult | undefined>();
   const [runningAction, setRunningAction] = useState<TuiActionId | undefined>();
@@ -1004,7 +1039,8 @@ export function InteractiveDashboard({
           .then((nextDashboard) => {
             setDashboardState(nextDashboard);
             setRootInput(nextDashboard.root);
-            setView(nextDashboard.setup.initialized ? "overview" : "actions");
+            setView(nextDashboard.setup.initialized ? "main" : "actions");
+            setSelectedMainMenuIndex(0);
             setSetupStep(nextDashboard.setup.initialized ? "idle" : "providers");
             setPendingConfirmation(undefined);
           })
@@ -1113,7 +1149,48 @@ export function InteractiveDashboard({
       return;
     }
 
-    if (input === "q" || key.escape) {
+    if (pendingConfirmation && view === "actions") {
+      if (input.toLowerCase() === "y") {
+        void executeAction(pendingConfirmation, {
+          apply:
+            pendingConfirmation === "revise"
+              ? true
+              : pendingConfirmation === "plan"
+                ? lastPlanContinuation?.type === "apply"
+                : false,
+          change: pendingConfirmation === "revise" ? lastReviseChange : undefined,
+          planAnswers: pendingConfirmation === "plan" ? lastPlanAnswers : undefined,
+          planForce: pendingConfirmation === "plan" ? lastPlanForce : undefined,
+          planEngine:
+            pendingConfirmation === "plan"
+              ? lastPlanContinuation?.engine ?? lastPlanEngine
+              : undefined,
+          planAttemptedModels:
+            pendingConfirmation === "plan" ? lastPlanContinuation?.attemptedModels : undefined,
+          plannerProvider:
+            pendingConfirmation === "plan" ? lastPlanContinuation?.plannerProvider : undefined,
+          plannerModel: pendingConfirmation === "plan" ? lastPlanContinuation?.plannerModel : undefined,
+        });
+      }
+
+      if (input.toLowerCase() === "n" || key.escape) {
+        setPendingConfirmation(undefined);
+      }
+
+      return;
+    }
+
+    if (input === "q") {
+      exit();
+      return;
+    }
+
+    if (key.escape) {
+      if (dashboardState.setup.initialized && view !== "main") {
+        returnToMainMenu();
+        return;
+      }
+
       exit();
       return;
     }
@@ -1150,13 +1227,43 @@ export function InteractiveDashboard({
       return;
     }
 
+    if (dashboardState.setup.initialized && input.toLowerCase() === "m") {
+      returnToMainMenu();
+      return;
+    }
+
+    if (view === "main") {
+      if (key.downArrow) {
+        setSelectedMainMenuIndex((index) => Math.min(index + 1, TUI_MAIN_MENU_ITEMS.length - 1));
+        return;
+      }
+
+      if (key.upArrow) {
+        setSelectedMainMenuIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+
+      if (key.return) {
+        openMainMenuIndex(selectedMainMenuIndex);
+        return;
+      }
+
+      const numeric = Number(input);
+
+      if (Number.isInteger(numeric) && numeric >= 1 && numeric <= TUI_MAIN_MENU_ITEMS.length) {
+        openMainMenuIndex(numeric - 1);
+      }
+
+      return;
+    }
+
     if (key.rightArrow || input === "\t") {
-      setView(nextView(view));
+      openSectionView(nextView(view));
       return;
     }
 
     if (key.leftArrow) {
-      setView(previousView(view));
+      openSectionView(previousView(view));
       return;
     }
 
@@ -1167,37 +1274,6 @@ export function InteractiveDashboard({
 
     if (view === "actions" && key.upArrow) {
       setSelectedActionIndex((index) => Math.max(index - 1, 0));
-      return;
-    }
-
-    if (pendingConfirmation && view === "actions") {
-      if (input.toLowerCase() === "y") {
-        void executeAction(pendingConfirmation, {
-          apply:
-            pendingConfirmation === "revise"
-              ? true
-              : pendingConfirmation === "plan"
-                ? lastPlanContinuation?.type === "apply"
-                : false,
-          change: pendingConfirmation === "revise" ? lastReviseChange : undefined,
-          planAnswers: pendingConfirmation === "plan" ? lastPlanAnswers : undefined,
-          planForce: pendingConfirmation === "plan" ? lastPlanForce : undefined,
-          planEngine:
-            pendingConfirmation === "plan"
-              ? lastPlanContinuation?.engine ?? lastPlanEngine
-              : undefined,
-          planAttemptedModels:
-            pendingConfirmation === "plan" ? lastPlanContinuation?.attemptedModels : undefined,
-          plannerProvider:
-            pendingConfirmation === "plan" ? lastPlanContinuation?.plannerProvider : undefined,
-          plannerModel: pendingConfirmation === "plan" ? lastPlanContinuation?.plannerModel : undefined,
-        });
-      }
-
-      if (input.toLowerCase() === "n") {
-        setPendingConfirmation(undefined);
-      }
-
       return;
     }
 
@@ -1236,10 +1312,30 @@ export function InteractiveDashboard({
 
     const numeric = Number(input);
 
-    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= TUI_VIEWS.length) {
-      setView(TUI_VIEWS[numeric - 1]!);
+    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= TUI_MAIN_MENU_ITEMS.length) {
+      openMainMenuIndex(numeric - 1);
     }
   });
+
+  function openMainMenuIndex(index: number): void {
+    const item = TUI_MAIN_MENU_ITEMS[index];
+
+    if (!item) {
+      return;
+    }
+
+    openSectionView(item.view);
+  }
+
+  function openSectionView(nextView: TuiSectionView): void {
+    setSelectedMainMenuIndex(mainMenuIndexForView(nextView));
+    setView(nextView);
+  }
+
+  function returnToMainMenu(): void {
+    setSelectedMainMenuIndex(mainMenuIndexForView(view));
+    setView("main");
+  }
 
   function beginPlanChat(): void {
     setPlanChatDraft({});
@@ -1572,7 +1668,13 @@ export function InteractiveDashboard({
         setPendingConfirmation("plan");
       }
 
-      setDashboardState(await loadTuiDashboard({ root: dashboardState.root }));
+      const nextDashboard = await loadTuiDashboard({ root: dashboardState.root });
+      setDashboardState(nextDashboard);
+
+      if (actionId === "setup" && result.status === "ok" && nextDashboard.setup.initialized) {
+        setView("main");
+        setSelectedMainMenuIndex(0);
+      }
     } catch (error) {
       setActionResult({
         actionId,
@@ -1588,6 +1690,7 @@ export function InteractiveDashboard({
   return h(BlueprintDashboard, {
     dashboard: dashboardState,
     view,
+    selectedMainMenuIndex,
     selectedActionIndex,
     actionResult,
     runningAction,
@@ -1613,7 +1716,8 @@ export function InteractiveDashboard({
 
 export function BlueprintDashboard({
   dashboard,
-  view = "overview",
+  view = "main",
+  selectedMainMenuIndex = 0,
   selectedActionIndex = 0,
   actionResult,
   runningAction,
@@ -1637,6 +1741,7 @@ export function BlueprintDashboard({
 }: {
   dashboard: TuiDashboard;
   view?: TuiView;
+  selectedMainMenuIndex?: number;
   selectedActionIndex?: number;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
@@ -1678,11 +1783,12 @@ export function BlueprintDashboard({
         h(Text, null, dashboard.root),
       ),
     ),
-    ...(dashboard.setup.initialized ? [h(TabBar, { key: "tabs", activeView: view })] : []),
+    ...(dashboard.setup.initialized && view !== "main" ? [h(SectionHeader, { key: "section", view })] : []),
     h(ActiveView, {
       dashboard,
       view,
       lintStatus,
+      selectedMainMenuIndex,
       selectedActionIndex,
       actionResult,
       runningAction,
@@ -1722,6 +1828,7 @@ function ActiveView({
   dashboard,
   view,
   lintStatus,
+  selectedMainMenuIndex,
   selectedActionIndex,
   actionResult,
   runningAction,
@@ -1746,6 +1853,7 @@ function ActiveView({
   dashboard: TuiDashboard;
   view: TuiView;
   lintStatus: "ok" | "error";
+  selectedMainMenuIndex: number;
   selectedActionIndex: number;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
@@ -1785,6 +1893,10 @@ function ActiveView({
     });
   }
 
+  if (view === "main") {
+    return h(MainMenuView, { dashboard, lintStatus, selectedMainMenuIndex });
+  }
+
   if (view === "tasks") {
     return h(TaskView, { dashboard });
   }
@@ -1815,6 +1927,118 @@ function ActiveView({
   }
 
   return h(OverviewView, { dashboard, lintStatus });
+}
+
+function MainMenuView({
+  dashboard,
+  lintStatus,
+  selectedMainMenuIndex,
+}: {
+  dashboard: TuiDashboard;
+  lintStatus: "ok" | "error";
+  selectedMainMenuIndex: number;
+}): React.ReactElement {
+  const rows = buildMainMenuRows(dashboard, lintStatus);
+  const selectedRow = rows[Math.min(selectedMainMenuIndex, rows.length - 1)] ?? rows[0]!;
+
+  return h(
+    Box,
+    { flexDirection: "column", gap: 1 },
+    h(OperationalSummary, { dashboard, lintStatus }),
+    h(
+      Box,
+      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Main Menu"),
+      ...rows.map((row, index) =>
+        h(
+          Text,
+          {
+            key: row.item.view,
+            color: index === selectedMainMenuIndex ? "cyan" : undefined,
+            bold: index === selectedMainMenuIndex,
+          },
+          `${index === selectedMainMenuIndex ? ">" : " "} ${index + 1}. ${row.item.label} | ${row.status}`,
+        ),
+      ),
+    ),
+    h(
+      Box,
+      { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, selectedRow.item.label),
+      h(Text, null, selectedRow.item.description),
+      h(Text, { color: "gray" }, selectedRow.detail),
+    ),
+  );
+}
+
+function SectionHeader({ view }: { view: TuiView }): React.ReactElement {
+  const item = TUI_MAIN_MENU_ITEMS.find((menuItem) => menuItem.view === view);
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "gray", paddingX: 1 },
+    h(Text, { bold: true }, item?.label ?? view),
+    h(Text, { color: "gray" }, "  |  m main menu"),
+  );
+}
+
+function buildMainMenuRows(
+  dashboard: TuiDashboard,
+  lintStatus: "ok" | "error",
+): { item: TuiMainMenuItem; status: string; detail: string }[] {
+  return TUI_MAIN_MENU_ITEMS.map((item) => ({
+    item,
+    status: mainMenuStatus(item.view, dashboard, lintStatus),
+    detail: mainMenuDetail(item.view, dashboard),
+  }));
+}
+
+function mainMenuStatus(view: TuiSectionView, dashboard: TuiDashboard, lintStatus: "ok" | "error"): string {
+  const profile = dashboard.profile.profile;
+
+  if (view === "actions") {
+    return dashboard.tasks.length > 0 ? "handoffs ready" : "start here";
+  }
+
+  if (view === "overview") {
+    return lintStatus === "ok" ? "healthy" : "needs attention";
+  }
+
+  if (view === "tasks") {
+    return `${dashboard.tasks.length} task(s)`;
+  }
+
+  if (view === "graph") {
+    return dashboard.graph ? `${dashboard.graph.nodes.length} nodes / ${dashboard.graph.edges.length} edges` : "missing";
+  }
+
+  return profile
+    ? `${profile.available_providers.length} provider(s) / ${profile.available_models.length || "default"} model(s)`
+    : "profile missing";
+}
+
+function mainMenuDetail(view: TuiSectionView, dashboard: TuiDashboard): string {
+  const profile = dashboard.profile.profile;
+
+  if (view === "actions") {
+    return dashboard.nextAction;
+  }
+
+  if (view === "overview") {
+    return `root ${dashboard.root}`;
+  }
+
+  if (view === "tasks") {
+    return dashboard.tasks.length > 0
+      ? `latest ${dashboard.tasks.at(-1)?.id ?? "none"}`
+      : "no generated task handoffs";
+  }
+
+  if (view === "graph") {
+    return dashboard.graph ? `${BLUEPRINT_DIR}/dependencies_graph.json` : "dependencies_graph.json is missing";
+  }
+
+  return profile ? `planner ${profile.planner_provider}/${profile.planner_model}` : "run setup to create profile.yaml";
 }
 
 function SetupView({
@@ -2527,25 +2751,6 @@ function ActionResultPanel({ result }: { result?: TuiActionResult }): React.Reac
   );
 }
 
-function TabBar({ activeView }: { activeView: TuiView }): React.ReactElement {
-  return h(
-    Box,
-    { gap: 1 },
-    ...TUI_VIEWS.map((view) =>
-      h(
-        Box,
-        {
-          key: view,
-          borderStyle: "single",
-          borderColor: view === activeView ? "cyan" : "gray",
-          paddingX: 1,
-        },
-        h(Text, { bold: view === activeView }, view),
-      ),
-    ),
-  );
-}
-
 function StatusPanel({
   title,
   status,
@@ -2897,14 +3102,24 @@ function parseTuiModelPoolInput(input: string): string[] | undefined {
   return parseModelIds(input);
 }
 
-function nextView(view: TuiView): TuiView {
-  const index = TUI_VIEWS.indexOf(view);
-  return TUI_VIEWS[(index + 1) % TUI_VIEWS.length]!;
+function nextView(view: TuiView): TuiSectionView {
+  const index = TUI_SECTION_VIEWS.indexOf(view as TuiSectionView);
+  const normalizedIndex = index === -1 ? 0 : index;
+
+  return TUI_SECTION_VIEWS[(normalizedIndex + 1) % TUI_SECTION_VIEWS.length]!;
 }
 
-function previousView(view: TuiView): TuiView {
-  const index = TUI_VIEWS.indexOf(view);
-  return TUI_VIEWS[(index - 1 + TUI_VIEWS.length) % TUI_VIEWS.length]!;
+function previousView(view: TuiView): TuiSectionView {
+  const index = TUI_SECTION_VIEWS.indexOf(view as TuiSectionView);
+  const normalizedIndex = index === -1 ? 0 : index;
+
+  return TUI_SECTION_VIEWS[(normalizedIndex - 1 + TUI_SECTION_VIEWS.length) % TUI_SECTION_VIEWS.length]!;
+}
+
+function mainMenuIndexForView(view: TuiView): number {
+  const index = TUI_MAIN_MENU_ITEMS.findIndex((item) => item.view === view);
+
+  return index === -1 ? 0 : index;
 }
 
 async function writeTuiSessionRecord(options: RunTuiActionOptions, result: TuiActionResult): Promise<string> {
@@ -3169,10 +3384,12 @@ function KeyHints({
     hints = `Running ${runningAction}...`;
   } else if (!setupInitialized) {
     hints = "1/Enter \u2192 use current  \u2502  2 \u2192 new folder  \u2502  3/c \u2192 choose dir  \u2502  q quit";
+  } else if (view === "main") {
+    hints = "\u2191\u2193 select  \u2502  Enter open  \u2502  1-5 open  \u2502  c dir  \u2502  q quit";
   } else if (view === "actions") {
-    hints = "\u2190\u2192 tab  \u2502  \u2191\u2193 select  \u2502  Enter run  \u2502  c dir  \u2502  q quit";
+    hints = "\u2191\u2193 select  \u2502  Enter run  \u2502  m menu  \u2502  c dir  \u2502  q quit";
   } else {
-    hints = "\u2190\u2192 tab  \u2502  1-5 jump  \u2502  c dir  \u2502  q quit";
+    hints = "m menu  \u2502  \u2190\u2192 switch  \u2502  1-5 open  \u2502  c dir  \u2502  q quit";
   }
 
   return h(

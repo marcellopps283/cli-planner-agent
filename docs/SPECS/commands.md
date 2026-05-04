@@ -15,7 +15,7 @@ inicio de planejamento em formato chat.
 Opcoes:
 
 - `--root <path>` escolhe o projeto alvo.
-- `--view <view>` abre uma aba inicial especifica.
+- `--view <view>` abre uma tela inicial especifica.
 - `--json` imprime o modelo do dashboard para automacao.
 
 ## MVP commands
@@ -195,14 +195,15 @@ Abre o dashboard Ink do blueprint atual.
 MVP atual:
 
 - le profile, inventario de contexto, lint, manifest, grafo, tasks e exports;
-- navega por abas `overview`, `tasks`, `graph`, `providers` e `actions`;
+- abre no `main menu` e esconde `overview`, `tasks`, `graph`, `providers` e
+  `actions` atras desse menu;
 - mostra onboarding quando o diretorio atual ainda nao tem `.blueprint/`;
 - mostra o diretorio atual no onboarding; `Enter` mantem o diretorio e `c`
   permite escolher outro caminho dentro da TUI;
 - mostra status de profile, blueprint, contexto e tasks;
 - lista tasks, dependencias, provider pool, model pool e fila de acoes
   operacionais;
-- executa acoes locais da aba `actions`: `setup project`, `configure model
+- executa acoes locais da tela `actions`: `setup project`, `configure model
   pool`, `refresh registry`, `lint`, `export`, `revise preview` e `auth
   doctor`;
 - `Start Planning Chat` usa o PlannerEngine LLM do profile, mantendo o modo
@@ -222,7 +223,7 @@ MVP atual:
 - exige confirmacao na TUI antes de `auth doctor --live`, pois pode consumir
   quota de provider;
 - calcula uma proxima acao operacional;
-- aceita `--view <view>` para abrir uma aba inicial especifica;
+- aceita `--view <view>` para abrir `main` ou uma tela operacional especifica;
 - aceita `--json` para imprimir o modelo de dashboard sem renderizar Ink.
 
 ## Futuro 2.0

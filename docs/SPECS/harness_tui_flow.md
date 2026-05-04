@@ -40,11 +40,14 @@ automacao, smoke e debugging.
   confirmacao antes de escrever arquivos.
 - O onboarding mostra a deteccao local dos CLIs `codex`, `claude` e `gemini`,
   incluindo status de auth quando disponivel sem chamada de modelo.
-- O overview inclui um painel `Operations` com status operacional, planner,
-  providers, model pool, tasks, task models e sessoes.
+- A TUI abre no `Main Menu`, que centraliza acesso a `Plan / Actions`,
+  `Overview`, `Tasks`, `Dependency Graph` e `Providers / Models`.
+- O overview fica atras do menu principal e inclui um painel `Operations` com
+  status operacional, planner, providers, model pool, tasks, task models e
+  sessoes.
 - O backend de setup aceita selecao explicita de providers/modelos/planner para
   manter o fluxo testavel e auditavel.
-- A aba `actions` tem `Start Planning Chat`, um fluxo guiado que coleta escopo
+- A tela `actions` tem `Start Planning Chat`, um fluxo guiado que coleta escopo
   dentro da TUI e chama o PlannerEngine LLM do profile sem exigir que o usuario
   saia para outro comando.
 - O chat comeca por um brief livre e depois pede os campos estruturados minimos

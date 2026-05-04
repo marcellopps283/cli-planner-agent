@@ -148,16 +148,20 @@ describe("blueprint tui", () => {
     const root = await makePlannedProject();
     const dashboard = await loadTuiDashboard({ root });
     const output = renderTuiDashboardToString(dashboard);
+    const overviewOutput = renderTuiDashboardToString(dashboard, "overview");
 
     expect(output).toContain("Blueprint Agent Harness");
     expect(output).toContain("Operations");
     expect(output).toContain("status handoffs ready");
     expect(output).toContain("provider_pool openai,google");
-    expect(output).toContain("\u2705 Profile");
-    expect(output).toContain("Artifacts");
-    expect(output).toContain(".blueprint/tasks");
-    expect(output).toContain("overview");
-    expect(output).toContain("Next");
+    expect(output).toContain("Main Menu");
+    expect(output).toContain("Plan / Actions");
+    expect(output).toContain("Overview");
+    expect(output).toContain("Providers / Models");
+    expect(overviewOutput).toContain("\u2705 Profile");
+    expect(overviewOutput).toContain("Artifacts");
+    expect(overviewOutput).toContain(".blueprint/tasks");
+    expect(overviewOutput).toContain("Next");
   });
 
   it("renders task, graph, providers, and actions views", async () => {
@@ -454,6 +458,7 @@ describe("blueprint tui", () => {
   });
 
   it("parses known TUI views and rejects unknown ones", () => {
+    expect(parseTuiView("main")).toBe("main");
     expect(parseTuiView("graph")).toBe("graph");
     expect(() => parseTuiView("unknown")).toThrow("Unknown TUI view");
   });

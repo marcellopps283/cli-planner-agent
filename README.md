@@ -181,13 +181,17 @@ Dashboard TUI:
 
 ```bash
 blueprint tui
+blueprint tui --view main
 blueprint tui --view tasks
 blueprint tui --view actions
 blueprint tui --json
 ```
 
-O overview abre com um painel `Operations` para status operacional, planner,
-provider pool, model pool, tasks, modelos usados e sessoes TUI recentes.
+Por padrao, a TUI abre no `Main Menu`. As telas operacionais ficam atras desse
+menu: `Plan / Actions`, `Overview`, `Tasks`, `Dependency Graph` e
+`Providers / Models`. O overview continua disponivel e mostra o painel
+`Operations` com status operacional, planner, provider pool, model pool, tasks,
+modelos usados e sessoes TUI recentes.
 
 Se a TUI for aberta em um diretorio sem `.blueprint/`, ela entra em modo de
 onboarding: mostra o diretorio atual, permite manter/trocar/criar pasta e depois
@@ -197,10 +201,10 @@ guia a selecao de providers, modelos por provider e modelo planner antes de cria
 do app. O onboarding tambem mostra quais CLIs de provider foram detectados e o
 status local de auth quando o CLI expoe essa informacao sem chamada de modelo.
 
-Na aba `actions`, a TUI inicia um fluxo de planejamento em estilo chat usando o
+Na tela `Plan / Actions`, a TUI inicia um fluxo de planejamento em estilo chat usando o
 PlannerEngine LLM do profile. O chat comeca por um brief livre, coleta os campos
 estruturados minimos e mostra o preview `task -> modelo` antes de escrever
-handoffs. A mesma aba configura o model pool por IDs exatos, executa `lint`,
+handoffs. A mesma tela configura o model pool por IDs exatos, executa `lint`,
 `export`, `auth doctor` e um fluxo guiado de
 `revise`: digita a mudanca, revisa o dry-run e confirma antes de aplicar. Cada
 acao executada pela TUI fica auditada em `.blueprint/tui_sessions/*.json`.
