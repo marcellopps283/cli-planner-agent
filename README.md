@@ -206,13 +206,14 @@ guia a selecao de providers, modelos por provider e modelo planner antes de cria
 do app. O onboarding tambem mostra quais CLIs de provider foram detectados e o
 status local de auth quando o CLI expoe essa informacao sem chamada de modelo.
 
-Na tela `Plan / Actions`, a TUI inicia um fluxo de planejamento em estilo chat usando o
-PlannerEngine LLM do profile. O chat comeca por um brief livre, coleta os campos
-estruturados minimos e mostra o preview `task -> modelo` antes de escrever
-handoffs. A mesma tela configura o model pool por IDs exatos, executa `lint`,
-`export`, `auth doctor` e um fluxo guiado de
-`revise`: digita a mudanca, revisa o dry-run e confirma antes de aplicar. Cada
-acao executada pela TUI fica auditada em `.blueprint/tui_sessions/*.json`.
+Na tela `Plan / Actions`, a TUI funciona como um chat operacional. O usuario
+digita uma descricao livre para iniciar planejamento ou usa slash commands como
+`/plan`, `/providers`, `/models`, `/registry`, `/lint`, `/export`, `/revise`,
+`/auth` e `/help`. A status line mostra `ready`, `planning`, `running`,
+`needs-confirmation` ou `blocked`, junto do planner e tamanho do model pool. O
+chat comeca por um brief livre, coleta os campos estruturados minimos e mostra o
+preview `task -> modelo` antes de escrever handoffs. Cada acao executada pela
+TUI fica auditada em `.blueprint/tui_sessions/*.json`.
 Se o planner LLM falhar nessa tela, a TUI sugere outro modelo ativo ou o preview
 deterministico e espera confirmacao antes de continuar.
 Quando o plano e gerado, o resultado destaca `.blueprint/`, `.blueprint/tasks`,

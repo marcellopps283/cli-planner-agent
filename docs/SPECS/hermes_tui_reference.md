@@ -38,9 +38,10 @@ metricas aparecem como comandos ou overlays, sem competir com o prompt principal
 
 ## Ordem sugerida
 
-1. Consolidar `Plan / Actions` como chat principal.
-2. Adicionar status line global com planner/modelo/estado.
-3. Adicionar comandos slash locais com autocomplete textual simples.
+1. Consolidar `Plan / Actions` como chat principal. Feito no MVP atual.
+2. Adicionar status line global com planner/modelo/estado. Feito no MVP atual.
+3. Adicionar comandos slash locais com autocomplete textual simples. Base feita
+   no MVP atual; autocomplete visual ainda fica para a proxima fatia.
 4. Trocar formularios longos por overlays modais.
 5. Persistir sessoes TUI como historico reabrivel, usando os registros atuais em
    `.blueprint/tui_sessions/` como ponto de partida.

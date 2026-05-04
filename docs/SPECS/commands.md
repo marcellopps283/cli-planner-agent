@@ -205,16 +205,18 @@ MVP atual:
 - mostra o diretorio atual no onboarding; `Enter` mantem o diretorio e `c`
   permite escolher outro caminho dentro da TUI;
 - mostra status de profile, blueprint, contexto e tasks;
-- lista tasks, dependencias, provider pool, model pool e fila de acoes
-  operacionais;
-- executa acoes locais da tela `actions`: `setup project`, `configure model
-  pool`, `refresh registry`, `lint`, `export`, `revise preview` e `auth
-  doctor`;
-- `Start Planning Chat` usa o PlannerEngine LLM do profile, mantendo o modo
+- lista tasks, dependencias, provider pool, model pool e chat operacional;
+- a tela `actions` abre como `Planning Chat`, com status line, historico
+  recente e input permanente;
+- aceita slash commands locais: `/plan`, `/providers`, `/models`, `/registry`,
+  `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e `/menu`;
+- texto livre no chat inicia planejamento; `/plan [brief]` faz o mesmo de forma
+  explicita;
+- o planejamento usa o PlannerEngine LLM do profile, mantendo o modo
   deterministico apenas para fallback, automacao e testes;
 - quando o PlannerEngine LLM falha dentro da TUI, o resultado sugere o proximo
   modelo ativo ou o fallback deterministico e pede confirmacao antes de tentar;
-- `configure model pool` aceita IDs exatos separados por virgula ou `all` para
+- `/models` aceita IDs exatos separados por virgula ou `all` para
   voltar aos defaults dos providers ativos, e regrava `available_models` em
   `profile.yaml`;
 - `refresh registry` pede confirmacao e roda `blueprint registry refresh`;

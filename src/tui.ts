@@ -101,6 +101,8 @@ export const TUI_ACTION_IDS = [
   "auth-doctor-live",
 ] as const;
 export type TuiActionId = (typeof TUI_ACTION_IDS)[number];
+type TuiLocalResultId = "help" | "providers";
+type TuiActionResultId = TuiActionId | TuiLocalResultId;
 
 type SetupStep = "idle" | "providers" | "models" | "planner" | "confirm";
 
@@ -134,6 +136,71 @@ interface PlanChatDraft {
   validationCommands?: string[];
   riskLevel?: number;
   notes?: string[];
+}
+
+export const TUI_SLASH_COMMANDS = [
+  {
+    command: "/plan",
+    usage: "/plan [brief]",
+    description: "start planning chat from free text",
+  },
+  {
+    command: "/providers",
+    usage: "/providers",
+    description: "show active providers, planner, and model pool",
+  },
+  {
+    command: "/models",
+    usage: "/models <ids|all>",
+    description: "update or reset the active model pool",
+  },
+  {
+    command: "/registry",
+    usage: "/registry",
+    description: "confirm and refresh the project model registry",
+  },
+  {
+    command: "/lint",
+    usage: "/lint",
+    description: "validate generated blueprint artifacts",
+  },
+  {
+    command: "/export",
+    usage: "/export",
+    description: "export generated handoffs",
+  },
+  {
+    command: "/revise",
+    usage: "/revise <change>",
+    description: "preview a targeted artifact revision",
+  },
+  {
+    command: "/auth",
+    usage: "/auth",
+    description: "check local provider CLIs without model calls",
+  },
+  {
+    command: "/auth-live",
+    usage: "/auth-live",
+    description: "confirm and run provider smoke checks",
+  },
+  {
+    command: "/help",
+    usage: "/help",
+    description: "show local slash commands",
+  },
+  {
+    command: "/menu",
+    usage: "/menu",
+    description: "return to the main menu",
+  },
+] as const;
+
+type TuiSlashCommand = (typeof TUI_SLASH_COMMANDS)[number]["command"];
+
+export interface ParsedTuiSlashCommand {
+  command: TuiSlashCommand;
+  argument: string;
 }
 
 const SETUP_PROVIDER_OPTIONS = ["openai", "anthropic", "google"] as const satisfies readonly ProviderId[];
@@ -180,7 +247,7 @@ export interface TuiAction {
 }
 
 export interface TuiActionResult {
-  actionId: TuiActionId;
+  actionId: TuiActionResultId;
   status: "ok" | "failed";
   summary: string;
   lines: string[];
@@ -982,6 +1049,7 @@ export function InteractiveDashboard({
   const [isEditingRevise, setIsEditingRevise] = useState(false);
   const [reviseInput, setReviseInput] = useState("");
   const [lastReviseChange, setLastReviseChange] = useState<string | undefined>();
+  const [chatCommandInput, setChatCommandInput] = useState("");
   const [planChatStep, setPlanChatStep] = useState<PlanChatStep>("idle");
   const [planChatDraft, setPlanChatDraft] = useState<PlanChatDraft>({});
   const [planChatInput, setPlanChatInput] = useState("");
@@ -1181,6 +1249,44 @@ export function InteractiveDashboard({
       return;
     }
 
+    if (dashboardState.setup.initialized && view === "actions") {
+      if (key.escape) {
+        if (chatCommandInput.length > 0) {
+          setChatCommandInput("");
+          return;
+        }
+
+        returnToMainMenu();
+        return;
+      }
+
+      if (key.downArrow) {
+        setSelectedActionIndex((index) => Math.min(index + 1, actions.length - 1));
+        return;
+      }
+
+      if (key.upArrow) {
+        setSelectedActionIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+
+      if (key.backspace || key.delete) {
+        setChatCommandInput((current) => current.slice(0, -1));
+        return;
+      }
+
+      if (key.return) {
+        submitActionChatInput();
+        return;
+      }
+
+      if (input.length > 0 && !key.ctrl && !key.meta) {
+        setChatCommandInput((current) => `${current}${input}`);
+      }
+
+      return;
+    }
+
     if (input === "q") {
       exit();
       return;
@@ -1258,49 +1364,6 @@ export function InteractiveDashboard({
       return;
     }
 
-    if (view === "actions" && key.downArrow) {
-      setSelectedActionIndex((index) => Math.min(index + 1, actions.length - 1));
-      return;
-    }
-
-    if (view === "actions" && key.upArrow) {
-      setSelectedActionIndex((index) => Math.max(index - 1, 0));
-      return;
-    }
-
-    if (view === "actions" && key.return) {
-      const action = actions[selectedActionIndex];
-
-      if (!action || !action.enabled || runningAction) {
-        return;
-      }
-
-      if (action.requiresConfirmation) {
-        setPendingConfirmation(action.id);
-        return;
-      }
-
-      if (action.requiresInput) {
-        if (action.id === "plan") {
-          beginPlanChat();
-          return;
-        }
-
-        if (action.id === "model-pool") {
-          setModelPoolInput(dashboardState.profile.profile?.available_models.join(",") || "all");
-          setIsEditingModelPool(true);
-          return;
-        }
-
-        setReviseInput(lastReviseChange ?? "");
-        setIsEditingRevise(true);
-        return;
-      }
-
-      void executeAction(action.id, {});
-      return;
-    }
-
   });
 
   function openMainMenuIndex(index: number): void {
@@ -1323,8 +1386,125 @@ export function InteractiveDashboard({
     setView("main");
   }
 
-  function beginPlanChat(): void {
-    setPlanChatDraft({});
+  function submitActionChatInput(): void {
+    const value = chatCommandInput.trim();
+    setChatCommandInput("");
+
+    if (value.length === 0) {
+      triggerSelectedAction();
+      return;
+    }
+
+    const slash = parseTuiSlashCommandInput(value);
+
+    if (!slash) {
+      beginPlanChat(value);
+      return;
+    }
+
+    handleSlashCommand(slash);
+  }
+
+  function handleSlashCommand(command: ParsedTuiSlashCommand): void {
+    if (command.command === "/plan") {
+      beginPlanChat(command.argument || undefined);
+      return;
+    }
+
+    if (command.command === "/providers") {
+      setActionResult(buildProvidersSlashResult(dashboardState));
+      return;
+    }
+
+    if (command.command === "/models") {
+      if (command.argument.length > 0) {
+        void executeAction("model-pool", { modelPool: command.argument });
+        return;
+      }
+
+      setModelPoolInput(dashboardState.profile.profile?.available_models.join(",") || "all");
+      setIsEditingModelPool(true);
+      return;
+    }
+
+    if (command.command === "/registry") {
+      setPendingConfirmation("registry-refresh");
+      return;
+    }
+
+    if (command.command === "/lint") {
+      void executeAction("lint", {});
+      return;
+    }
+
+    if (command.command === "/export") {
+      void executeAction("export", {});
+      return;
+    }
+
+    if (command.command === "/revise") {
+      if (command.argument.length > 0) {
+        void executeAction("revise", { change: command.argument, apply: false });
+        return;
+      }
+
+      setReviseInput(lastReviseChange ?? "");
+      setIsEditingRevise(true);
+      return;
+    }
+
+    if (command.command === "/auth") {
+      void executeAction("auth-doctor", {});
+      return;
+    }
+
+    if (command.command === "/auth-live") {
+      setPendingConfirmation("auth-doctor-live");
+      return;
+    }
+
+    if (command.command === "/menu") {
+      returnToMainMenu();
+      return;
+    }
+
+    setActionResult(buildHelpSlashResult());
+  }
+
+  function triggerSelectedAction(): void {
+    const action = actions[selectedActionIndex];
+
+    if (!action || !action.enabled || runningAction) {
+      return;
+    }
+
+    if (action.requiresConfirmation) {
+      setPendingConfirmation(action.id);
+      return;
+    }
+
+    if (action.requiresInput) {
+      if (action.id === "plan") {
+        beginPlanChat();
+        return;
+      }
+
+      if (action.id === "model-pool") {
+        setModelPoolInput(dashboardState.profile.profile?.available_models.join(",") || "all");
+        setIsEditingModelPool(true);
+        return;
+      }
+
+      setReviseInput(lastReviseChange ?? "");
+      setIsEditingRevise(true);
+      return;
+    }
+
+    void executeAction(action.id, {});
+  }
+
+  function beginPlanChat(initialBrief?: string): void {
+    setPlanChatDraft(initialBrief ? { brief: initialBrief } : {});
     setPlanChatInput("");
     setLastPlanAnswers(undefined);
     setLastPlanForce(false);
@@ -1332,7 +1512,7 @@ export function InteractiveDashboard({
     setLastPlanContinuation(undefined);
     setPendingConfirmation(undefined);
     setActionResult(undefined);
-    setPlanChatStep("brief");
+    setPlanChatStep(initialBrief ? "projectSummary" : "brief");
   }
 
   function submitPlanChatInput(): void {
@@ -1683,6 +1863,7 @@ export function InteractiveDashboard({
     pendingConfirmation,
     isEditingRevise,
     reviseInput,
+    chatCommandInput,
     planChatStep,
     planChatDraft,
     planChatInput,
@@ -1710,6 +1891,7 @@ export function BlueprintDashboard({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  chatCommandInput = "",
   planChatStep = "idle",
   planChatDraft = {},
   planChatInput = "",
@@ -1734,6 +1916,7 @@ export function BlueprintDashboard({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  chatCommandInput?: string;
   planChatStep?: PlanChatStep;
   planChatDraft?: PlanChatDraft;
   planChatInput?: string;
@@ -1781,6 +1964,7 @@ export function BlueprintDashboard({
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
+      chatCommandInput,
       planChatStep,
       planChatDraft,
       planChatInput,
@@ -1821,6 +2005,7 @@ function ActiveView({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  chatCommandInput,
   planChatStep,
   planChatDraft,
   planChatInput,
@@ -1846,6 +2031,7 @@ function ActiveView({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  chatCommandInput?: string;
   planChatStep?: PlanChatStep;
   planChatDraft?: PlanChatDraft;
   planChatInput?: string;
@@ -1904,6 +2090,7 @@ function ActiveView({
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
+      chatCommandInput,
       planChatStep,
       planChatDraft,
       planChatInput,
@@ -1959,12 +2146,13 @@ function MainMenuView({
 
 function SectionHeader({ view }: { view: TuiView }): React.ReactElement {
   const item = TUI_MAIN_MENU_ITEMS.find((menuItem) => menuItem.view === view);
+  const shortcut = view === "actions" ? "  |  Esc main menu" : "  |  m main menu";
 
   return h(
     Box,
     { borderStyle: "single", borderColor: "gray", paddingX: 1 },
     h(Text, { bold: true }, item?.label ?? view),
-    h(Text, { color: "gray" }, "  |  m main menu"),
+    h(Text, { color: "gray" }, shortcut),
   );
 }
 
@@ -2585,6 +2773,7 @@ function ActionsView({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  chatCommandInput = "",
   planChatStep = "idle",
   planChatDraft = {},
   planChatInput = "",
@@ -2598,6 +2787,7 @@ function ActionsView({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  chatCommandInput?: string;
   planChatStep?: PlanChatStep;
   planChatDraft?: PlanChatDraft;
   planChatInput?: string;
@@ -2609,30 +2799,23 @@ function ActionsView({
   return h(
     Box,
     { flexDirection: "column", gap: 1 },
-    h(
-      Box,
-      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "Action Queue"),
-      ...actions.map((action, index) =>
-        h(
-          Text,
-          {
-            key: action.id,
-            color: !action.enabled ? "gray" : index === selectedActionIndex ? "cyan" : undefined,
-            bold: index === selectedActionIndex,
-          },
-          `${index === selectedActionIndex ? ">" : " "} ${action.label} | ${action.command}${
-            action.requiresConfirmation ? " | confirmation" : ""
-          }${action.enabled ? "" : " | disabled"}`,
-        ),
-      ),
-    ),
-    h(
-      Box,
-      { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "Current Recommendation"),
-      h(Text, null, dashboard.nextAction),
-    ),
+    h(ChatStatusLine, {
+      dashboard,
+      runningAction,
+      pendingConfirmation,
+      isEditingRevise,
+      isEditingModelPool,
+      planChatStep,
+    }),
+    h(PlanChatPanel, {
+      dashboard,
+      planChatStep,
+      planChatDraft,
+      planChatInput,
+      chatCommandInput,
+      actionResult,
+    }),
+    h(SlashCommandPanel, null),
     h(ActionHint, {
       actions,
       selectedActionIndex,
@@ -2640,37 +2823,102 @@ function ActionsView({
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
+      chatCommandInput,
       planChatStep,
       planChatInput,
       isEditingModelPool,
       modelPoolInput,
     }),
-    ...(planChatStep !== "idle"
-      ? [h(PlanChatPanel, { key: "plan-chat", planChatStep, planChatDraft, planChatInput })]
-      : []),
     h(ActionResultPanel, { result: actionResult }),
   );
 }
 
 function PlanChatPanel({
+  dashboard,
   planChatStep,
   planChatDraft,
   planChatInput,
+  chatCommandInput,
+  actionResult,
 }: {
-  planChatStep: Exclude<PlanChatStep, "idle">;
+  dashboard: TuiDashboard;
+  planChatStep: PlanChatStep;
   planChatDraft: PlanChatDraft;
   planChatInput: string;
+  chatCommandInput: string;
+  actionResult?: TuiActionResult;
 }): React.ReactElement {
   const completed = summarizePlanDraft(planChatDraft);
+  const isCollectingPlan = planChatStep !== "idle";
+  const recentSessions = dashboard.tuiSessions.slice(-3);
 
   return h(
     Box,
     { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Planning Chat"),
+    h(Text, { color: "gray" }, "Type a request to start planning, or use a slash command."),
+    ...(recentSessions.length > 0
+      ? recentSessions.map((session) => h(Text, { key: session, color: "gray" }, `history ${session}`))
+      : [h(Text, { key: "history-empty", color: "gray" }, "history empty")]),
+    ...(actionResult ? [h(Text, { key: "last-result", color: actionResult.status === "ok" ? "green" : "red" }, `last ${actionResult.actionId}: ${actionResult.summary}`)] : []),
     ...completed.map((line) => h(Text, { key: line, color: "gray" }, line)),
-    h(Text, null, `Planner: ${PLAN_STEP_PROMPTS[planChatStep]}`),
-    h(Text, { color: "cyan" }, `You: ${planChatInput}`),
-    h(Text, { color: "gray" }, "Enter sends the answer. Esc cancels this chat."),
+    h(
+      Text,
+      null,
+      `Planner: ${isCollectingPlan ? PLAN_STEP_PROMPTS[planChatStep] : dashboard.nextAction}`,
+    ),
+    h(Text, { color: "cyan" }, `You: ${isCollectingPlan ? planChatInput : chatCommandInput}`),
+    h(Text, { color: "gray" }, isCollectingPlan ? "Enter sends the answer. Esc cancels this chat." : "Enter sends. Empty Enter runs the selected quick action."),
+  );
+}
+
+function ChatStatusLine({
+  dashboard,
+  runningAction,
+  pendingConfirmation,
+  isEditingRevise,
+  isEditingModelPool,
+  planChatStep = "idle",
+}: {
+  dashboard: TuiDashboard;
+  runningAction?: TuiActionId;
+  pendingConfirmation?: TuiActionId;
+  isEditingRevise?: boolean;
+  isEditingModelPool?: boolean;
+  planChatStep?: PlanChatStep;
+}): React.ReactElement {
+  const profile = dashboard.profile.profile;
+  const status = chatRuntimeStatus({
+    dashboard,
+    runningAction,
+    pendingConfirmation,
+    isEditingRevise,
+    isEditingModelPool,
+    planChatStep,
+  });
+  const color = status === "ready" ? "green" : status === "blocked" ? "red" : "yellow";
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: color, paddingX: 1 },
+    h(
+      Text,
+      null,
+      `status ${status} | planner ${profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing"} | model_pool ${
+        profile?.available_models.length || "default"
+      }`,
+    ),
+  );
+}
+
+function SlashCommandPanel(): React.ReactElement {
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "Slash Commands"),
+    ...TUI_SLASH_COMMANDS.map((command) =>
+      h(Text, { key: command.command }, `${command.usage} | ${command.description}`),
+    ),
   );
 }
 
@@ -2681,6 +2929,7 @@ function ActionHint({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  chatCommandInput,
   planChatStep = "idle",
   planChatInput,
   isEditingModelPool,
@@ -2692,6 +2941,7 @@ function ActionHint({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  chatCommandInput?: string;
   planChatStep?: PlanChatStep;
   planChatInput?: string;
   isEditingModelPool?: boolean;
@@ -2709,7 +2959,7 @@ function ActionHint({
     : pendingConfirmation
       ? `Confirm ${pendingConfirmation}? press y or n.`
       : selectedAction
-        ? `${selectedAction.description} Press Enter to run.`
+        ? `Quick action ${selectedAction.label}: ${selectedAction.description} ${chatCommandInput ? "Enter sends input." : "Empty Enter runs it."}`
         : "No action selected.";
 
   return h(
@@ -2740,6 +2990,75 @@ function ActionResultPanel({ result }: { result?: TuiActionResult }): React.Reac
     ...(hiddenCount > 0 ? [h(Text, { key: "more", color: "gray" }, `+${hiddenCount} more line(s)`)] : []),
     ...(result.sessionPath ? [h(Text, { key: "session" }, `session ${result.sessionPath}`)] : []),
   );
+}
+
+function buildHelpSlashResult(): TuiActionResult {
+  return {
+    actionId: "help",
+    status: "ok",
+    summary: "Local slash commands.",
+    lines: TUI_SLASH_COMMANDS.map((command) => `${command.usage} - ${command.description}`),
+  };
+}
+
+function buildProvidersSlashResult(dashboard: TuiDashboard): TuiActionResult {
+  const profile = dashboard.profile.profile;
+
+  if (!profile) {
+    return {
+      actionId: "providers",
+      status: "failed",
+      summary: "Profile is missing.",
+      lines: ["Run onboarding from this TUI to configure providers, models, and planner."],
+    };
+  }
+
+  return {
+    actionId: "providers",
+    status: "ok",
+    summary: `Planner ${profile.planner_provider}/${profile.planner_model}.`,
+    lines: [
+      `providers ${profile.available_providers.join(",")}`,
+      `excluded ${profile.excluded_providers.join(",") || "none"}`,
+      `models ${profile.available_models.length ? profile.available_models.join(",") : "default_for_selected_providers"}`,
+      `fallback ${profile.routing.allow_provider_fallback ? "enabled" : "disabled"}`,
+      `confirmation ${profile.routing.require_confirmation_for_fallback ? "required" : "not_required"}`,
+    ],
+  };
+}
+
+function chatRuntimeStatus({
+  dashboard,
+  runningAction,
+  pendingConfirmation,
+  isEditingRevise,
+  isEditingModelPool,
+  planChatStep = "idle",
+}: {
+  dashboard: TuiDashboard;
+  runningAction?: TuiActionId;
+  pendingConfirmation?: TuiActionId;
+  isEditingRevise?: boolean;
+  isEditingModelPool?: boolean;
+  planChatStep?: PlanChatStep;
+}): "ready" | "planning" | "running" | "needs-confirmation" | "blocked" {
+  if (!dashboard.profile.profile || dashboard.profile.errors.length > 0) {
+    return "blocked";
+  }
+
+  if (runningAction) {
+    return "running";
+  }
+
+  if (pendingConfirmation) {
+    return "needs-confirmation";
+  }
+
+  if (planChatStep !== "idle" || isEditingRevise || isEditingModelPool) {
+    return "planning";
+  }
+
+  return "ready";
 }
 
 function StatusPanel({
@@ -3094,6 +3413,29 @@ function parseTuiModelPoolInput(input: string): string[] | undefined {
   return parseModelIds(input);
 }
 
+export function parseTuiSlashCommandInput(input: string): ParsedTuiSlashCommand | undefined {
+  const trimmed = input.trim();
+
+  if (!trimmed.startsWith("/")) {
+    return undefined;
+  }
+
+  const [rawCommand = "", ...argumentParts] = trimmed.split(/\s+/u);
+  const command = TUI_SLASH_COMMANDS.find((item) => item.command === rawCommand)?.command;
+
+  if (!command) {
+    return {
+      command: "/help",
+      argument: `unknown ${rawCommand}`,
+    };
+  }
+
+  return {
+    command,
+    argument: argumentParts.join(" ").trim(),
+  };
+}
+
 function mainMenuIndexForView(view: TuiView): number {
   const index = TUI_MAIN_MENU_ITEMS.findIndex((item) => item.view === view);
 
@@ -3365,7 +3707,7 @@ function KeyHints({
   } else if (view === "main") {
     hints = "\u2191\u2193 select  \u2502  Enter open  \u2502  1-5 open  \u2502  c dir  \u2502  q quit";
   } else if (view === "actions") {
-    hints = "\u2191\u2193 select  \u2502  Enter run  \u2502  m menu  \u2502  c dir  \u2502  q quit";
+    hints = "type or /cmd  \u2502  Enter send  \u2502  \u2191\u2193 quick  \u2502  Esc menu";
   } else {
     hints = "m/Esc menu  \u2502  c dir  \u2502  q quit";
   }

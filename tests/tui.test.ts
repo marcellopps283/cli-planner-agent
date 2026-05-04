@@ -10,6 +10,7 @@ import { initPlannerProfile, loadPlannerProfile } from "../src/profile.js";
 import {
   getTuiActions,
   loadTuiDashboard,
+  parseTuiSlashCommandInput,
   parseTuiView,
   renderTuiDashboardToString,
   runTuiAction,
@@ -180,11 +181,32 @@ describe("blueprint tui", () => {
     expect(providersOutput).toContain("Provider Pool");
     expect(providersOutput).toContain("available openai,google");
     expect(providersOutput).toContain("Model Catalog");
-    expect(actionsOutput).toContain("Action Queue");
-    expect(actionsOutput).toContain("Configure Model Pool");
-    expect(actionsOutput).toContain("Refresh Registry");
-    expect(actionsOutput).toContain("Export Handoffs");
-    expect(actionsOutput).toContain("blueprint auth doctor --live");
+    expect(actionsOutput).toContain("Planning Chat");
+    expect(actionsOutput).toContain("status ready");
+    expect(actionsOutput).toContain("Slash Commands");
+    expect(actionsOutput).toContain("/plan [brief]");
+    expect(actionsOutput).toContain("/models <ids|all>");
+    expect(actionsOutput).toContain("Empty Enter runs it");
+  });
+
+  it("parses local TUI slash commands", () => {
+    expect(parseTuiSlashCommandInput("plan a feature")).toBeUndefined();
+    expect(parseTuiSlashCommandInput("/plan build planner chat")).toEqual({
+      command: "/plan",
+      argument: "build planner chat",
+    });
+    expect(parseTuiSlashCommandInput("/models all")).toEqual({
+      command: "/models",
+      argument: "all",
+    });
+    expect(parseTuiSlashCommandInput("/registry")).toEqual({
+      command: "/registry",
+      argument: "",
+    });
+    expect(parseTuiSlashCommandInput("/unknown anything")).toEqual({
+      command: "/help",
+      argument: "unknown /unknown",
+    });
   });
 
   it("builds executable TUI actions with quota confirmation metadata", async () => {
