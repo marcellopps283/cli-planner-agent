@@ -11,8 +11,8 @@ como Codex, Claude Code e Gemini CLI.
 
 MVP funcional, privado no GitHub e com CI ativo em `main`. O estado atual cobre
 inicializacao, profiles com pool de modelos exatos, registry customizavel,
-doctor, planner deterministico, planner LLM via CLI oficial, lint, revise,
-export e TUI.
+doctor, planner deterministico, PlannerEngine LLM via CLI oficial, lint,
+revise, export e TUI.
 
 ## Principio central
 
@@ -139,6 +139,13 @@ No modo interativo, o planner monta um preview do grafo e mostra o modelo
 sugerido por task antes de escrever os handoffs. Com `--answers` e `--yes`, o
 fluxo continua proprio para automacao e testes.
 
+Quando `--engine llm` e usado, o PlannerEngine chama o provider oficial com o
+model ID exato do profile (`codex -m`, `gemini -m`, `claude --model`), valida a
+resposta JSON com Zod e faz uma tentativa curta de reparo se o modelo devolver
+JSON fora do contrato. Com `--fallback`, o CLI tenta primeiro outro modelo ativo
+do pool, pedindo confirmacao no modo interativo, e so depois oferece fallback
+deterministico.
+
 Para automacao ou testes, o mesmo comando aceita respostas em JSON:
 
 ```bash
@@ -185,9 +192,10 @@ guia a selecao de providers, modelos por provider e modelo planner antes de cria
 do app. O onboarding tambem mostra quais CLIs de provider foram detectados e o
 status local de auth quando o CLI expoe essa informacao sem chamada de modelo.
 
-Na aba `actions`, a TUI inicia um fluxo de planejamento em estilo chat, mostra o
-preview `task -> modelo` antes de escrever handoffs, configura o model pool por
-IDs exatos, executa `lint`, `export`, `auth doctor` e um fluxo guiado de
+Na aba `actions`, a TUI inicia um fluxo de planejamento em estilo chat usando o
+PlannerEngine LLM do profile, mostra o preview `task -> modelo` antes de escrever
+handoffs, configura o model pool por IDs exatos, executa `lint`, `export`,
+`auth doctor` e um fluxo guiado de
 `revise`: digita a mudanca, revisa o dry-run e confirma antes de aplicar. Cada
 acao executada pela TUI fica auditada em `.blueprint/tui_sessions/*.json`.
 Quando o plano e gerado, o resultado destaca `.blueprint/`, `.blueprint/tasks`,

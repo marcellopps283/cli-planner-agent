@@ -11,12 +11,14 @@ const DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS = 120_000;
 
 export interface ProviderPromptOptions {
   provider: ProviderId;
+  model?: string;
   prompt: string;
   timeoutMs?: number;
 }
 
 export interface ProviderPromptResult {
   provider: ProviderId;
+  model?: string;
   response: string;
   rawOutput: string;
 }
@@ -77,12 +79,25 @@ export function extractJsonObject(text: string): string {
   throw new Error("Provider response did not contain a JSON object.");
 }
 
+export function providerPromptModelArgs(provider: ProviderId, model?: string): string[] {
+  if (!model) {
+    return [];
+  }
+
+  if (provider === "openai" || provider === "google") {
+    return ["-m", model];
+  }
+
+  return ["--model", model];
+}
+
 async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Promise<ProviderPromptResult> {
   const outputPath = join(cwd, "last-message.txt");
   const result = await execa(
     "codex",
     [
       "exec",
+      ...providerPromptModelArgs("openai", options.model),
       "--skip-git-repo-check",
       "--ephemeral",
       "--sandbox",
@@ -111,6 +126,7 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
 
   return {
     provider: "openai",
+    model: options.model,
     response: response.trim(),
     rawOutput,
   };
@@ -119,7 +135,15 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
 async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Promise<ProviderPromptResult> {
   const result = await execa(
     "gemini",
-    ["-p", options.prompt, "--output-format", "json", "--approval-mode", "plan"],
+    [
+      ...providerPromptModelArgs("google", options.model),
+      "-p",
+      options.prompt,
+      "--output-format",
+      "json",
+      "--approval-mode",
+      "plan",
+    ],
     {
       cwd,
       env: { NO_COLOR: "1" },
@@ -139,6 +163,7 @@ async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Pro
 
   return {
     provider: "google",
+    model: options.model,
     response: response.trim(),
     rawOutput,
   };
@@ -150,6 +175,7 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
     [
       "-p",
       options.prompt,
+      ...providerPromptModelArgs("anthropic", options.model),
       "--output-format",
       "json",
       "--permission-mode",
@@ -180,6 +206,7 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
 
   return {
     provider: "anthropic",
+    model: options.model,
     response: response.trim(),
     rawOutput,
   };

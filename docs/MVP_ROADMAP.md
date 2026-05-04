@@ -51,6 +51,8 @@ Checkpoint:
 - [x] Resumo executivo antes de gerar arquivos.
 - [x] Geracao de `.blueprint/`.
 - [x] Modo planner LLM via CLI oficial com fallback deterministico.
+- [x] PlannerEngine LLM com model ID exato, retry de reparo JSON e fallback
+  para outro modelo ativo antes do fallback deterministico.
 - [x] Fixtures golden para contrato do planner LLM.
 - [x] TUI rica com Ink: dashboard inicial `blueprint tui`.
 - [ ] Evoluir prompt do planner LLM com exemplos por tipo de projeto.

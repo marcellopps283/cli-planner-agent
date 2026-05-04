@@ -553,6 +553,7 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
       canApply: true,
       lines: [
         `engine ${preview.engine}`,
+        `planner ${preview.plannerProvider}/${preview.plannerModel}${preview.plannerFallback ? " fallback" : ""}`,
         `overview ${preview.overview}`,
         ...preview.tasks.map((task) => {
           const deps = task.dependencies.length > 0 ? task.dependencies.join(",") : "none";
@@ -832,6 +833,7 @@ export function InteractiveDashboard({
   const [planChatInput, setPlanChatInput] = useState("");
   const [lastPlanAnswers, setLastPlanAnswers] = useState<PlanAnswers | undefined>();
   const [lastPlanForce, setLastPlanForce] = useState(false);
+  const [lastPlanEngine, setLastPlanEngine] = useState<PlanEngine>("llm");
   const [isEditingModelPool, setIsEditingModelPool] = useState(false);
   const [modelPoolInput, setModelPoolInput] = useState("");
   const [isEditingRoot, setIsEditingRoot] = useState(false);
@@ -1056,6 +1058,7 @@ export function InteractiveDashboard({
           change: pendingConfirmation === "revise" ? lastReviseChange : undefined,
           planAnswers: pendingConfirmation === "plan" ? lastPlanAnswers : undefined,
           planForce: pendingConfirmation === "plan" ? lastPlanForce : undefined,
+          planEngine: pendingConfirmation === "plan" ? lastPlanEngine : undefined,
         });
       }
 
@@ -1111,6 +1114,7 @@ export function InteractiveDashboard({
     setPlanChatInput("");
     setLastPlanAnswers(undefined);
     setLastPlanForce(false);
+    setLastPlanEngine("llm");
     setPendingConfirmation(undefined);
     setActionResult(undefined);
     setPlanChatStep("projectSummary");
@@ -1147,12 +1151,15 @@ export function InteractiveDashboard({
 
     const answers = buildPlanAnswersFromDraft(nextDraft);
     const force = dashboardState.tasks.length > 0;
+    const engine: PlanEngine = "llm";
     setPlanChatStep("idle");
     setLastPlanAnswers(answers);
     setLastPlanForce(force);
+    setLastPlanEngine(engine);
     void executeAction("plan", {
       planAnswers: answers,
       planForce: force,
+      planEngine: engine,
       apply: false,
     });
   }

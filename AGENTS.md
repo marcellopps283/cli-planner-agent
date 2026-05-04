@@ -4,7 +4,7 @@
 
 This repository contains a TypeScript CLI called `blueprint`, a planner-agent for generating `.blueprint/` architecture and handoff artifacts.
 
-- `src/`: CLI implementation. Key modules include `cli.ts`, `tui.ts`, `plan.ts`, `profile.ts`, `registry.ts`, `providers.ts`, `lint.ts`, `revise.ts`, and `schemas.ts`.
+- `src/`: CLI implementation. Key modules include `cli.ts`, `tui.ts`, `plan.ts`, `plannerEngine.ts`, `profile.ts`, `registry.ts`, `providers.ts`, `lint.ts`, `revise.ts`, and `schemas.ts`.
 - `tests/`: Vitest coverage for commands, schemas, registry behavior, TUI rendering, planning, export, and revise flows.
 - `docs/`: product decisions, specs, roadmap, ADRs, and operational notes. Read `docs/DESIGN_LOCK.md` and `docs/MVP_ROADMAP.md` before structural changes.
 - `.blueprint/`: local generated planning artifacts for this repo. Treat as project state, not source code.

@@ -45,9 +45,11 @@ automacao, smoke e debugging.
 - O backend de setup aceita selecao explicita de providers/modelos/planner para
   manter o fluxo testavel e auditavel.
 - A aba `actions` tem `Start Planning Chat`, um fluxo guiado que coleta escopo
-  dentro da TUI e chama o planner sem exigir que o usuario saia para outro
-  comando.
+  dentro da TUI e chama o PlannerEngine LLM do profile sem exigir que o usuario
+  saia para outro comando.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
   confirmacao antes de persistir handoffs no modo interativo.
+- O PlannerEngine passa o model ID exato ao CLI oficial e tenta reparar uma
+  resposta JSON invalida antes de acionar fallback.
 - Depois da geracao, a TUI destaca artifact root, tasks dir, graph e integration
   guide antes de listar os arquivos completos.

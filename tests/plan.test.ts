@@ -9,6 +9,7 @@ import { DEFAULT_MODEL_REGISTRY } from "../src/models.js";
 import {
   buildPlannerPromptForContext,
   generateBlueprintPlan,
+  getPlannerFallbackCandidates,
   parsePlannerDraft,
   previewBlueprintPlan,
   type PlanAnswers,
@@ -113,6 +114,35 @@ describe("blueprint plan generation", () => {
     expect(firstTask).toContain("suggested_model: gemini-3.1-pro-preview");
   });
 
+  it("calls the LLM planner through the selected exact planner model", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+    const calls: Array<{ provider: string; model?: string }> = [];
+
+    const result = await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      engine: "llm",
+      plannerPromptRunner: async (options) => {
+        calls.push({ provider: options.provider, model: options.model });
+        return {
+          provider: options.provider,
+          model: options.model,
+          response: JSON.stringify(makeDraft()),
+          rawOutput: "",
+        };
+      },
+    });
+
+    expect(result.engine).toBe("llm");
+    expect(calls).toEqual([{ provider: "openai", model: "gpt-5.5" }]);
+  });
+
   it("previews task model assignments before writing handoffs", async () => {
     const root = await makeTempProject();
     await initPlannerProfile({
@@ -200,6 +230,13 @@ describe("blueprint plan generation", () => {
     expect(prompt).toContain("gpt-5.5");
     expect(prompt).toContain("gemini-3.1-pro-preview");
     expect(prompt).not.toContain("claude-opus-4-7");
+  });
+
+  it("sorts planner fallback candidates inside the active model pool", () => {
+    const candidates = getPlannerFallbackCandidates(makePlanContext(), "gemini-3.1-pro-preview");
+
+    expect(candidates.map((candidate) => candidate.model)).toEqual(["gpt-5.5"]);
+    expect(candidates[0]?.reason).toContain("planning=0.99");
   });
 });
 

@@ -18,6 +18,20 @@ O provider nunca recebe o repositorio inteiro. O CLI monta um pacote compacto co
 O provider deve responder somente JSON. O CLI valida esse JSON antes de escrever
 qualquer arquivo em `.blueprint/`.
 
+## Execucao
+
+`PlannerEngine` e a camada responsavel por chamada real ao provider. Ela sempre
+recebe provider e model ID exatos do profile ativo ou do fallback aprovado:
+
+- OpenAI/Codex: `codex exec -m <model>`
+- Google/Gemini: `gemini -m <model> -p ...`
+- Anthropic/Claude: `claude -p ... --model <model>`
+
+O primeiro retorno e parseado com `PlannerDraftSchema`. Se a resposta nao for
+JSON valido ou quebrar o contrato, o engine faz uma tentativa de reparo com um
+prompt curto contendo o erro e a resposta invalida truncada. Falhas de provider
+ou schema sao expostas com os attempts para auditoria e fallback.
+
 ## Schema resumido
 
 ```json
@@ -57,6 +71,8 @@ qualquer arquivo em `.blueprint/`.
 - Dependencias so podem apontar para tasks anteriores.
 - IDs de task devem seguir `task-NNN-kebab-case`.
 - Tasks geradas precisam passar em `blueprint lint`.
+- `blueprint plan --engine llm --fallback` deve tentar outro modelo ativo do
+  pool antes do fallback deterministico, pedindo confirmacao no modo interativo.
 
 ## Fixtures
 

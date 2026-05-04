@@ -20,8 +20,9 @@ import { z } from "zod";
 import { BLUEPRINT_DIR } from "./blueprint.js";
 import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { lintBlueprint } from "./lint.js";
+import { runLlmPlannerEngine, type PlannerPromptRunner } from "./plannerEngine.js";
 import { activeModelsForProfile, loadPlannerProfile } from "./profile.js";
-import { extractJsonObject, runProviderPrompt } from "./providerPrompt.js";
+import { extractJsonObject } from "./providerPrompt.js";
 import { loadModelRegistryForProfile } from "./registry.js";
 import {
   type BlueprintManifest,
@@ -29,6 +30,7 @@ import {
   type DependencyGraph,
   type ModelRegistryEntry,
   type PlannerProfile,
+  type ProviderId,
 } from "./schemas.js";
 
 const PlanAnswersSchema = z.object({
@@ -101,6 +103,10 @@ export interface GeneratePlanOptions {
   answers: PlanAnswers;
   engine?: PlanEngine;
   plannerTimeoutMs?: number;
+  plannerProvider?: ProviderId;
+  plannerModel?: string;
+  plannerPromptRunner?: PlannerPromptRunner;
+  repairAttempts?: number;
   draft?: PlannerDraft;
   force?: boolean;
 }
@@ -124,6 +130,9 @@ export interface PlanPreviewTask {
 export interface PlanPreviewResult {
   root: string;
   engine: PlanEngine;
+  plannerProvider: ProviderId;
+  plannerModel: string;
+  plannerFallback: boolean;
   overview: string;
   tasks: PlanPreviewTask[];
 }
@@ -133,6 +142,13 @@ export interface PlanContext {
   profile: PlannerProfile;
   registry: ModelRegistryEntry[];
   doctor: ProjectDoctorReport;
+}
+
+export interface PlannerFallbackCandidate {
+  provider: ProviderId;
+  model: string;
+  planningScore: number;
+  reason: string;
 }
 
 interface PlannedTask {
@@ -153,6 +169,10 @@ interface PlannedTask {
 
 interface PlanBuild {
   engine: PlanEngine;
+  plannerProvider: ProviderId;
+  plannerModel: string;
+  plannerFallback: boolean;
+  plannerAttempts: number;
   overview: string;
   assumptions: string[];
   decisions: string[];
@@ -184,7 +204,7 @@ export async function runPlanCommand(options: PlanCommandOptions): Promise<void>
   }
 
   const engine = options.engine ?? "deterministic";
-  let result: GeneratePlanResult;
+  let result: GeneratePlanResult | undefined;
 
   try {
     const prepared = await prepareBlueprintPlan({
@@ -208,43 +228,90 @@ export async function runPlanCommand(options: PlanCommandOptions): Promise<void>
       force: options.force ?? options.yes ?? Boolean(options.answersPath),
     });
   } catch (error) {
-    if (engine !== "llm" || !options.fallback) {
+    if (engine !== "llm" || !options.fallback || isNonPlannerFallbackError(error)) {
       throw error;
     }
 
     const message = error instanceof Error ? error.message : String(error);
     log.warn(`LLM planner failed: ${message}`);
+    const fallbackCandidate = getPlannerFallbackCandidates(context)[0];
 
-    if (!options.yes) {
-      const approved = await confirm({
-        message: "Usar fallback deterministico e continuar?",
-        initialValue: true,
+    if (fallbackCandidate) {
+      if (!options.yes) {
+        const approved = await confirm({
+          message: `Tentar fallback LLM com ${fallbackCandidate.provider}/${fallbackCandidate.model}?`,
+          initialValue: true,
+        });
+
+        if (isCancel(approved) || !approved) {
+          cancel("Planning cancelled.");
+          return;
+        }
+      }
+
+      try {
+        const prepared = await prepareBlueprintPlan({
+          root,
+          answers,
+          engine: "llm",
+          plannerProvider: fallbackCandidate.provider,
+          plannerModel: fallbackCandidate.model,
+          plannerTimeoutMs: options.plannerTimeoutMs,
+          force: true,
+        });
+
+        if (!options.yes && !options.answersPath) {
+          const approved = await confirmPlanAssignments(prepared);
+
+          if (!approved) {
+            cancel("Planning cancelled.");
+            return;
+          }
+        }
+
+        result = await writePreparedPlan(prepared, { force: true });
+      } catch (fallbackError) {
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        log.warn(`LLM fallback failed: ${fallbackMessage}`);
+      }
+    }
+
+    if (!result) {
+      if (!options.yes) {
+        const approved = await confirm({
+          message: "Usar fallback deterministico e continuar?",
+          initialValue: true,
+        });
+
+        if (isCancel(approved) || !approved) {
+          cancel("Planning cancelled.");
+          return;
+        }
+      }
+
+      const prepared = await prepareBlueprintPlan({
+        root,
+        answers,
+        engine: "deterministic",
+        force: true,
       });
 
-      if (isCancel(approved) || !approved) {
-        cancel("Planning cancelled.");
-        return;
+      if (!options.yes && !options.answersPath) {
+        const approved = await confirmPlanAssignments(prepared);
+
+        if (!approved) {
+          cancel("Planning cancelled.");
+          return;
+        }
       }
+
+      result = await writePreparedPlan(prepared, { force: true });
     }
-
-    const prepared = await prepareBlueprintPlan({
-      root,
-      answers,
-      engine: "deterministic",
-      force: true,
-    });
-
-    if (!options.yes && !options.answersPath) {
-      const approved = await confirmPlanAssignments(prepared);
-
-      if (!approved) {
-        cancel("Planning cancelled.");
-        return;
-      }
-    }
-
-    result = await writePreparedPlan(prepared, { force: true });
   }
+  if (!result) {
+    throw new Error("Planning finished without generated artifacts.");
+  }
+
   const lint = await lintBlueprint(root);
 
   for (const warning of lint.warnings) {
@@ -273,6 +340,9 @@ export async function previewBlueprintPlan(options: GeneratePlanOptions): Promis
   return {
     root: prepared.root,
     engine: prepared.plan.engine,
+    plannerProvider: prepared.plan.plannerProvider,
+    plannerModel: prepared.plan.plannerModel,
+    plannerFallback: prepared.plan.plannerFallback,
     overview: prepared.plan.overview,
     tasks: prepared.plan.tasks.map(toPreviewTask),
   };
@@ -316,8 +386,8 @@ async function writePreparedPlan(
     schema_version: "1.0",
     project_name: path.basename(root),
     created_at: new Date().toISOString(),
-    planner_provider: context.profile.planner_provider,
-    planner_model: context.profile.planner_model,
+    planner_provider: plan.plannerProvider,
+    planner_model: plan.plannerModel,
     available_providers: context.profile.available_providers,
     available_models: activeModelsForProfile(context.profile, context.registry).map((model) => model.id),
     artifact_root: ".blueprint",
@@ -525,18 +595,33 @@ async function buildPlan(
   options: GeneratePlanOptions,
 ): Promise<PlanBuild> {
   if (options.draft) {
-    return buildPlanFromDraft(context, answers, options.draft);
+    return buildPlanFromDraft(context, answers, options.draft, {
+      plannerProvider: options.plannerProvider,
+      plannerModel: options.plannerModel,
+      plannerFallback: Boolean(options.plannerModel && options.plannerModel !== context.profile.planner_model),
+      plannerAttempts: 0,
+    });
   }
 
   if (options.engine === "llm") {
+    const plannerModel = resolvePlannerExecutionModel(context, options);
     const prompt = buildPlannerPromptForContext(context, answers);
-    const result = await runProviderPrompt({
-      provider: context.profile.planner_provider,
+    const result = await runLlmPlannerEngine({
+      provider: plannerModel.provider,
+      model: plannerModel.id,
       prompt,
+      parseDraft: parsePlannerDraft,
+      runner: options.plannerPromptRunner,
       timeoutMs: options.plannerTimeoutMs,
+      repairAttempts: options.repairAttempts,
     });
-    const draft = parsePlannerDraft(result.response);
-    return buildPlanFromDraft(context, answers, draft);
+
+    return buildPlanFromDraft(context, answers, result.draft, {
+      plannerProvider: result.provider,
+      plannerModel: result.model,
+      plannerFallback: result.model !== context.profile.planner_model,
+      plannerAttempts: result.attempts.length,
+    });
   }
 
   return buildDeterministicPlan(context, answers);
@@ -545,6 +630,10 @@ async function buildPlan(
 function buildDeterministicPlan(context: PlanContext, answers: PlanAnswers): PlanBuild {
   return {
     engine: "deterministic",
+    plannerProvider: context.profile.planner_provider,
+    plannerModel: context.profile.planner_model,
+    plannerFallback: false,
+    plannerAttempts: 0,
     overview: "Deterministic MVP planning flow.",
     assumptions: [],
     decisions: ["Generate three sequential task handoffs for the MVP planner flow."],
@@ -554,8 +643,26 @@ function buildDeterministicPlan(context: PlanContext, answers: PlanAnswers): Pla
   };
 }
 
-function buildPlanFromDraft(context: PlanContext, answers: PlanAnswers, draft: PlannerDraft): PlanBuild {
+function buildPlanFromDraft(
+  context: PlanContext,
+  answers: PlanAnswers,
+  draft: PlannerDraft,
+  plannerRun?: {
+    plannerProvider?: ProviderId;
+    plannerModel?: string;
+    plannerFallback?: boolean;
+    plannerAttempts?: number;
+  },
+): PlanBuild {
   validatePlannerDraftGraph(draft);
+  const plannerModel = resolvePlannerExecutionModel(context, {
+    root: context.root,
+    answers,
+    engine: "llm",
+    plannerProvider: plannerRun?.plannerProvider,
+    plannerModel: plannerRun?.plannerModel,
+    force: true,
+  });
 
   const tasks = draft.tasks.map((task) => {
     const suggestedModel = resolveDraftModel(context, task.suggested_model, task.fit);
@@ -579,6 +686,10 @@ function buildPlanFromDraft(context: PlanContext, answers: PlanAnswers, draft: P
 
   return {
     engine: "llm",
+    plannerProvider: plannerModel.provider,
+    plannerModel: plannerModel.id,
+    plannerFallback: plannerRun?.plannerFallback ?? plannerModel.id !== context.profile.planner_model,
+    plannerAttempts: plannerRun?.plannerAttempts ?? 0,
     overview: draft.overview,
     assumptions: draft.assumptions,
     decisions: draft.decisions,
@@ -631,6 +742,59 @@ function resolveDraftModel(context: PlanContext, suggestedModel: string | undefi
   }
 
   return selectModel(context, fit);
+}
+
+function resolvePlannerExecutionModel(context: PlanContext, options: GeneratePlanOptions): ModelRegistryEntry {
+  const activeModels = activeModelsForProfile(context.profile, context.registry);
+  const requestedModelId = options.plannerModel ?? context.profile.planner_model;
+  const requestedProvider = options.plannerProvider ?? context.profile.planner_provider;
+  const model = activeModels.find((candidate) => candidate.id === requestedModelId);
+
+  if (!model) {
+    throw new Error(
+      `Planner model ${requestedModelId} is not in the active model pool: ${
+        activeModels.map((candidate) => candidate.id).join(", ") || "none"
+      }.`,
+    );
+  }
+
+  if (model.provider !== requestedProvider) {
+    throw new Error(`Planner model ${model.id} belongs to ${model.provider}, not ${requestedProvider}.`);
+  }
+
+  if (!context.profile.available_providers.includes(model.provider)) {
+    throw new Error(`Planner provider ${model.provider} is not available in the active profile.`);
+  }
+
+  return model;
+}
+
+function isNonPlannerFallbackError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return /Existing task files found|Profile is not ready|Model registry is not ready/u.test(message);
+}
+
+export function getPlannerFallbackCandidates(
+  context: PlanContext,
+  failedModel = context.profile.planner_model,
+): PlannerFallbackCandidate[] {
+  const activeModels = activeModelsForProfile(context.profile, context.registry);
+
+  return activeModels
+    .filter((model) => model.id !== failedModel && model.status !== "restricted")
+    .sort(comparePlannerFallbackModels)
+    .map((model) => ({
+      provider: model.provider,
+      model: model.id,
+      planningScore: model.task_fit.planning ?? 0,
+      reason: [
+        `planning=${formatScore(model.task_fit.planning)}`,
+        `tier=${model.tier}`,
+        `latency=${model.latency_class}`,
+        `cost=${model.cost_class}`,
+      ].join(" "),
+    }));
 }
 
 export function buildPlannerPromptForContext(context: PlanContext, answers: PlanAnswers): string {
@@ -925,6 +1089,10 @@ ${answers.objective}
 ## Planner Source
 
 - Engine: ${plan.engine}
+- Planner provider: ${plan.plannerProvider}
+- Planner model: ${plan.plannerModel}
+- Planner fallback: ${plan.plannerFallback ? "yes" : "no"}
+- Planner attempts: ${plan.plannerAttempts}
 - Overview: ${plan.overview}
 
 ## Active Planner Profile
@@ -980,7 +1148,7 @@ function renderDecisions(context: PlanContext, answers: PlanAnswers, plan: PlanB
 # Decisions
 
 ${formatMarkdownList([
-    `Use ${context.profile.planner_model} as planner model for this plan.`,
+    `Use ${plan.plannerModel} as planner model for this plan.`,
     `Restrict model routing to ${activeModelsForProfile(context.profile, context.registry)
       .map((model) => model.id)
       .join(", ")}.`,
@@ -1029,6 +1197,7 @@ ${formatMarkdownList(answers.validationCommands)}
 - Active models: ${activeModelsForProfile(context.profile, context.registry)
     .map((model) => model.id)
     .join(", ")}
+- Planner used: ${plan.plannerProvider}/${plan.plannerModel}
 - Excluded providers: ${context.profile.excluded_providers.join(", ") || "none"}
 - Fallback requires confirmation: ${context.profile.routing.require_confirmation_for_fallback ? "yes" : "no"}
 
@@ -1071,6 +1240,64 @@ function selectModel(context: PlanContext, fit: string): ModelRegistryEntry {
   const sorted = [...activeModels].sort((left, right) => (right.task_fit[fit] ?? 0) - (left.task_fit[fit] ?? 0));
 
   return sorted[0] ?? plannerModel ?? context.registry[0]!;
+}
+
+function comparePlannerFallbackModels(left: ModelRegistryEntry, right: ModelRegistryEntry): number {
+  const planningDiff = (right.task_fit.planning ?? 0) - (left.task_fit.planning ?? 0);
+
+  if (planningDiff !== 0) {
+    return planningDiff;
+  }
+
+  const tierDiff = modelTierWeight(right.tier) - modelTierWeight(left.tier);
+
+  if (tierDiff !== 0) {
+    return tierDiff;
+  }
+
+  const latencyDiff = latencyWeight(right.latency_class) - latencyWeight(left.latency_class);
+
+  if (latencyDiff !== 0) {
+    return latencyDiff;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function modelTierWeight(tier: ModelRegistryEntry["tier"]): number {
+  if (tier === "frontier") {
+    return 4;
+  }
+
+  if (tier === "balanced") {
+    return 3;
+  }
+
+  if (tier === "utility") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function latencyWeight(latency: ModelRegistryEntry["latency_class"]): number {
+  if (latency === "low") {
+    return 3;
+  }
+
+  if (latency === "medium") {
+    return 2;
+  }
+
+  if (latency === "high") {
+    return 1;
+  }
+
+  return 0;
+}
+
+function formatScore(score: number | undefined): string {
+  return typeof score === "number" ? score.toFixed(2) : "n/a";
 }
 
 function inferValidationCommands(report: ProjectDoctorReport): string[] {

@@ -128,10 +128,12 @@ MVP atual:
 - aceita `--answers <path>` para execucao nao interativa;
 - aceita `--engine deterministic|llm`, onde `llm` chama o planner provider
   ativo via CLI oficial e valida a resposta com schema antes de escrever;
+- no engine `llm`, passa o model ID exato para o CLI oficial do provider e faz
+  uma tentativa de reparo quando a resposta nao passa no contrato JSON;
 - em modo interativo, monta um preview em memoria com task graph e
   `suggested_model` por task, pede confirmacao e so entao escreve os handoffs;
-- aceita `--fallback` para pedir confirmacao e usar o plano deterministico caso
-  o planner LLM falhe;
+- aceita `--fallback` para pedir confirmacao e tentar outro modelo ativo do
+  pool antes de usar o plano deterministico caso o planner LLM falhe;
 - aceita `--planner-timeout-ms <number>` para chamadas LLM;
 - aceita `--yes` para pular confirmacao e `--force` para substituir tasks
   existentes.
@@ -199,6 +201,8 @@ MVP atual:
 - executa acoes locais da aba `actions`: `setup project`, `configure model
   pool`, `refresh registry`, `lint`, `export`, `revise preview` e `auth
   doctor`;
+- `Start Planning Chat` usa o PlannerEngine LLM do profile, mantendo o modo
+  deterministico apenas para fallback, automacao e testes;
 - `configure model pool` aceita IDs exatos separados por virgula ou `all` para
   voltar aos defaults dos providers ativos, e regrava `available_models` em
   `profile.yaml`;
