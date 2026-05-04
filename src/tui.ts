@@ -875,17 +875,22 @@ export function BlueprintDashboard({
   rootInput?: string;
 }): React.ReactElement {
   const lintStatus = dashboard.lint.errors.length === 0 ? "ok" : "error";
+  const appStatus = dashboard.setup.initialized ? lintStatus : "warn";
 
   return h(
     Box,
     { flexDirection: "column", gap: 1 },
     h(
       Box,
-      { borderStyle: "round", borderColor: lintStatus === "ok" ? "green" : "red", paddingX: 1 },
+      {
+        borderStyle: "round",
+        borderColor: appStatus === "ok" ? "green" : appStatus === "warn" ? "yellow" : "red",
+        paddingX: 1,
+      },
       h(
         Box,
         { flexDirection: "column" },
-        h(Text, { bold: true }, `${statusIcon(lintStatus === "ok" ? "ok" : "error")} Blueprint TUI`),
+        h(Text, { bold: true }, `${statusIcon(appStatus)} Blueprint Agent Harness`),
         h(Text, null, dashboard.root),
       ),
     ),
@@ -1042,7 +1047,7 @@ function SetupView({
       Box,
       { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
       h(Text, { bold: true }, "Start Here"),
-      h(Text, null, "1 or Enter: configure Blueprint in this directory"),
+      h(Text, null, "1 or Enter: configure harness in this directory"),
       h(Text, null, "2: create a new project folder here"),
       h(Text, null, "3 or c: choose another directory"),
     ),
@@ -1591,7 +1596,7 @@ function inferNextAction(input: {
   manifest?: BlueprintManifest;
 }): string {
   if (!input.setup.initialized) {
-    return "Run blueprint init, then blueprint profile init, then blueprint plan.";
+    return "Start onboarding in the TUI to configure directory, providers, models, and planner.";
   }
 
   if (input.profile.errors.length > 0 || !input.profile.profile) {
@@ -1629,15 +1634,13 @@ async function inspectBlueprintSetup(root: string, blueprintRoot: string): Promi
     messages: [
       `Current directory: ${root}`,
       "This directory has no .blueprint folder yet.",
-      "Open the project root or initialize Blueprint here.",
-      "Press Enter in this screen to start the guided setup.",
+      "Open the project root or initialize the harness here.",
+      "Press Enter in this screen to start onboarding.",
       "Press c to choose another directory.",
     ],
     commands: [
-      "blueprint init",
-      "blueprint profile init --providers openai,google --planner-provider google --project-registry --force",
-      "blueprint plan",
-      "blueprint tui",
+      "blueprint",
+      "blueprint --view actions",
     ],
   };
 }

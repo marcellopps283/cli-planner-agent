@@ -19,8 +19,14 @@ const program = new Command();
 
 program
   .name("blueprint")
-  .description("Planner-agent CLI for generating rigorous AI coding handoffs.")
-  .version("0.0.0");
+  .description("Agent harness for planning rigorous AI coding handoffs.")
+  .version("0.0.0")
+  .option("--root <path>", "target project root", ".")
+  .option("--view <view>", "initial TUI view: overview, tasks, graph, providers, actions", parseTuiView, "overview")
+  .option("--json", "print the dashboard model as JSON instead of rendering Ink")
+  .action(async (options: { root: string; view: TuiView; json?: boolean }) => {
+    await runTuiCommand(options);
+  });
 
 program
   .command("providers")
@@ -408,13 +414,7 @@ program
   .option("--view <view>", "initial view: overview, tasks, graph, providers, actions", parseTuiView, "overview")
   .option("--json", "print the dashboard model as JSON instead of rendering Ink")
   .action(async (options: { root: string; view: TuiView; json?: boolean }) => {
-    if (options.json) {
-      const dashboard = await loadTuiDashboard({ root: options.root, initialView: options.view });
-      console.log(JSON.stringify(dashboard, null, 2));
-      return;
-    }
-
-    await runTuiDashboard({ root: options.root, initialView: options.view });
+    await runTuiCommand(options);
   });
 
 program
@@ -499,6 +499,16 @@ function parsePositiveInteger(value: string): number {
   }
 
   return parsed;
+}
+
+async function runTuiCommand(options: { root: string; view: TuiView; json?: boolean }): Promise<void> {
+  if (options.json) {
+    const dashboard = await loadTuiDashboard({ root: options.root, initialView: options.view });
+    console.log(JSON.stringify(dashboard, null, 2));
+    return;
+  }
+
+  await runTuiDashboard({ root: options.root, initialView: options.view });
 }
 
 function parseProviderId(value: string): ProviderId {

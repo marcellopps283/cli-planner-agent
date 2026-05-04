@@ -25,12 +25,12 @@ describe("blueprint tui", () => {
     const actions = getTuiActions(dashboard);
 
     expect(dashboard.setup.initialized).toBe(false);
-    expect(dashboard.nextAction).toContain("blueprint init");
+    expect(dashboard.nextAction).toContain("Start onboarding");
     expect(actions[0]?.id).toBe("setup");
     expect(output).toContain("Blueprint not initialized");
     expect(output).toContain("Press c to choose another directory");
     expect(actionsOutput).toContain("Start Here");
-    expect(actionsOutput).toContain("1 or Enter: configure Blueprint in this directory");
+    expect(actionsOutput).toContain("1 or Enter: configure harness in this directory");
     expect(actionsOutput).toContain("2: create a new project folder here");
     expect(output).not.toContain("Profile error");
   });
@@ -103,7 +103,7 @@ describe("blueprint tui", () => {
     const dashboard = await loadTuiDashboard({ root });
     const output = renderTuiDashboardToString(dashboard);
 
-    expect(output).toContain("Blueprint TUI");
+    expect(output).toContain("Blueprint Agent Harness");
     expect(output).toContain("\u2705 Profile");
     expect(output).toContain("overview");
     expect(output).toContain("Next");

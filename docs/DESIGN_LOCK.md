@@ -5,10 +5,11 @@
 
 ## 1. Produto
 
-CLI para atuar como cerebro de planejamento em fluxos de desenvolvimento com IA.
-Ele investiga requisitos com o usuario, entende o contexto essencial do projeto,
-quebra o trabalho em tarefas, monta um grafo de dependencias e gera handoffs
-isolados para agentes executores.
+CLI/TUI para atuar como harness de planejamento em fluxos de desenvolvimento
+com IA. Ele abre como uma superficie unica de operacao, configura providers e
+modelos no inicio, investiga requisitos em um fluxo tipo chat, entende o
+contexto essencial do projeto, quebra o trabalho em tarefas, monta um grafo de
+dependencias e gera handoffs isolados para agentes executores.
 
 ## 2. Usuarios alvo
 
@@ -20,10 +21,16 @@ isolados para agentes executores.
 
 ### 1.0 - Planner
 
-- Seleciona provedores disponiveis.
-- Usa um provedor como planner mestre.
+- Abre a TUI por padrao com `blueprint`.
+- Faz onboarding obrigatorio de diretorio, providers, modelos e planner.
+- Usa um provedor/modelo como planner mestre.
+- Mostra um painel operacional para configuracoes, status, metricas e artefatos.
+- Usa uma experiencia tipo chat quando o usuario inicia uma tarefa de
+  planejamento.
 - Gera `.blueprint/` com arquitetura, grafo e tasks.
 - Recomenda modelo/worker por tarefa.
+- Mostra as atribuicoes de modelo por task antes de gerar os handoffs e pede
+  confirmacao do usuario.
 - Nao executa codigo nem gerencia workers.
 
 ### 2.0 - Supervisor
@@ -42,6 +49,7 @@ isolados para agentes executores.
 5. Schemas antes de texto livre.
 6. Replanejamento cirurgico quando seguro; global quando necessario.
 7. Usuario controla provedores, custos, privacidade e fallback.
+8. Uma unica frente de uso antes de multiplos comandos soltos.
 
 ## 5. Nao objetivos do MVP
 
@@ -64,11 +72,18 @@ usuario:
 O app verifica disponibilidade, status de auth e modo nao interativo quando
 possivel. Se o usuario nao tiver um provedor, ele nao entra no pool.
 
+O onboarding deve apresentar providers primeiro e depois, uma tela por provider,
+os modelos suportados. O usuario pode selecionar todos ou marcar uma pool fina.
+
 ## 7. Roteamento
 
 O planner mestre recebe um banco atualizavel de modelos/capacidades selecionados
 pelo usuario. No MVP, a decisao e feita por LLM com regras e schema. Futuramente,
 vira hibrido: LLM + scoring deterministico.
+
+O banco comparativo e quase interno. A TUI mostra os IDs necessarios para
+configuracao, mas a decisao de roteamento deve priorizar custo-beneficio,
+evitando overfitting e underfitting.
 
 Dimensoes minimas do banco:
 
@@ -154,4 +169,3 @@ Atualizacoes pos-planejamento passam por classificacao:
 
 Mudancas como Postgres para MongoDB normalmente sao `architecture_subtree` ou
 `global_replan`, nao edicao isolada.
-

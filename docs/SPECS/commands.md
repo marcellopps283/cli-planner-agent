@@ -4,6 +4,20 @@
 
 Definir a superficie inicial da CLI.
 
+## Superficie principal
+
+### `blueprint`
+
+Abre a TUI diretamente. Esta e a frente principal do produto: onboarding,
+configuracoes, model pool, status, acoes operacionais e, no proximo passo,
+inicio de planejamento em formato chat.
+
+Opcoes:
+
+- `--root <path>` escolhe o projeto alvo.
+- `--view <view>` abre uma aba inicial especifica.
+- `--json` imprime o modelo do dashboard para automacao.
+
 ## MVP commands
 
 ### `blueprint init`

@@ -97,6 +97,26 @@ Checkpoint:
 - Usuario consegue configurar providers e modelos, gerar handoffs e exportar o
   pacote inteiro sem sair do app.
 
+## Week 6 - Reorientacao Harness/TUI
+
+- [ ] `blueprint` sem subcomando abre a TUI diretamente.
+- [ ] Onboarding obrigatorio em etapas: diretorio -> providers -> modelos por
+  provider -> planner -> confirmacao.
+- [ ] Painel operacional moderno para configuracoes, status, metricas e
+  artefatos.
+- [ ] Fluxo de inicio de tarefa em formato chat, semelhante a Codex/Claude
+  Code/Hermes.
+- [ ] Antes de gerar handoffs, mostrar task graph + modelo sugerido por task e
+  pedir confirmacao.
+- [ ] Handoffs tecnicos completos e aviso claro de onde os arquivos foram
+  criados.
+
+Checkpoint:
+
+- O usuario usa uma unica frente: abre `blueprint`, configura tudo no inicio,
+  conversa com o planner, aprova atribuicoes de modelo e recebe os arquivos
+  gerados.
+
 ## 2.0 - Supervisor
 
 - [ ] Runner de workers.

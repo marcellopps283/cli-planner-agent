@@ -28,12 +28,11 @@ como ponte de autenticacao e execucao:
 Fluxo alvo:
 
 ```bash
-blueprint init
-blueprint providers
-blueprint auth doctor
-blueprint plan
-blueprint lint
+blueprint
 ```
+
+`blueprint` sem subcomando abre a TUI. Os subcomandos continuam disponiveis para
+automacao e debugging.
 
 ## Instalacao local
 
@@ -56,6 +55,7 @@ npm install --global --prefix /tmp/blueprint-global /tmp/blueprint-pack/cli-plan
 
 Comandos ja implementados no scaffold atual:
 
+- `blueprint`
 - `blueprint providers --models`
 - `blueprint profile init`
 - `blueprint profile show`
