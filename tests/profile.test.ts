@@ -4,7 +4,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { initPlannerProfile, loadPlannerProfile, parseProviderIds, validatePlannerProfile } from "../src/profile.js";
+import {
+  initPlannerProfile,
+  loadPlannerProfile,
+  parseProviderIds,
+  updatePlannerProfileModels,
+  validatePlannerProfile,
+} from "../src/profile.js";
 
 describe("planner profiles", () => {
   it("writes and validates a local OpenAI/Gemini profile", async () => {
@@ -72,6 +78,26 @@ describe("planner profiles", () => {
     const result = validatePlannerProfile(profile);
 
     expect(result.errors).toContain("planner_provider anthropic is not in available_providers.");
+  });
+
+  it("updates available_models and moves the planner when needed", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+
+    const result = await updatePlannerProfileModels({
+      root,
+      models: ["gemini-3.1-pro-preview"],
+    });
+    const loaded = await loadPlannerProfile(root);
+
+    expect(result.profile.planner_provider).toBe("google");
+    expect(result.profile.planner_model).toBe("gemini-3.1-pro-preview");
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.profile?.available_models).toEqual(["gemini-3.1-pro-preview"]);
   });
 
   it("parses comma-separated provider ids with dedupe", () => {

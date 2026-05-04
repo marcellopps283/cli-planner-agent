@@ -174,9 +174,10 @@ confirmacao antes de criar `.blueprint/`, `profile.yaml` e `model_registry.yaml`
 Nessa tela inicial, `Enter` mantem o diretorio atual e `c` permite escolher outro
 diretorio sem sair do app.
 
-Na aba `actions`, a TUI executa `lint`, `export`, `auth doctor` e um fluxo
-guiado de `revise`: digita a mudanca, revisa o dry-run e confirma antes de
-aplicar. Cada acao executada pela TUI fica auditada em
+Na aba `actions`, a TUI configura o model pool por IDs exatos, executa `lint`,
+`export`, `auth doctor` e um fluxo guiado de `revise`: digita a mudanca, revisa
+o dry-run e confirma antes de aplicar. Cada acao executada pela TUI fica
+auditada em
 `.blueprint/tui_sessions/*.json`.
 
 ## Leitura inicial

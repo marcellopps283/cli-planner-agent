@@ -14,9 +14,15 @@ import { BLUEPRINT_DIR, initBlueprint } from "./blueprint.js";
 import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
 import { lintBlueprint, type BlueprintLintResult } from "./lint.js";
-import { initPlannerProfile, loadPlannerProfile, type PlannerProfileValidationResult } from "./profile.js";
+import {
+  initPlannerProfile,
+  loadPlannerProfile,
+  parseModelIds,
+  updatePlannerProfileModels,
+  type PlannerProfileValidationResult,
+} from "./profile.js";
 import { DEFAULT_PROVIDER_ADAPTERS, checkProvider, checkProviderAuth, type ProviderDoctorResult } from "./providers.js";
-import { exportModelRegistry } from "./registry.js";
+import { exportModelRegistry, loadModelRegistryForProfile } from "./registry.js";
 import { reviseBlueprint, type ReviseResult } from "./revise.js";
 import {
   BlueprintManifestSchema,
@@ -25,6 +31,8 @@ import {
   type BlueprintManifest,
   type BlueprintTaskMetadata,
   type DependencyGraph,
+  type ModelRegistryEntry,
+  type PlannerProfile,
   type ProviderId,
 } from "./schemas.js";
 
@@ -42,6 +50,13 @@ export interface TuiTaskSummary {
   riskLevel: number;
 }
 
+export interface TuiModelSummary {
+  id: string;
+  provider: ProviderId;
+  tier: string;
+  status: string;
+}
+
 export interface TuiSetupStatus {
   initialized: boolean;
   messages: string[];
@@ -57,12 +72,21 @@ export interface TuiDashboard {
   manifest?: BlueprintManifest;
   graph?: DependencyGraph;
   tasks: TuiTaskSummary[];
+  registryModels: TuiModelSummary[];
   exports: string[];
   tuiSessions: string[];
   nextAction: string;
 }
 
-export const TUI_ACTION_IDS = ["setup", "lint", "export", "revise", "auth-doctor", "auth-doctor-live"] as const;
+export const TUI_ACTION_IDS = [
+  "setup",
+  "model-pool",
+  "lint",
+  "export",
+  "revise",
+  "auth-doctor",
+  "auth-doctor-live",
+] as const;
 export type TuiActionId = (typeof TUI_ACTION_IDS)[number];
 
 export interface TuiAction {
@@ -89,6 +113,7 @@ export interface RunTuiActionOptions {
   root: string;
   actionId: TuiActionId;
   change?: string;
+  modelPool?: string;
   apply?: boolean;
   liveTimeoutMs?: number;
   providerChecker?: (live: boolean) => Promise<ProviderDoctorResult[]>;
@@ -135,6 +160,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     readExports(blueprintRoot),
     readTuiSessions(blueprintRoot),
   ]);
+  const registryModels = profile.profile ? await readRegistryModels(root, profile.profile) : [];
 
   return {
     root,
@@ -145,6 +171,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     manifest,
     graph,
     tasks,
+    registryModels,
     exports,
     tuiSessions,
     nextAction: inferNextAction({ setup, profile, lint, tasks, manifest }),
@@ -184,6 +211,7 @@ export function parseTuiView(value: string): TuiView {
 
 export function getTuiActions(dashboard: TuiDashboard): TuiAction[] {
   const lintOk = dashboard.lint.errors.length === 0;
+  const profileReady = Boolean(dashboard.profile.profile && dashboard.profile.errors.length === 0);
   const needsSetup =
     !dashboard.setup.initialized || !dashboard.profile.profile || dashboard.profile.errors.length > 0 || !dashboard.manifest;
   const setupAction: TuiAction = {
@@ -196,6 +224,15 @@ export function getTuiActions(dashboard: TuiDashboard): TuiAction[] {
   };
 
   const actions: TuiAction[] = [
+    {
+      id: "model-pool",
+      label: "Configure Model Pool",
+      command: 'profile available_models "<ids|all>"',
+      description: "Update profile.yaml with exact model ids for routing.",
+      enabled: profileReady,
+      requiresConfirmation: false,
+      requiresInput: true,
+    },
     {
       id: "lint",
       label: "Lint Blueprint",
@@ -280,6 +317,35 @@ async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiAction
           ? `Blueprint lint passed with ${result.warnings.length} warning(s).`
           : `Blueprint lint failed with ${result.errors.length} error(s).`,
       lines: [...result.errors.map((error) => `error ${error}`), ...result.warnings.map((warning) => `warning ${warning}`)],
+    };
+  }
+
+  if (options.actionId === "model-pool") {
+    const input = options.modelPool?.trim();
+
+    if (!input) {
+      return {
+        actionId: options.actionId,
+        status: "failed",
+        summary: "Missing model pool input.",
+        lines: ['Enter comma-separated model ids, or "all" to reset to provider defaults.'],
+      };
+    }
+
+    const result = await updatePlannerProfileModels({
+      root: options.root,
+      models: parseTuiModelPoolInput(input),
+    });
+
+    return {
+      actionId: options.actionId,
+      status: "ok",
+      summary: `Model pool updated with ${result.profile.available_models.length} model(s).`,
+      lines: [
+        `planner ${result.profile.planner_provider}/${result.profile.planner_model}`,
+        `models ${result.profile.available_models.join(",")}`,
+        ...result.warnings.map((warning) => `warning ${warning}`),
+      ],
     };
   }
 
@@ -455,6 +521,8 @@ export function InteractiveDashboard({
   const [isEditingRevise, setIsEditingRevise] = useState(false);
   const [reviseInput, setReviseInput] = useState("");
   const [lastReviseChange, setLastReviseChange] = useState<string | undefined>();
+  const [isEditingModelPool, setIsEditingModelPool] = useState(false);
+  const [modelPoolInput, setModelPoolInput] = useState("");
   const [isEditingRoot, setIsEditingRoot] = useState(false);
   const [rootInputMode, setRootInputMode] = useState<"choose" | "create">("choose");
   const [rootInput, setRootInput] = useState(dashboard.root);
@@ -514,6 +582,35 @@ export function InteractiveDashboard({
 
       if (input.length > 0 && !key.ctrl && !key.meta) {
         setRootInput((current) => `${current}${input}`);
+      }
+
+      return;
+    }
+
+    if (view === "actions" && isEditingModelPool) {
+      if (key.escape) {
+        setIsEditingModelPool(false);
+        return;
+      }
+
+      if (key.backspace || key.delete) {
+        setModelPoolInput((current) => current.slice(0, -1));
+        return;
+      }
+
+      if (key.return) {
+        const modelPool = modelPoolInput.trim();
+
+        if (modelPool.length > 0) {
+          setIsEditingModelPool(false);
+          void executeAction("model-pool", { modelPool });
+        }
+
+        return;
+      }
+
+      if (input.length > 0 && !key.ctrl && !key.meta) {
+        setModelPoolInput((current) => `${current}${input}`);
       }
 
       return;
@@ -645,6 +742,12 @@ export function InteractiveDashboard({
       }
 
       if (action.requiresInput) {
+        if (action.id === "model-pool") {
+          setModelPoolInput(dashboardState.profile.profile?.available_models.join(",") || "all");
+          setIsEditingModelPool(true);
+          return;
+        }
+
         setReviseInput(lastReviseChange ?? "");
         setIsEditingRevise(true);
         return;
@@ -663,7 +766,7 @@ export function InteractiveDashboard({
 
   async function executeAction(
     actionId: TuiActionId,
-    options: { change?: string; apply?: boolean } = {},
+    options: { change?: string; modelPool?: string; apply?: boolean } = {},
   ): Promise<void> {
     setPendingConfirmation(undefined);
     setRunningAction(actionId);
@@ -674,6 +777,7 @@ export function InteractiveDashboard({
         root: dashboardState.root,
         actionId,
         change: options.change,
+        modelPool: options.modelPool,
         apply: options.apply,
       });
       setActionResult(result);
@@ -708,6 +812,8 @@ export function InteractiveDashboard({
     pendingConfirmation,
     isEditingRevise,
     reviseInput,
+    isEditingModelPool,
+    modelPoolInput,
     isEditingRoot,
     rootInputMode,
     rootInput,
@@ -723,6 +829,8 @@ export function BlueprintDashboard({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  isEditingModelPool,
+  modelPoolInput,
   isEditingRoot,
   rootInputMode,
   rootInput,
@@ -735,6 +843,8 @@ export function BlueprintDashboard({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  isEditingModelPool?: boolean;
+  modelPoolInput?: string;
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
@@ -765,6 +875,8 @@ export function BlueprintDashboard({
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
+      isEditingModelPool,
+      modelPoolInput,
       isEditingRoot,
       rootInputMode,
       rootInput,
@@ -774,6 +886,7 @@ export function BlueprintDashboard({
       setupInitialized: dashboard.setup.initialized,
       pendingConfirmation,
       isEditingRevise,
+      isEditingModelPool,
       isEditingRoot,
       runningAction,
     }),
@@ -790,6 +903,8 @@ function ActiveView({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  isEditingModelPool,
+  modelPoolInput,
   isEditingRoot,
   rootInputMode,
   rootInput,
@@ -803,6 +918,8 @@ function ActiveView({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  isEditingModelPool?: boolean;
+  modelPoolInput?: string;
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
@@ -840,6 +957,8 @@ function ActiveView({
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
+      isEditingModelPool,
+      modelPoolInput,
     });
   }
 
@@ -1127,7 +1246,15 @@ function ProvidersView({ dashboard }: { dashboard: TuiDashboard }): React.ReactE
     h(StatusPanel, {
       title: "Model Pool",
       status: profile.available_models.length > 0 ? "ok" : "warn",
-      lines: profile.available_models.length > 0 ? profile.available_models : ["all provider models"],
+      lines: profile.available_models.length > 0 ? summarizeModelLines(profile.available_models) : ["all provider models"],
+    }),
+    h(StatusPanel, {
+      title: "Model Catalog",
+      status: dashboard.registryModels.length > 0 ? "ok" : "warn",
+      lines:
+        dashboard.registryModels.length > 0
+          ? summarizeModelLines(dashboard.registryModels.map((model) => `${model.id} ${model.tier}/${model.status}`))
+          : ["registry unavailable"],
     }),
     h(MessageList, { title: "Profile Messages", messages: [...dashboard.profile.errors, ...dashboard.profile.warnings] }),
   );
@@ -1141,6 +1268,8 @@ function ActionsView({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  isEditingModelPool,
+  modelPoolInput,
 }: {
   dashboard: TuiDashboard;
   selectedActionIndex: number;
@@ -1149,6 +1278,8 @@ function ActionsView({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  isEditingModelPool?: boolean;
+  modelPoolInput?: string;
 }): React.ReactElement {
   const actions = getTuiActions(dashboard);
 
@@ -1186,6 +1317,8 @@ function ActionsView({
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
+      isEditingModelPool,
+      modelPoolInput,
     }),
     h(ActionResultPanel, { result: actionResult }),
   );
@@ -1198,6 +1331,8 @@ function ActionHint({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
+  isEditingModelPool,
+  modelPoolInput,
 }: {
   actions: TuiAction[];
   selectedActionIndex: number;
@@ -1205,10 +1340,14 @@ function ActionHint({
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
+  isEditingModelPool?: boolean;
+  modelPoolInput?: string;
 }): React.ReactElement {
   const selectedAction = actions[selectedActionIndex];
   const message = isEditingRevise
     ? `Change: ${reviseInput ?? ""}`
+    : isEditingModelPool
+    ? `Models: ${modelPoolInput ?? ""}`
     : runningAction
     ? `Running ${runningAction}...`
     : pendingConfirmation
@@ -1219,7 +1358,11 @@ function ActionHint({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: pendingConfirmation || isEditingRevise ? "yellow" : "gray", paddingX: 1 },
+    {
+      borderStyle: "single",
+      borderColor: pendingConfirmation || isEditingRevise || isEditingModelPool ? "yellow" : "gray",
+      paddingX: 1,
+    },
     h(Text, null, message),
   );
 }
@@ -1356,6 +1499,21 @@ async function readTasks(blueprintRoot: string): Promise<TuiTaskSummary[]> {
   return tasks.sort((left, right) => left.id.localeCompare(right.id));
 }
 
+async function readRegistryModels(root: string, profile: PlannerProfile): Promise<TuiModelSummary[]> {
+  const result = await loadModelRegistryForProfile(root, profile);
+
+  if (result.errors.length > 0 || !result.registry) {
+    return [];
+  }
+
+  const availableProviders = new Set(profile.available_providers);
+
+  return result.registry.models
+    .filter((model) => availableProviders.has(model.provider))
+    .map(toModelSummary)
+    .sort((left, right) => `${left.provider}:${left.id}`.localeCompare(`${right.provider}:${right.id}`));
+}
+
 async function readExports(blueprintRoot: string): Promise<string[]> {
   try {
     const manifests = await fg(["exports/*/EXPORT_MANIFEST.json"], {
@@ -1388,6 +1546,15 @@ function toTaskSummary(metadata: BlueprintTaskMetadata): TuiTaskSummary {
     dependencies: metadata.dependencies,
     allowedPaths: metadata.allowed_paths,
     riskLevel: metadata.risk_level,
+  };
+}
+
+function toModelSummary(model: ModelRegistryEntry): TuiModelSummary {
+  return {
+    id: model.id,
+    provider: model.provider,
+    tier: model.tier,
+    status: model.status,
   };
 }
 
@@ -1463,6 +1630,14 @@ function resolveUserRoot(input: string, currentRoot: string): string {
   return path.resolve(currentRoot, expanded);
 }
 
+function parseTuiModelPoolInput(input: string): string[] | undefined {
+  if (/^(all|default|reset)$/iu.test(input.trim())) {
+    return undefined;
+  }
+
+  return parseModelIds(input);
+}
+
 function nextView(view: TuiView): TuiView {
   const index = TUI_VIEWS.indexOf(view);
   return TUI_VIEWS[(index + 1) % TUI_VIEWS.length]!;
@@ -1485,7 +1660,7 @@ async function writeTuiSessionRecord(options: RunTuiActionOptions, result: TuiAc
     action: {
       id: options.actionId,
       command: commandForAction(options.actionId),
-      change: options.change?.trim() || undefined,
+      change: options.change?.trim() || options.modelPool?.trim() || undefined,
       apply: Boolean(options.apply),
     },
     result: {
@@ -1512,6 +1687,10 @@ function commandForAction(actionId: TuiActionId): string {
 
   if (actionId === "lint") {
     return "blueprint lint";
+  }
+
+  if (actionId === "model-pool") {
+    return 'profile available_models "<ids|all>"';
   }
 
   if (actionId === "export") {
@@ -1628,6 +1807,14 @@ function summarizeModels(models: string[]): string {
   return summarizeList(models, 3);
 }
 
+function summarizeModelLines(models: string[]): string[] {
+  if (models.length <= 4) {
+    return models;
+  }
+
+  return [...models.slice(0, 4), `+${models.length - 4} more`];
+}
+
 function summarizeManifests(manifests: string[]): string {
   if (manifests.length === 0) {
     return "none";
@@ -1670,6 +1857,7 @@ function KeyHints({
   setupInitialized,
   pendingConfirmation,
   isEditingRevise,
+  isEditingModelPool,
   isEditingRoot,
   runningAction,
 }: {
@@ -1677,6 +1865,7 @@ function KeyHints({
   setupInitialized: boolean;
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
+  isEditingModelPool?: boolean;
   isEditingRoot?: boolean;
   runningAction?: TuiActionId;
 }): React.ReactElement {
@@ -1684,7 +1873,7 @@ function KeyHints({
 
   if (isEditingRoot) {
     hints = "Enter \u2192 open dir  \u2502  Esc \u2192 cancel";
-  } else if (isEditingRevise) {
+  } else if (isEditingRevise || isEditingModelPool) {
     hints = "Enter \u2192 submit  \u2502  Esc \u2192 cancel";
   } else if (pendingConfirmation) {
     hints = "y \u2192 confirm  \u2502  n \u2192 cancel";

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { exportBlueprint } from "../src/export.js";
 import { generateBlueprintPlan, type PlanAnswers, type PlannerDraft } from "../src/plan.js";
-import { initPlannerProfile } from "../src/profile.js";
+import { initPlannerProfile, loadPlannerProfile } from "../src/profile.js";
 import {
   getTuiActions,
   loadTuiDashboard,
@@ -124,7 +124,9 @@ describe("blueprint tui", () => {
     expect(graphOutput).toContain("task-001-update-docs \u2192 task-002-implement-api");
     expect(providersOutput).toContain("Provider Pool");
     expect(providersOutput).toContain("available openai,google");
+    expect(providersOutput).toContain("Model Catalog");
     expect(actionsOutput).toContain("Action Queue");
+    expect(actionsOutput).toContain("Configure Model Pool");
     expect(actionsOutput).toContain("Export Handoffs");
     expect(actionsOutput).toContain("blueprint auth doctor --live");
   });
@@ -134,7 +136,15 @@ describe("blueprint tui", () => {
     const dashboard = await loadTuiDashboard({ root });
     const actions = getTuiActions(dashboard);
 
-    expect(actions.map((action) => action.id)).toEqual(["lint", "export", "revise", "auth-doctor", "auth-doctor-live"]);
+    expect(actions.map((action) => action.id)).toEqual([
+      "model-pool",
+      "lint",
+      "export",
+      "revise",
+      "auth-doctor",
+      "auth-doctor-live",
+    ]);
+    expect(actions.find((action) => action.id === "model-pool")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "export")?.enabled).toBe(true);
     expect(actions.find((action) => action.id === "revise")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "auth-doctor-live")?.requiresConfirmation).toBe(true);
@@ -150,6 +160,25 @@ describe("blueprint tui", () => {
     expect(exported.status).toBe("ok");
     expect(exported.summary).toContain("Exported");
     expect(exported.lines.some((line) => line.startsWith("output "))).toBe(true);
+  });
+
+  it("updates the active model pool through a TUI action", async () => {
+    const root = await makePlannedProject();
+    const result = await runTuiAction({
+      root,
+      actionId: "model-pool",
+      modelPool: "gpt-5.5,gemini-3.1-pro-preview",
+    });
+    const profile = await loadPlannerProfile(root);
+    const dashboard = await loadTuiDashboard({ root });
+    const providersOutput = renderTuiDashboardToString(dashboard, "providers");
+
+    expect(result.status).toBe("ok");
+    expect(result.summary).toContain("Model pool updated with 2 model");
+    expect(profile.errors).toEqual([]);
+    expect(profile.profile?.available_models).toEqual(["gpt-5.5", "gemini-3.1-pro-preview"]);
+    expect(providersOutput).toContain("Model Pool");
+    expect(providersOutput).toContain("gpt-5.5");
   });
 
   it("records TUI action history outside revisions", async () => {

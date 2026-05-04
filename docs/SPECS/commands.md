@@ -168,8 +168,11 @@ MVP atual:
 - mostra status de profile, blueprint, contexto e tasks;
 - lista tasks, dependencias, provider pool, model pool e fila de acoes
   operacionais;
-- executa acoes locais da aba `actions`: `setup project`, `lint`, `export`,
-  `revise preview` e `auth doctor`;
+- executa acoes locais da aba `actions`: `setup project`, `configure model
+  pool`, `lint`, `export`, `revise preview` e `auth doctor`;
+- `configure model pool` aceita IDs exatos separados por virgula ou `all` para
+  voltar aos defaults dos providers ativos, e regrava `available_models` em
+  `profile.yaml`;
 - pede confirmacao antes de `setup project`; quando confirmado, cria arquivos
   locais faltantes (`.blueprint/`, `profile.yaml`, `model_registry.yaml`) sem
   chamada de modelo;

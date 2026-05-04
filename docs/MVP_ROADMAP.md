@@ -83,6 +83,20 @@ Checkpoint:
 
 - Mudanca pequena atualiza task correta; mudanca estrutural pede replanejamento.
 
+## Week 5 - Produto e robustez pre-1.0
+
+- [x] Configurar `available_models` dentro da TUI, sem exigir edicao manual de
+  YAML.
+- [ ] Definir politica ou comando de atualizacao do model registry, ja que
+  disponibilidade, precos e benchmarks mudam rapido.
+- [ ] Smoke final de uso real: `blueprint tui` -> setup -> profile/model pool ->
+  `plan --engine llm --fallback` -> `lint` -> `export`.
+
+Checkpoint:
+
+- Usuario consegue configurar providers e modelos, gerar handoffs e exportar o
+  pacote inteiro sem sair do app.
+
 ## 2.0 - Supervisor
 
 - [ ] Runner de workers.

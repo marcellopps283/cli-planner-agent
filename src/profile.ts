@@ -38,6 +38,12 @@ export interface PlannerProfileWriteResult {
   warnings: string[];
 }
 
+export interface UpdatePlannerProfileModelsOptions {
+  root: string;
+  models?: string[];
+  plannerModel?: string;
+}
+
 export interface PlannerProfileValidationResult {
   path: string;
   profile?: PlannerProfile;
@@ -51,7 +57,7 @@ export async function initPlannerProfile(
   const root = path.resolve(options.root);
   const profilePath = getProfilePath(root);
   const availableProviders = uniqueProviders(options.providers ?? KNOWN_PROVIDER_IDS);
-  const availableModels = uniqueStrings(options.models ?? defaultModelsForProviders(availableProviders));
+  const availableModels = uniqueStrings(options.models ?? defaultModelIdsForProviders(availableProviders));
   const plannerProvider = options.plannerProvider ?? pickDefaultPlannerProvider(availableProviders);
   const plannerModel = options.plannerModel ?? defaultModelForProvider(plannerProvider, availableModels);
   const modelRegistrySource = options.modelRegistrySource ?? "bundled";
@@ -157,6 +163,80 @@ export async function loadPlannerProfile(rootInput: string): Promise<PlannerProf
       warnings: [],
     };
   }
+}
+
+export async function updatePlannerProfileModels(
+  options: UpdatePlannerProfileModelsOptions,
+): Promise<PlannerProfileWriteResult> {
+  const root = path.resolve(options.root);
+  const profileResult = await loadPlannerProfile(root);
+
+  if (profileResult.errors.length > 0 || !profileResult.profile) {
+    throw new Error(`Profile is not ready.\n${profileResult.errors.join("\n")}`);
+  }
+
+  const registryResult = await loadModelRegistryForProfile(root, profileResult.profile);
+
+  if (registryResult.errors.length > 0 || !registryResult.registry) {
+    throw new Error(`Model registry is not ready.\n${registryResult.errors.join("\n")}`);
+  }
+
+  const registry = registryResult.registry.models;
+  const selectedModelIds = uniqueStrings(
+    options.models ?? defaultModelIdsForProviders(profileResult.profile.available_providers, registry),
+  );
+
+  if (selectedModelIds.length === 0) {
+    throw new Error("At least one model must remain in the active model pool.");
+  }
+
+  const availableProviders = new Set(profileResult.profile.available_providers);
+  const selectedModels = selectedModelIds.map((modelId) => {
+    const model = registry.find((entry) => entry.id === modelId);
+
+    if (!model) {
+      throw new Error(`Unknown model: ${modelId}. Run blueprint registry show to list known model ids.`);
+    }
+
+    if (!availableProviders.has(model.provider)) {
+      throw new Error(
+        `Model ${modelId} belongs to provider ${model.provider}, which is not in available_providers.`,
+      );
+    }
+
+    return model;
+  });
+  const requestedPlannerModel = options.plannerModel
+    ? selectedModels.find((model) => model.id === options.plannerModel)
+    : undefined;
+
+  if (options.plannerModel && !requestedPlannerModel) {
+    throw new Error(`planner_model ${options.plannerModel} is not in the selected model pool.`);
+  }
+
+  const currentPlannerModel = selectedModels.find((model) => model.id === profileResult.profile!.planner_model);
+  const sameProviderModel = selectedModels.find((model) => model.provider === profileResult.profile!.planner_provider);
+  const plannerModel = requestedPlannerModel ?? currentPlannerModel ?? sameProviderModel ?? selectedModels[0]!;
+  const profile = PlannerProfileSchema.parse({
+    ...profileResult.profile,
+    planner_provider: plannerModel.provider,
+    planner_model: plannerModel.id,
+    available_models: selectedModelIds,
+  });
+  const validation = validatePlannerProfile(profile, getProfilePath(root), registry);
+
+  if (validation.errors.length > 0) {
+    throw new Error(validation.errors.join("\n"));
+  }
+
+  await writeFile(getProfilePath(root), serializePlannerProfile(profile), "utf8");
+
+  return {
+    path: getProfilePath(root),
+    profile,
+    written: true,
+    warnings: [...registryResult.warnings, ...validation.warnings],
+  };
 }
 
 export function validatePlannerProfile(
@@ -306,9 +386,12 @@ function defaultModelForProvider(provider: ProviderId, availableModels?: string[
   return model.id;
 }
 
-function defaultModelsForProviders(providers: ProviderId[]): string[] {
+export function defaultModelIdsForProviders(
+  providers: ProviderId[],
+  registry: ModelRegistryEntry[] = DEFAULT_MODEL_REGISTRY,
+): string[] {
   const availableProviders = new Set(providers);
-  return DEFAULT_MODEL_REGISTRY.filter(
+  return registry.filter(
     (entry) => availableProviders.has(entry.provider) && entry.status !== "restricted",
   ).map((entry) => entry.id);
 }
