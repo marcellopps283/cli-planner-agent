@@ -26,7 +26,8 @@ Inicializa configuracao local do planner no projeto alvo.
 
 ### `blueprint providers`
 
-Lista providers configurados e modelos conhecidos.
+Lista providers configurados e modelos conhecidos. Com `--models`, tambem mostra
+o esforco de raciocinio default registrado para cada modelo.
 
 ### `blueprint profile init`
 
@@ -70,7 +71,8 @@ customizacao por projeto sem editar o codigo do CLI.
 
 ### `blueprint registry show`
 
-Lista modelos do registry bundled ou, com `--project`, do registry local.
+Lista modelos do registry bundled ou, com `--project`, do registry local,
+incluindo provider, tier, status, access mode e esforco default.
 
 ### `blueprint registry refresh`
 
@@ -197,6 +199,8 @@ MVP atual:
 - le profile, inventario de contexto, lint, manifest, grafo, tasks e exports;
 - abre no `main menu` e esconde `overview`, `tasks`, `graph`, `providers` e
   `actions` atras desse menu;
+- exige retorno ao `main menu` com `m` ou `Esc` para trocar de tela
+  operacional;
 - mostra onboarding quando o diretorio atual ainda nao tem `.blueprint/`;
 - mostra o diretorio atual no onboarding; `Enter` mantem o diretorio e `c`
   permite escolher outro caminho dentro da TUI;
@@ -223,7 +227,8 @@ MVP atual:
 - exige confirmacao na TUI antes de `auth doctor --live`, pois pode consumir
   quota de provider;
 - calcula uma proxima acao operacional;
-- aceita `--view <view>` para abrir `main` ou uma tela operacional especifica;
+- aceita `--view <view>` para diagnostico ou automacao, mas a jornada normal
+  abre em `main`;
 - aceita `--json` para imprimir o modelo de dashboard sem renderizar Ink.
 
 ## Futuro 2.0

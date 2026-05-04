@@ -26,6 +26,8 @@ export const ModelRegistryEntrySchema = z.object({
   max_output_tokens: z.number().int().positive().optional(),
   input_price_usd_per_mtok: z.number().nonnegative().optional(),
   output_price_usd_per_mtok: z.number().nonnegative().optional(),
+  reasoning_efforts: z.array(z.string().min(1)).default([]),
+  default_reasoning_effort: z.string().min(1).optional(),
   strengths: z.array(z.string()).default([]),
   weaknesses: z.array(z.string()).default([]),
   latency_class: z.enum(["low", "medium", "high", "unknown"]).default("unknown"),

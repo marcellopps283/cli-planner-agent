@@ -42,6 +42,11 @@ automacao, smoke e debugging.
   incluindo status de auth quando disponivel sem chamada de modelo.
 - A TUI abre no `Main Menu`, que centraliza acesso a `Plan / Actions`,
   `Overview`, `Tasks`, `Dependency Graph` e `Providers / Models`.
+- Telas operacionais nao fazem rotacao lateral entre si; `m` ou `Esc` retorna
+  ao `Main Menu`, e a troca de contexto passa pelo menu principal.
+- A referencia de evolucao visual/fluxo esta documentada em
+  `docs/SPECS/hermes_tui_reference.md`: chat principal, status line, slash
+  commands e overlays modais no estilo Hermes Agent.
 - O overview fica atras do menu principal e inclui um painel `Operations` com
   status operacional, planner, providers, model pool, tasks, task models e
   sessoes.

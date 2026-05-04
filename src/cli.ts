@@ -34,7 +34,11 @@ program
     if (options.models) {
       console.log("");
       for (const model of DEFAULT_MODEL_REGISTRY) {
-        console.log(`${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}`);
+        console.log(
+          `${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}\teffort:${
+            model.default_reasoning_effort ?? "auto"
+          }`,
+        );
       }
     }
   });
@@ -214,7 +218,11 @@ registryCommand
   .action(async (options: { root: string; project?: boolean }) => {
     if (!options.project) {
       for (const model of DEFAULT_MODEL_REGISTRY) {
-        console.log(`${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}`);
+        console.log(
+          `${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}\teffort:${
+            model.default_reasoning_effort ?? "auto"
+          }`,
+        );
       }
       return;
     }
@@ -231,7 +239,11 @@ registryCommand
     }
 
     for (const model of result.registry.models) {
-      console.log(`${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}`);
+      console.log(
+        `${model.id}\t${model.provider}\t${model.tier}\t${model.status}\t${model.access_mode}\teffort:${
+          model.default_reasoning_effort ?? "auto"
+        }`,
+      );
     }
   });
 

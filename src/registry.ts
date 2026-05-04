@@ -14,15 +14,25 @@ import {
 } from "./schemas.js";
 
 export const MODEL_REGISTRY_FILE = "model_registry.yaml";
-export const BUNDLED_MODEL_REGISTRY_REVISION = "2026-05-03-gpt55-opus47-gemini31";
-export const BUNDLED_MODEL_REGISTRY_RESEARCH_DATE = "2026-05-03";
+export const BUNDLED_MODEL_REGISTRY_REVISION = "2026-05-04-cli-model-pool-depth";
+export const BUNDLED_MODEL_REGISTRY_RESEARCH_DATE = "2026-05-04";
 const MODEL_REGISTRY_SOURCE_URLS = [
   "https://developers.openai.com/api/docs/models",
   "https://openai.com/index/introducing-gpt-5-5/",
+  "https://developers.openai.com/api/docs/models/gpt-5.4",
+  "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+  "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
+  "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
   "https://platform.claude.com/docs/en/about-claude/models/overview",
+  "https://docs.anthropic.com/en/docs/claude-code/model-config",
   "https://www.anthropic.com/news/claude-opus-4-7",
+  "https://www.anthropic.com/claude/sonnet",
+  "https://www.anthropic.com/news/claude-haiku-4-5",
   "https://ai.google.dev/gemini-api/docs/models",
   "https://deepmind.google/models/model-cards/gemini-3-1-pro/",
+  "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview",
+  "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-preview",
+  "https://ai.google.dev/gemini-api/docs/thinking",
 ];
 
 export interface ModelRegistryValidationResult {

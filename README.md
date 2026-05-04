@@ -147,6 +147,11 @@ JSON fora do contrato. Com `--fallback`, o CLI tenta primeiro outro modelo ativo
 do pool, pedindo confirmacao no modo interativo, e so depois oferece fallback
 deterministico.
 
+O registry bundled guarda benchmarks, precos, `task_fit` e esforcos de
+raciocinio suportados por modelo. A pesquisa operacional fica em
+`docs/SPECS/model_pool_research.md`; a direcao de TUI inspirada no Hermes Agent
+fica em `docs/SPECS/hermes_tui_reference.md`.
+
 O pacote de contexto enviado ao planner continua compacto: stack detectada,
 scripts de validacao, top-level dirs, docs canonicos, headings curtos e ate 80
 arquivos priorizados com markers. O repositorio inteiro nao e enviado.
@@ -182,8 +187,6 @@ Dashboard TUI:
 ```bash
 blueprint tui
 blueprint tui --view main
-blueprint tui --view tasks
-blueprint tui --view actions
 blueprint tui --json
 ```
 
@@ -192,6 +195,8 @@ menu: `Plan / Actions`, `Overview`, `Tasks`, `Dependency Graph` e
 `Providers / Models`. O overview continua disponivel e mostra o painel
 `Operations` com status operacional, planner, provider pool, model pool, tasks,
 modelos usados e sessoes TUI recentes.
+Dentro de uma tela operacional, `m` ou `Esc` volta ao `Main Menu`; a navegacao
+entre telas passa sempre por esse menu.
 
 Se a TUI for aberta em um diretorio sem `.blueprint/`, ela entra em modo de
 onboarding: mostra o diretorio atual, permite manter/trocar/criar pasta e depois

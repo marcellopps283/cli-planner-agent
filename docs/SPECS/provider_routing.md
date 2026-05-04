@@ -54,6 +54,13 @@ models:
     context_window: 1000000
     input_price_usd_per_mtok: 5
     output_price_usd_per_mtok: 25
+    reasoning_efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+    default_reasoning_effort: high
     routing_tags:
       - planner_master
       - agentic_coding
@@ -85,6 +92,7 @@ models:
 - complexidade;
 - contexto;
 - velocidade;
+- esforco de raciocinio suportado;
 - quota;
 - custo;
 - privacidade;

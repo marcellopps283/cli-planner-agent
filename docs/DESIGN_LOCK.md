@@ -91,6 +91,8 @@ Dimensoes minimas do banco:
 - `model`
 - `access_mode`
 - `task_fit`
+- `reasoning_efforts`
+- `default_reasoning_effort`
 - `context_window`
 - `strengths`
 - `weaknesses`

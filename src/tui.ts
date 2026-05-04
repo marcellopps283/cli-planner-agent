@@ -64,6 +64,7 @@ export interface TuiModelSummary {
   provider: ProviderId;
   tier: string;
   status: string;
+  defaultReasoningEffort?: string;
 }
 
 export interface TuiSetupStatus {
@@ -1257,16 +1258,6 @@ export function InteractiveDashboard({
       return;
     }
 
-    if (key.rightArrow || input === "\t") {
-      openSectionView(nextView(view));
-      return;
-    }
-
-    if (key.leftArrow) {
-      openSectionView(previousView(view));
-      return;
-    }
-
     if (view === "actions" && key.downArrow) {
       setSelectedActionIndex((index) => Math.min(index + 1, actions.length - 1));
       return;
@@ -1310,11 +1301,6 @@ export function InteractiveDashboard({
       return;
     }
 
-    const numeric = Number(input);
-
-    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= TUI_MAIN_MENU_ITEMS.length) {
-      openMainMenuIndex(numeric - 1);
-    }
   });
 
   function openMainMenuIndex(index: number): void {
@@ -2579,7 +2565,12 @@ function ProvidersView({ dashboard }: { dashboard: TuiDashboard }): React.ReactE
       status: dashboard.registryModels.length > 0 ? "ok" : "warn",
       lines:
         dashboard.registryModels.length > 0
-          ? summarizeModelLines(dashboard.registryModels.map((model) => `${model.id} ${model.tier}/${model.status}`))
+          ? summarizeModelLines(
+              dashboard.registryModels.map(
+                (model) =>
+                  `${model.id} ${model.tier}/${model.status} effort ${model.defaultReasoningEffort ?? "auto"}`,
+              ),
+            )
           : ["registry unavailable"],
     }),
     h(MessageList, { title: "Profile Messages", messages: [...dashboard.profile.errors, ...dashboard.profile.warnings] }),
@@ -2905,6 +2896,7 @@ function toModelSummary(model: ModelRegistryEntry): TuiModelSummary {
     provider: model.provider,
     tier: model.tier,
     status: model.status,
+    defaultReasoningEffort: model.default_reasoning_effort,
   };
 }
 
@@ -3100,20 +3092,6 @@ function parseTuiModelPoolInput(input: string): string[] | undefined {
   }
 
   return parseModelIds(input);
-}
-
-function nextView(view: TuiView): TuiSectionView {
-  const index = TUI_SECTION_VIEWS.indexOf(view as TuiSectionView);
-  const normalizedIndex = index === -1 ? 0 : index;
-
-  return TUI_SECTION_VIEWS[(normalizedIndex + 1) % TUI_SECTION_VIEWS.length]!;
-}
-
-function previousView(view: TuiView): TuiSectionView {
-  const index = TUI_SECTION_VIEWS.indexOf(view as TuiSectionView);
-  const normalizedIndex = index === -1 ? 0 : index;
-
-  return TUI_SECTION_VIEWS[(normalizedIndex - 1 + TUI_SECTION_VIEWS.length) % TUI_SECTION_VIEWS.length]!;
 }
 
 function mainMenuIndexForView(view: TuiView): number {
@@ -3389,7 +3367,7 @@ function KeyHints({
   } else if (view === "actions") {
     hints = "\u2191\u2193 select  \u2502  Enter run  \u2502  m menu  \u2502  c dir  \u2502  q quit";
   } else {
-    hints = "m menu  \u2502  \u2190\u2192 switch  \u2502  1-5 open  \u2502  c dir  \u2502  q quit";
+    hints = "m/Esc menu  \u2502  c dir  \u2502  q quit";
   }
 
   return h(

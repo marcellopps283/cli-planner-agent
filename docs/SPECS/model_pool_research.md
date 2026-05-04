@@ -1,6 +1,6 @@
 # Spec - Model Pool Research
 
-Verificado em 2026-05-03. O registry bundled deve ser revisado com frequencia,
+Verificado em 2026-05-04. O registry bundled deve ser revisado com frequencia,
 porque disponibilidade, nomes de modelos, precos e benchmarks mudam rapido.
 
 Politica MVP: o registry bundled guarda `metadata.bundled_revision` e
@@ -17,11 +17,13 @@ carregar `suggested_model` como `gpt-5.5`, `claude-opus-4-7` ou
 
 Pool inicial recomendado:
 
-- OpenAI: `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`; `gpt-5.5-pro` fica no registry
-  como restricted e so entra no pool quando o usuario selecionar explicitamente.
+- OpenAI: `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano` e
+  `gpt-5.3-codex`. `gpt-5.5-pro` e `gpt-5.4-pro` ficam no registry como
+  restricted e so entram no pool quando o usuario selecionar explicitamente.
 - Anthropic: `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`.
 - Google: `gemini-3.1-pro-preview`, `gemini-3.1-pro-preview-customtools`,
-  `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`.
+  `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`,
+  `gemini-2.5-pro`, `gemini-2.5-flash` e `gemini-2.5-flash-lite`.
 
 ## Evidencias por provider
 
@@ -30,6 +32,10 @@ Pool inicial recomendado:
 Fontes oficiais:
 
 - https://developers.openai.com/api/docs/models
+- https://developers.openai.com/api/docs/models/gpt-5.4
+- https://developers.openai.com/api/docs/models/gpt-5.4-mini
+- https://developers.openai.com/api/docs/models/gpt-5.4-nano
+- https://developers.openai.com/api/docs/models/gpt-5.3-codex
 - https://developers.openai.com/api/docs/guides/latest-model
 - https://openai.com/index/introducing-gpt-5-5/
 - https://developers.openai.com/api/docs/pricing
@@ -42,17 +48,23 @@ Sinais para o registry:
   output de 128k tokens.
 - Benchmarks publicados no lancamento: Terminal-Bench 2.0 82.7%, SWE-Bench Pro
   58.6%, GDPval 84.9%, OSWorld-Verified 78.7%, BrowseComp 84.4%.
-- `gpt-5.4-mini` e `gpt-5.4-nano` existem como opcoes menores, mas o MVP usa
-  `gpt-5.4-mini` para tarefas pequenas de coding/JSON por ser o menor modelo
-  que a doc destaca para coding/subagents.
+- Esforco OpenAI: `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` e `gpt-5.4-nano`
+  aceitam `none`, `low`, `medium`, `high`, `xhigh`; modelos Pro usam
+  `medium`, `high`, `xhigh`.
+- `gpt-5.4-mini` e o utilitario de coding/subagents. `gpt-5.4-nano` entra para
+  classificacao, extracao e micro-edicoes de custo minimo. `gpt-5.3-codex`
+  entra como modelo especializado para agentic coding no Codex CLI.
 
 ### Anthropic
 
 Fontes oficiais:
 
 - https://platform.claude.com/docs/en/about-claude/models/overview
+- https://docs.anthropic.com/en/docs/claude-code/model-config
 - https://www.anthropic.com/news/claude-opus-4-7
 - https://www.anthropic.com/claude/opus
+- https://www.anthropic.com/claude/sonnet
+- https://www.anthropic.com/news/claude-haiku-4-5
 - https://claude.com/pricing
 
 Sinais para o registry:
@@ -64,8 +76,12 @@ Sinais para o registry:
 - Benchmarks/textos publicados no lancamento: CursorBench 70%, BigLaw Bench
   90.9% em high effort, +13% em benchmark interno de 93 tarefas de coding e
   98.5% em benchmark visual de computer use.
-- `Claude Mythos Preview` nao entra no pool default: a doc oficial o descreve
-  como preview separado, invitation-only e sem self-serve sign-up.
+- Claude Code aceita aliases (`opus`, `sonnet`, `haiku`, `opusplan`) e nomes
+  completos. O registry usa nomes exatos (`claude-opus-4-7`,
+  `claude-sonnet-4-6`, `claude-haiku-4-5`) para evitar ambiguidade.
+- Esforco Claude Code: a CLI local expõe `--effort low|medium|high|xhigh|max`.
+  O default operacional do registry e `high` para Opus, `medium` para Sonnet e
+  `low` para Haiku.
 
 ### Google
 
@@ -73,8 +89,10 @@ Fontes oficiais:
 
 - https://ai.google.dev/gemini-api/docs/models
 - https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview
+- https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-preview
 - https://deepmind.google/models/model-cards/gemini-3-1-pro/
 - https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-pro/
+- https://ai.google.dev/gemini-api/docs/thinking
 - https://ai.google.dev/gemini-api/docs/pricing
 
 Sinais para o registry:
@@ -89,6 +107,12 @@ Sinais para o registry:
 - `gemini-3.1-flash-lite-preview` e o utilitario barato para alto volume,
   com preco oficial de $0.25 input / $1.50 output por 1M tokens no tier paid
   standard.
+- Google lista `gemini-2.5-pro`, `gemini-2.5-flash` e
+  `gemini-2.5-flash-lite` como modelos atuais nao-deprecated; eles entram como
+  fallback estavel quando o usuario quer evitar previews.
+- Esforco Gemini: modelos Gemini 3 Pro aceitam `thinkingLevel low|high`;
+  Gemini 3 Flash/Flash-Lite aceitam `minimal|low|medium|high`; Gemini 2.5 usa
+  `thinkingBudget` em vez de `thinkingLevel`.
 
 ## Regras de separacao no MVP
 

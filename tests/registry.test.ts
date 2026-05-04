@@ -22,6 +22,25 @@ describe("model registry", () => {
     expect(exported.written).toBe(true);
     expect(loaded.errors).toEqual([]);
     expect(loaded.registry?.models.map((model) => model.id)).toContain("gpt-5.5");
+    expect(loaded.registry?.models.map((model) => model.id)).toEqual(
+      expect.arrayContaining([
+        "gpt-5.4-nano",
+        "gpt-5.3-codex",
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-pro-preview-customtools",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+      ]),
+    );
+    expect(loaded.registry?.models.find((model) => model.id === "gpt-5.5")?.reasoning_efforts).toContain("xhigh");
+    expect(loaded.registry?.models.find((model) => model.id === "gemini-3.1-flash-lite-preview")?.reasoning_efforts).toContain(
+      "medium",
+    );
   });
 
   it("rejects duplicate model ids", () => {
@@ -41,6 +60,7 @@ describe("model registry", () => {
           task_fit: {
             planning: 0.5,
           },
+          reasoning_efforts: [],
           strengths: [],
           weaknesses: [],
           latency_class: "unknown",
@@ -61,6 +81,7 @@ describe("model registry", () => {
           task_fit: {
             planning: 0.5,
           },
+          reasoning_efforts: [],
           strengths: [],
           weaknesses: [],
           latency_class: "unknown",
