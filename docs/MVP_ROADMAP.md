@@ -99,8 +99,8 @@ Checkpoint:
 
 ## Week 6 - Reorientacao Harness/TUI
 
-- [ ] `blueprint` sem subcomando abre a TUI diretamente.
-- [ ] Onboarding obrigatorio em etapas: diretorio -> providers -> modelos por
+- [x] `blueprint` sem subcomando abre a TUI diretamente.
+- [x] Onboarding obrigatorio em etapas: diretorio -> providers -> modelos por
   provider -> planner -> confirmacao.
 - [ ] Painel operacional moderno para configuracoes, status, metricas e
   artefatos.

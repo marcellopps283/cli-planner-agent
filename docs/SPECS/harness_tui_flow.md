@@ -32,3 +32,11 @@ automacao, smoke e debugging.
 - Handoffs devem ser completos o suficiente para outro agente executar sem
   depender da memoria da conversa.
 - MVP 1.0 planeja e gera handoffs; nao executa workers.
+
+## Status implementado
+
+- `blueprint` sem subcomando abre a TUI.
+- O setup interativo passa por providers, modelos por provider, planner e
+  confirmacao antes de escrever arquivos.
+- O backend de setup aceita selecao explicita de providers/modelos/planner para
+  manter o fluxo testavel e auditavel.

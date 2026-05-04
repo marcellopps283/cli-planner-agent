@@ -80,6 +80,51 @@ describe("blueprint tui", () => {
     expect(dashboard.profile.errors).toEqual([]);
   });
 
+  it("runs setup with explicit provider, model, and planner selections", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-selective-setup-test-"));
+    const result = await runTuiAction({
+      root,
+      actionId: "setup",
+      providers: ["openai", "google"],
+      models: ["gpt-5.5", "gemini-3.1-flash-lite-preview"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+      providerChecker: async () => [
+        {
+          id: "openai",
+          cli: "codex",
+          installed: true,
+          authCheck: "not_checked",
+          detail: "installed",
+        },
+        {
+          id: "google",
+          cli: "gemini",
+          installed: true,
+          authCheck: "not_checked",
+          detail: "installed",
+        },
+        {
+          id: "anthropic",
+          cli: "claude",
+          installed: false,
+          authCheck: "failed",
+          detail: "missing",
+        },
+      ],
+    });
+    const profileResult = await loadPlannerProfile(root);
+
+    expect(result.status).toBe("ok");
+    expect(result.lines).toContain("providers openai,google");
+    expect(result.lines).toContain("models gpt-5.5,gemini-3.1-flash-lite-preview");
+    expect(result.lines).toContain("planner openai/gpt-5.5");
+    expect(profileResult.errors).toEqual([]);
+    expect(profileResult.profile?.available_providers).toEqual(["openai", "google"]);
+    expect(profileResult.profile?.available_models).toEqual(["gpt-5.5", "gemini-3.1-flash-lite-preview"]);
+    expect(profileResult.profile?.planner_model).toBe("gpt-5.5");
+  });
+
   it("loads a dashboard model from a generated blueprint", async () => {
     const root = await makePlannedProject();
     await exportBlueprint({

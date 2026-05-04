@@ -171,10 +171,11 @@ blueprint tui --json
 ```
 
 Se a TUI for aberta em um diretorio sem `.blueprint/`, ela entra em modo de
-onboarding: mostra o que falta e oferece a acao `Setup Project`, que pede
-confirmacao antes de criar `.blueprint/`, `profile.yaml` e `model_registry.yaml`.
-Nessa tela inicial, `Enter` mantem o diretorio atual e `c` permite escolher outro
-diretorio sem sair do app.
+onboarding: mostra o diretorio atual, permite manter/trocar/criar pasta e depois
+guia a selecao de providers, modelos por provider e modelo planner antes de criar
+`.blueprint/`, `profile.yaml` e `model_registry.yaml`. Nessa tela inicial,
+`Enter` mantem o diretorio atual e `c` permite escolher outro diretorio sem sair
+do app.
 
 Na aba `actions`, a TUI configura o model pool por IDs exatos, executa `lint`,
 `export`, `auth doctor` e um fluxo guiado de `revise`: digita a mudanca, revisa

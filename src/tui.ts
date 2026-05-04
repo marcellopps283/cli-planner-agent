@@ -14,6 +14,7 @@ import { BLUEPRINT_DIR, initBlueprint } from "./blueprint.js";
 import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
 import { lintBlueprint, type BlueprintLintResult } from "./lint.js";
+import { DEFAULT_MODEL_REGISTRY } from "./models.js";
 import {
   initPlannerProfile,
   loadPlannerProfile,
@@ -90,6 +91,21 @@ export const TUI_ACTION_IDS = [
 ] as const;
 export type TuiActionId = (typeof TUI_ACTION_IDS)[number];
 
+type SetupStep = "idle" | "providers" | "models" | "planner" | "confirm";
+
+interface SetupDraft {
+  providers: ProviderId[];
+  models: string[];
+  plannerModel?: string;
+}
+
+const SETUP_PROVIDER_OPTIONS = ["openai", "anthropic", "google"] as const satisfies readonly ProviderId[];
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  openai: "OpenAI / Codex",
+  anthropic: "Anthropic / Claude Code",
+  google: "Google / Gemini",
+};
+
 export interface TuiAction {
   id: TuiActionId;
   label: string;
@@ -115,6 +131,10 @@ export interface RunTuiActionOptions {
   actionId: TuiActionId;
   change?: string;
   modelPool?: string;
+  providers?: ProviderId[];
+  models?: string[];
+  plannerProvider?: ProviderId;
+  plannerModel?: string;
   apply?: boolean;
   liveTimeoutMs?: number;
   providerChecker?: (live: boolean) => Promise<ProviderDoctorResult[]>;
@@ -437,20 +457,31 @@ async function setupBlueprintProject(options: RunTuiActionOptions): Promise<TuiA
   const providerResults = options.providerChecker
     ? await options.providerChecker(false)
     : await Promise.all(DEFAULT_PROVIDER_ADAPTERS.map((adapter) => checkProvider(adapter)));
-  const providers = chooseSetupProviders(providerResults);
-  const plannerProvider = chooseSetupPlanner(providers);
+  const providers = options.providers && options.providers.length > 0
+    ? options.providers
+    : chooseSetupProviders(providerResults);
+  const plannerProvider = options.plannerProvider ?? chooseSetupPlanner(providers);
   let profileResult = await loadPlannerProfile(root);
   let createdProfile = false;
   const lines = [
     `providers ${providers.join(",")}`,
-    `planner ${plannerProvider}`,
+    `models ${options.models?.join(",") ?? "default_for_selected_providers"}`,
+    `planner ${plannerProvider}${options.plannerModel ? `/${options.plannerModel}` : ""}`,
   ];
+
+  for (const result of providerResults) {
+    if (providers.includes(result.id) && !result.installed) {
+      lines.push(`warning provider ${result.id} cli not detected (${result.detail})`);
+    }
+  }
 
   if (!profileResult.profile) {
     const written = await initPlannerProfile({
       root,
       providers,
+      models: options.models,
       plannerProvider,
+      plannerModel: options.plannerModel,
       modelRegistrySource: "project",
     });
 
@@ -529,6 +560,114 @@ function chooseSetupPlanner(providers: ProviderId[]): ProviderId {
   return providers[0] ?? "google";
 }
 
+function makeDefaultSetupDraft(): SetupDraft {
+  const providers = [...SETUP_PROVIDER_OPTIONS];
+  const models = defaultSetupModelIds(providers);
+
+  return normalizeSetupDraft({
+    providers,
+    models,
+    plannerModel: chooseDefaultPlannerModel(models),
+  });
+}
+
+function setupModelsForProvider(provider: ProviderId): ModelRegistryEntry[] {
+  return DEFAULT_MODEL_REGISTRY.filter((model) => model.provider === provider && model.status !== "restricted");
+}
+
+function defaultSetupModelIds(providers: readonly ProviderId[]): string[] {
+  const selectedProviders = new Set(providers);
+
+  return DEFAULT_MODEL_REGISTRY.filter(
+    (model) => selectedProviders.has(model.provider) && model.status !== "restricted",
+  ).map((model) => model.id);
+}
+
+function reconcileSetupDraft(current: SetupDraft, providers: ProviderId[]): SetupDraft {
+  const previousProviders = new Set(current.providers);
+  const nextProviders = [...providers].sort(byProviderOrder);
+  const currentModels = new Set(current.models);
+  const nextModelIds = nextProviders.flatMap((provider) => {
+    const providerModels = setupModelsForProvider(provider).map((model) => model.id);
+
+    if (!previousProviders.has(provider)) {
+      return providerModels;
+    }
+
+    return providerModels.filter((modelId) => currentModels.has(modelId));
+  });
+
+  return normalizeSetupDraft({
+    providers: nextProviders,
+    models: sortModelIds(nextModelIds),
+    plannerModel: current.plannerModel,
+  });
+}
+
+function updateSetupModelsForProvider(draft: SetupDraft, provider: ProviderId, modelIds: string[]): SetupDraft {
+  const providerModelIds = new Set(setupModelsForProvider(provider).map((model) => model.id));
+  const otherModels = draft.models.filter((modelId) => !providerModelIds.has(modelId));
+
+  return normalizeSetupDraft({
+    ...draft,
+    models: sortModelIds([...otherModels, ...modelIds]),
+  });
+}
+
+function normalizeSetupDraft(draft: SetupDraft): SetupDraft {
+  const providers = [...draft.providers].sort(byProviderOrder);
+  const providerSet = new Set(providers);
+  const models = sortModelIds(draft.models.filter((modelId) => {
+    const provider = providerForModelId(modelId);
+    return provider ? providerSet.has(provider) : false;
+  }));
+  const plannerModel = draft.plannerModel && models.includes(draft.plannerModel)
+    ? draft.plannerModel
+    : chooseDefaultPlannerModel(models);
+
+  return {
+    providers,
+    models,
+    plannerModel,
+  };
+}
+
+function setupPlannerModels(modelIds: string[]): ModelRegistryEntry[] {
+  const selected = new Set(modelIds);
+
+  return DEFAULT_MODEL_REGISTRY.filter((model) => selected.has(model.id)).sort((left, right) => {
+    const planningDiff = (right.task_fit.planning ?? 0) - (left.task_fit.planning ?? 0);
+
+    if (planningDiff !== 0) {
+      return planningDiff;
+    }
+
+    return byProviderOrder(left.provider, right.provider) || left.id.localeCompare(right.id);
+  });
+}
+
+function chooseDefaultPlannerModel(modelIds: string[]): string | undefined {
+  return setupPlannerModels(modelIds)[0]?.id;
+}
+
+function providerForModelId(modelId: string): ProviderId | undefined {
+  return DEFAULT_MODEL_REGISTRY.find((model) => model.id === modelId)?.provider;
+}
+
+function sortModelIds(modelIds: string[]): string[] {
+  const selected = new Set(modelIds);
+
+  return DEFAULT_MODEL_REGISTRY.filter((model) => selected.has(model.id)).map((model) => model.id);
+}
+
+function byProviderOrder(left: ProviderId, right: ProviderId): number {
+  return SETUP_PROVIDER_OPTIONS.indexOf(left) - SETUP_PROVIDER_OPTIONS.indexOf(right);
+}
+
+function formatScore(score: number | undefined): string {
+  return typeof score === "number" ? score.toFixed(2) : "n/a";
+}
+
 export function InteractiveDashboard({
   dashboard,
   initialView,
@@ -551,6 +690,12 @@ export function InteractiveDashboard({
   const [isEditingRoot, setIsEditingRoot] = useState(false);
   const [rootInputMode, setRootInputMode] = useState<"choose" | "create">("choose");
   const [rootInput, setRootInput] = useState(dashboard.root);
+  const [setupStep, setSetupStep] = useState<SetupStep>("idle");
+  const [setupDraft, setSetupDraft] = useState<SetupDraft>(() => makeDefaultSetupDraft());
+  const [setupProviderCursor, setSetupProviderCursor] = useState(0);
+  const [setupModelProviderCursor, setSetupModelProviderCursor] = useState(0);
+  const [setupModelCursor, setSetupModelCursor] = useState(0);
+  const [setupPlannerCursor, setSetupPlannerCursor] = useState(0);
   const actions = getTuiActions(dashboardState);
 
   useInput((input, key) => {
@@ -592,7 +737,8 @@ export function InteractiveDashboard({
             setDashboardState(nextDashboard);
             setRootInput(nextDashboard.root);
             setView(nextDashboard.setup.initialized ? "overview" : "actions");
-            setPendingConfirmation(nextDashboard.setup.initialized ? undefined : "setup");
+            setSetupStep(nextDashboard.setup.initialized ? "idle" : "providers");
+            setPendingConfirmation(undefined);
           })
           .catch((error: unknown) => {
             setActionResult({
@@ -670,6 +816,11 @@ export function InteractiveDashboard({
       return;
     }
 
+    if (!dashboardState.setup.initialized && setupStep !== "idle") {
+      handleSetupInput(input, key);
+      return;
+    }
+
     if (input === "q" || key.escape) {
       exit();
       return;
@@ -683,22 +834,10 @@ export function InteractiveDashboard({
     }
 
     if (!dashboardState.setup.initialized) {
-      if (pendingConfirmation) {
-        if (input.toLowerCase() === "y") {
-          void executeAction(pendingConfirmation);
-        }
-
-        if (input.toLowerCase() === "n") {
-          setPendingConfirmation(undefined);
-        }
-
-        return;
-      }
-
       if (key.return || input === "1") {
         setView("actions");
         setSelectedActionIndex(0);
-        setPendingConfirmation("setup");
+        beginSetupFlow();
         return;
       }
 
@@ -789,9 +928,240 @@ export function InteractiveDashboard({
     }
   });
 
+  function beginSetupFlow(): void {
+    const draft = makeDefaultSetupDraft();
+    setSetupDraft(draft);
+    setSetupProviderCursor(0);
+    setSetupModelProviderCursor(0);
+    setSetupModelCursor(0);
+    setSetupPlannerCursor(0);
+    setSetupStep("providers");
+    setPendingConfirmation(undefined);
+    setActionResult(undefined);
+  }
+
+  function handleSetupInput(
+    input: string,
+    key: { upArrow?: boolean; downArrow?: boolean; return?: boolean; escape?: boolean },
+  ): void {
+    if (key.escape) {
+      setSetupStep("idle");
+      setActionResult(undefined);
+      return;
+    }
+
+    if (setupStep === "providers") {
+      const maxCursor = SETUP_PROVIDER_OPTIONS.length;
+
+      if (key.upArrow) {
+        setSetupProviderCursor((cursor) => Math.max(cursor - 1, 0));
+        return;
+      }
+
+      if (key.downArrow) {
+        setSetupProviderCursor((cursor) => Math.min(cursor + 1, maxCursor));
+        return;
+      }
+
+      if (input === " " || input.toLowerCase() === "a") {
+        if (setupProviderCursor === 0 || input.toLowerCase() === "a") {
+          const allSelected = setupDraft.providers.length === SETUP_PROVIDER_OPTIONS.length;
+          setSetupDraft(reconcileSetupDraft(setupDraft, allSelected ? [] : [...SETUP_PROVIDER_OPTIONS]));
+          return;
+        }
+
+        const provider = SETUP_PROVIDER_OPTIONS[setupProviderCursor - 1];
+        if (provider) {
+          const providers = setupDraft.providers.includes(provider)
+            ? setupDraft.providers.filter((selected) => selected !== provider)
+            : [...setupDraft.providers, provider].sort(byProviderOrder);
+          setSetupDraft(reconcileSetupDraft(setupDraft, providers));
+        }
+
+        return;
+      }
+
+      if (key.return) {
+        if (setupDraft.providers.length === 0) {
+          setActionResult({
+            actionId: "setup",
+            status: "failed",
+            summary: "Select at least one provider.",
+            lines: ["Use Space to toggle providers, or press a to select all."],
+          });
+          return;
+        }
+
+        setSetupModelProviderCursor(0);
+        setSetupModelCursor(0);
+        setSetupStep("models");
+        setActionResult(undefined);
+        return;
+      }
+    }
+
+    if (setupStep === "models") {
+      const provider = setupDraft.providers[setupModelProviderCursor];
+      const models = provider ? setupModelsForProvider(provider) : [];
+      const maxCursor = models.length;
+
+      if (input.toLowerCase() === "b") {
+        if (setupModelProviderCursor > 0) {
+          setSetupModelProviderCursor((cursor) => cursor - 1);
+          setSetupModelCursor(0);
+        } else {
+          setSetupStep("providers");
+        }
+        return;
+      }
+
+      if (key.upArrow) {
+        setSetupModelCursor((cursor) => Math.max(cursor - 1, 0));
+        return;
+      }
+
+      if (key.downArrow) {
+        setSetupModelCursor((cursor) => Math.min(cursor + 1, maxCursor));
+        return;
+      }
+
+      if (provider && (input === " " || input.toLowerCase() === "a")) {
+        const providerModelIds = models.map((model) => model.id);
+        const selectedForProvider = providerModelIds.filter((modelId) => setupDraft.models.includes(modelId));
+
+        if (setupModelCursor === 0 || input.toLowerCase() === "a") {
+          const allSelected = selectedForProvider.length === providerModelIds.length;
+          setSetupDraft(updateSetupModelsForProvider(setupDraft, provider, allSelected ? [] : providerModelIds));
+          return;
+        }
+
+        const model = models[setupModelCursor - 1];
+
+        if (model) {
+          const nextSelected = setupDraft.models.includes(model.id)
+            ? setupDraft.models.filter((modelId) => modelId !== model.id)
+            : [...setupDraft.models, model.id];
+          setSetupDraft(normalizeSetupDraft({ ...setupDraft, models: sortModelIds(nextSelected) }));
+        }
+
+        return;
+      }
+
+      if (key.return) {
+        if (!provider) {
+          setSetupStep("providers");
+          return;
+        }
+
+        if (!setupDraft.models.some((modelId) => providerForModelId(modelId) === provider)) {
+          setActionResult({
+            actionId: "setup",
+            status: "failed",
+            summary: `Select at least one ${provider} model.`,
+            lines: ["Use Space to toggle models, or press a to select all models for this provider."],
+          });
+          return;
+        }
+
+        if (setupModelProviderCursor < setupDraft.providers.length - 1) {
+          setSetupModelProviderCursor((cursor) => cursor + 1);
+          setSetupModelCursor(0);
+          setActionResult(undefined);
+          return;
+        }
+
+        const plannerModels = setupPlannerModels(setupDraft.models);
+        const plannerIndex = Math.max(
+          plannerModels.findIndex((model) => model.id === setupDraft.plannerModel),
+          0,
+        );
+        setSetupPlannerCursor(plannerIndex);
+        setSetupStep("planner");
+        setActionResult(undefined);
+        return;
+      }
+    }
+
+    if (setupStep === "planner") {
+      const models = setupPlannerModels(setupDraft.models);
+
+      if (input.toLowerCase() === "b") {
+        setSetupStep("models");
+        return;
+      }
+
+      if (key.upArrow) {
+        setSetupPlannerCursor((cursor) => Math.max(cursor - 1, 0));
+        return;
+      }
+
+      if (key.downArrow) {
+        setSetupPlannerCursor((cursor) => Math.min(cursor + 1, Math.max(models.length - 1, 0)));
+        return;
+      }
+
+      if (key.return || input === " ") {
+        const plannerModel = models[setupPlannerCursor]?.id ?? chooseDefaultPlannerModel(setupDraft.models);
+
+        if (!plannerModel) {
+          setActionResult({
+            actionId: "setup",
+            status: "failed",
+            summary: "Select at least one model before choosing a planner.",
+            lines: ["Press b to return to model selection."],
+          });
+          return;
+        }
+
+        setSetupDraft(normalizeSetupDraft({ ...setupDraft, plannerModel }));
+        setSetupStep("confirm");
+        setActionResult(undefined);
+        return;
+      }
+    }
+
+    if (setupStep === "confirm") {
+      if (input.toLowerCase() === "b" || input.toLowerCase() === "n") {
+        setSetupStep("planner");
+        return;
+      }
+
+      if (input.toLowerCase() === "y" || key.return) {
+        const plannerModel = setupDraft.plannerModel ?? chooseDefaultPlannerModel(setupDraft.models);
+        const plannerProvider = plannerModel ? providerForModelId(plannerModel) : undefined;
+
+        if (!plannerModel || !plannerProvider) {
+          setActionResult({
+            actionId: "setup",
+            status: "failed",
+            summary: "Planner model is required.",
+            lines: ["Press b and choose one model as the planner."],
+          });
+          return;
+        }
+
+        setSetupStep("idle");
+        void executeAction("setup", {
+          providers: setupDraft.providers,
+          models: setupDraft.models,
+          plannerProvider,
+          plannerModel,
+        });
+      }
+    }
+  }
+
   async function executeAction(
     actionId: TuiActionId,
-    options: { change?: string; modelPool?: string; apply?: boolean } = {},
+    options: {
+      change?: string;
+      modelPool?: string;
+      providers?: ProviderId[];
+      models?: string[];
+      plannerProvider?: ProviderId;
+      plannerModel?: string;
+      apply?: boolean;
+    } = {},
   ): Promise<void> {
     setPendingConfirmation(undefined);
     setRunningAction(actionId);
@@ -803,6 +1173,10 @@ export function InteractiveDashboard({
         actionId,
         change: options.change,
         modelPool: options.modelPool,
+        providers: options.providers,
+        models: options.models,
+        plannerProvider: options.plannerProvider,
+        plannerModel: options.plannerModel,
         apply: options.apply,
       });
       setActionResult(result);
@@ -842,6 +1216,12 @@ export function InteractiveDashboard({
     isEditingRoot,
     rootInputMode,
     rootInput,
+    setupStep,
+    setupDraft,
+    setupProviderCursor,
+    setupModelProviderCursor,
+    setupModelCursor,
+    setupPlannerCursor,
   });
 }
 
@@ -859,6 +1239,12 @@ export function BlueprintDashboard({
   isEditingRoot,
   rootInputMode,
   rootInput,
+  setupStep = "idle",
+  setupDraft = makeDefaultSetupDraft(),
+  setupProviderCursor = 0,
+  setupModelProviderCursor = 0,
+  setupModelCursor = 0,
+  setupPlannerCursor = 0,
 }: {
   dashboard: TuiDashboard;
   view?: TuiView;
@@ -873,6 +1259,12 @@ export function BlueprintDashboard({
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
+  setupStep?: SetupStep;
+  setupDraft?: SetupDraft;
+  setupProviderCursor?: number;
+  setupModelProviderCursor?: number;
+  setupModelCursor?: number;
+  setupPlannerCursor?: number;
 }): React.ReactElement {
   const lintStatus = dashboard.lint.errors.length === 0 ? "ok" : "error";
   const appStatus = dashboard.setup.initialized ? lintStatus : "warn";
@@ -910,6 +1302,12 @@ export function BlueprintDashboard({
       isEditingRoot,
       rootInputMode,
       rootInput,
+      setupStep,
+      setupDraft,
+      setupProviderCursor,
+      setupModelProviderCursor,
+      setupModelCursor,
+      setupPlannerCursor,
     }),
     h(KeyHints, {
       view,
@@ -919,6 +1317,7 @@ export function BlueprintDashboard({
       isEditingModelPool,
       isEditingRoot,
       runningAction,
+      setupStep,
     }),
   );
 }
@@ -938,6 +1337,12 @@ function ActiveView({
   isEditingRoot,
   rootInputMode,
   rootInput,
+  setupStep,
+  setupDraft,
+  setupProviderCursor,
+  setupModelProviderCursor,
+  setupModelCursor,
+  setupPlannerCursor,
 }: {
   dashboard: TuiDashboard;
   view: TuiView;
@@ -953,6 +1358,12 @@ function ActiveView({
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
+  setupStep?: SetupStep;
+  setupDraft?: SetupDraft;
+  setupProviderCursor?: number;
+  setupModelProviderCursor?: number;
+  setupModelCursor?: number;
+  setupPlannerCursor?: number;
 }): React.ReactElement {
   if (isEditingRoot || !dashboard.setup.initialized) {
     return h(SetupView, {
@@ -963,6 +1374,12 @@ function ActiveView({
       pendingConfirmation,
       runningAction,
       actionResult,
+      setupStep,
+      setupDraft,
+      setupProviderCursor,
+      setupModelProviderCursor,
+      setupModelCursor,
+      setupPlannerCursor,
     });
   }
 
@@ -1003,6 +1420,12 @@ function SetupView({
   pendingConfirmation,
   runningAction,
   actionResult,
+  setupStep = "idle",
+  setupDraft = makeDefaultSetupDraft(),
+  setupProviderCursor = 0,
+  setupModelProviderCursor = 0,
+  setupModelCursor = 0,
+  setupPlannerCursor = 0,
 }: {
   dashboard: TuiDashboard;
   isEditingRoot?: boolean;
@@ -1011,6 +1434,12 @@ function SetupView({
   pendingConfirmation?: TuiActionId;
   runningAction?: TuiActionId;
   actionResult?: TuiActionResult;
+  setupStep?: SetupStep;
+  setupDraft?: SetupDraft;
+  setupProviderCursor?: number;
+  setupModelProviderCursor?: number;
+  setupModelCursor?: number;
+  setupPlannerCursor?: number;
 }): React.ReactElement {
   if (isEditingRoot) {
     return h(
@@ -1031,6 +1460,38 @@ function SetupView({
         ...(rootInputMode === "choose" ? [h(Text, { key: "empty" }, "Leave empty and press Enter to keep current.")] : []),
         h(Text, null, "Esc cancels."),
       ),
+    );
+  }
+
+  if (setupStep !== "idle") {
+    return h(
+      Box,
+      { flexDirection: "column", gap: 1 },
+      h(
+        Box,
+        { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+        h(Text, { bold: true }, "Onboarding"),
+        h(Text, null, `Current directory: ${dashboard.root}`),
+        h(Text, null, "Configure providers, model pool, and planner before the harness writes files."),
+      ),
+      h(SetupStepPanel, {
+        setupStep,
+        setupDraft,
+        setupProviderCursor,
+        setupModelProviderCursor,
+        setupModelCursor,
+        setupPlannerCursor,
+      }),
+      ...(runningAction === "setup"
+        ? [
+            h(
+              Box,
+              { key: "running", borderStyle: "single", borderColor: "gray", paddingX: 1 },
+              h(Text, null, "Running setup..."),
+            ),
+          ]
+        : []),
+      ...(actionResult ? [h(ActionResultPanel, { key: "result", result: actionResult })] : []),
     );
   }
 
@@ -1088,6 +1549,128 @@ function SetupView({
           ),
         ]
       : []),
+  );
+}
+
+function SetupStepPanel({
+  setupStep,
+  setupDraft,
+  setupProviderCursor,
+  setupModelProviderCursor,
+  setupModelCursor,
+  setupPlannerCursor,
+}: {
+  setupStep: SetupStep;
+  setupDraft: SetupDraft;
+  setupProviderCursor: number;
+  setupModelProviderCursor: number;
+  setupModelCursor: number;
+  setupPlannerCursor: number;
+}): React.ReactElement {
+  if (setupStep === "providers") {
+    const allSelected = setupDraft.providers.length === SETUP_PROVIDER_OPTIONS.length;
+
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "1. Provider Pool"),
+      h(Text, null, "Choose the provider accounts this project can use."),
+      h(
+        Text,
+        { color: setupProviderCursor === 0 ? "cyan" : undefined, bold: setupProviderCursor === 0 },
+        `${setupProviderCursor === 0 ? ">" : " "} [${allSelected ? "x" : " "}] Select all providers`,
+      ),
+      ...SETUP_PROVIDER_OPTIONS.map((provider, index) => {
+        const cursor = index + 1;
+        const selected = setupDraft.providers.includes(provider);
+
+        return h(
+          Text,
+          {
+            key: provider,
+            color: setupProviderCursor === cursor ? "cyan" : undefined,
+            bold: setupProviderCursor === cursor,
+          },
+          `${setupProviderCursor === cursor ? ">" : " "} [${selected ? "x" : " "}] ${PROVIDER_LABELS[provider]}`,
+        );
+      }),
+      h(Text, { color: "gray" }, "Space toggles, a selects all, Enter continues."),
+    );
+  }
+
+  if (setupStep === "models") {
+    const provider = setupDraft.providers[setupModelProviderCursor];
+    const models = provider ? setupModelsForProvider(provider) : [];
+    const selectedCount = models.filter((model) => setupDraft.models.includes(model.id)).length;
+    const allSelected = models.length > 0 && selectedCount === models.length;
+
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(
+        Text,
+        { bold: true },
+        `2. Model Pool ${provider ? `(${setupModelProviderCursor + 1}/${setupDraft.providers.length} ${PROVIDER_LABELS[provider]})` : ""}`,
+      ),
+      h(Text, null, "Choose exact models available for routing."),
+      h(
+        Text,
+        { color: setupModelCursor === 0 ? "cyan" : undefined, bold: setupModelCursor === 0 },
+        `${setupModelCursor === 0 ? ">" : " "} [${allSelected ? "x" : " "}] Select all ${provider ?? ""} models`,
+      ),
+      ...models.map((model, index) => {
+        const cursor = index + 1;
+        const selected = setupDraft.models.includes(model.id);
+
+        return h(
+          Text,
+          {
+            key: model.id,
+            color: setupModelCursor === cursor ? "cyan" : undefined,
+            bold: setupModelCursor === cursor,
+          },
+          `${setupModelCursor === cursor ? ">" : " "} [${selected ? "x" : " "}] ${model.id} ${model.tier}/${model.status}`,
+        );
+      }),
+      h(Text, { color: "gray" }, "Space toggles, a selects all for this provider, b goes back, Enter continues."),
+    );
+  }
+
+  if (setupStep === "planner") {
+    const models = setupPlannerModels(setupDraft.models);
+
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "3. Planner Model"),
+      h(Text, null, "Choose the model that will run the planning conversation."),
+      ...models.map((model, index) =>
+        h(
+          Text,
+          {
+            key: model.id,
+            color: setupPlannerCursor === index ? "cyan" : undefined,
+            bold: setupPlannerCursor === index,
+          },
+          `${setupPlannerCursor === index ? ">" : " "} ${model.id} | ${PROVIDER_LABELS[model.provider]} | planning ${formatScore(model.task_fit.planning)}`,
+        ),
+      ),
+      h(Text, { color: "gray" }, "Up/down selects, b goes back, Enter confirms."),
+    );
+  }
+
+  const plannerModel = setupDraft.plannerModel ?? chooseDefaultPlannerModel(setupDraft.models) ?? "missing";
+  const plannerProvider = providerForModelId(plannerModel);
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "4. Confirm Setup"),
+    h(Text, null, `Status: ${plannerProvider ? "ready to write" : "needs planner model"}`),
+    h(Text, null, `Providers: ${setupDraft.providers.join(",")}`),
+    h(Text, null, `Models: ${setupDraft.models.length} selected`),
+    h(Text, null, `Planner: ${plannerProvider ?? "unknown"}/${plannerModel}`),
+    h(Text, { color: "gray" }, "Press y or Enter to write .blueprint files, b/n to revise."),
   );
 }
 
@@ -1892,6 +2475,7 @@ function KeyHints({
   isEditingModelPool,
   isEditingRoot,
   runningAction,
+  setupStep = "idle",
 }: {
   view: TuiView;
   setupInitialized: boolean;
@@ -1900,11 +2484,14 @@ function KeyHints({
   isEditingModelPool?: boolean;
   isEditingRoot?: boolean;
   runningAction?: TuiActionId;
+  setupStep?: SetupStep;
 }): React.ReactElement {
   let hints: string;
 
   if (isEditingRoot) {
     hints = "Enter \u2192 open dir  \u2502  Esc \u2192 cancel";
+  } else if (!setupInitialized && setupStep !== "idle") {
+    hints = "Space \u2192 toggle  \u2502  Enter \u2192 next  \u2502  b \u2192 back  \u2502  Esc \u2192 cancel";
   } else if (isEditingRevise || isEditingModelPool) {
     hints = "Enter \u2192 submit  \u2502  Esc \u2192 cancel";
   } else if (pendingConfirmation) {
