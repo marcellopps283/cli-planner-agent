@@ -238,7 +238,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
   if (!setup.initialized) {
     setup = {
       ...setup,
-      providerChecks: await Promise.all(DEFAULT_PROVIDER_ADAPTERS.map((adapter) => checkProvider(adapter))),
+      providerChecks: await Promise.all(DEFAULT_PROVIDER_ADAPTERS.map((adapter) => checkProviderAuth(adapter))),
     };
   }
   const registryModels = profile.profile ? await readRegistryModels(root, profile.profile) : [];
@@ -2679,7 +2679,9 @@ function formatProviderCheckLines(results: ProviderDoctorResult[]): string[] {
     return ["provider detection pending"];
   }
 
-  return results.map((result) => `${result.id} ${result.cli} ${result.installed ? "installed" : "missing"} ${result.detail}`);
+  return results.map(
+    (result) => `${result.id} ${result.cli} ${result.installed ? "installed" : "missing"} auth ${result.authCheck} ${result.detail}`,
+  );
 }
 
 function planChatValidationMessage(step: Exclude<PlanChatStep, "idle">): string {
