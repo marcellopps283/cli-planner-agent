@@ -50,8 +50,24 @@ export const ModelRegistryEntrySchema = z.object({
 
 export type ModelRegistryEntry = z.infer<typeof ModelRegistryEntrySchema>;
 
+export const ModelRegistryMetadataSchema = z
+  .object({
+    generated_at: z.iso.datetime().optional(),
+    source: z.enum(["bundled", "project_refresh", "custom"]).default("custom"),
+    bundled_revision: z.string().min(1).optional(),
+    research_verified_at: z.iso.date().optional(),
+    source_urls: z.array(z.string().url()).default([]),
+  })
+  .default({
+    source: "custom",
+    source_urls: [],
+  });
+
+export type ModelRegistryMetadata = z.infer<typeof ModelRegistryMetadataSchema>;
+
 export const ModelRegistryFileSchema = z.object({
   schema_version: z.literal("1.0"),
+  metadata: ModelRegistryMetadataSchema,
   models: z.array(ModelRegistryEntrySchema).min(1),
 });
 

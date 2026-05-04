@@ -10,7 +10,7 @@ import { DEFAULT_MODEL_REGISTRY } from "./models.js";
 import { runPlanCommand, type PlanEngine } from "./plan.js";
 import { initPlannerProfile, loadPlannerProfile, parseModelIds, parseProviderIds } from "./profile.js";
 import { DEFAULT_PROVIDER_ADAPTERS, checkProviderAuth } from "./providers.js";
-import { exportModelRegistry, getRegistryPath, loadModelRegistryFile } from "./registry.js";
+import { exportModelRegistry, getRegistryPath, loadModelRegistryFile, refreshModelRegistry } from "./registry.js";
 import { readChangeInput, reviseBlueprint } from "./revise.js";
 import { ProviderIdSchema, type PlannerProfile, type ProviderId } from "./schemas.js";
 import { loadTuiDashboard, parseTuiView, runTuiDashboard, type TuiView } from "./tui.js";
@@ -178,6 +178,32 @@ registryCommand
 
     console.log(`ok\t${result.path}`);
     console.log(`models\t${result.registry?.models.length ?? 0}`);
+  });
+
+registryCommand
+  .command("refresh")
+  .description("Refresh .blueprint/model_registry.yaml from the bundled registry while preserving custom model ids.")
+  .option("--root <path>", "target project root", ".")
+  .option("--path <path>", "registry path relative to .blueprint/", undefined)
+  .option("--dry-run", "preview changes without writing")
+  .action(async (options: { root: string; path?: string; dryRun?: boolean }) => {
+    const result = await refreshModelRegistry({
+      root: options.root,
+      path: options.path,
+      dryRun: options.dryRun,
+    });
+
+    for (const warning of result.warnings) {
+      console.log(`warning\t${warning}`);
+    }
+
+    console.log(`${result.written ? (result.created ? "created" : "updated") : "preview"}\t${result.path}`);
+    console.log(`models\t${result.registry.models.length}`);
+    console.log(`added\t${result.added.length ? result.added.join(",") : "none"}`);
+    console.log(`updated\t${result.updated.length ? result.updated.join(",") : "none"}`);
+    console.log(
+      `preserved_custom\t${result.preserved_custom.length ? result.preserved_custom.join(",") : "none"}`,
+    );
   });
 
 registryCommand

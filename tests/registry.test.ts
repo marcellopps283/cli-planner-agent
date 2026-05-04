@@ -5,7 +5,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 
-import { exportModelRegistry, getRegistryPath, loadModelRegistryFile, validateModelRegistry } from "../src/registry.js";
+import {
+  exportModelRegistry,
+  getRegistryPath,
+  loadModelRegistryFile,
+  refreshModelRegistry,
+  validateModelRegistry,
+} from "../src/registry.js";
 
 describe("model registry", () => {
   it("exports and validates the bundled registry", async () => {
@@ -21,6 +27,10 @@ describe("model registry", () => {
   it("rejects duplicate model ids", () => {
     const result = validateModelRegistry({
       schema_version: "1.0",
+      metadata: {
+        source: "custom",
+        source_urls: [],
+      },
       models: [
         {
           id: "duplicate",
@@ -95,6 +105,44 @@ describe("model registry", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.registry?.models[0]?.id).toBe("custom-openai");
+  });
+
+  it("refreshes the project registry and preserves custom models", async () => {
+    const root = await makeTempProject();
+    await exportModelRegistry({ root });
+    const registryPath = getRegistryPath(root);
+    const loaded = await loadModelRegistryFile(registryPath);
+    const staleRegistry = {
+      ...loaded.registry!,
+      models: [
+        {
+          ...loaded.registry!.models[0]!,
+          strengths: ["stale local override"],
+        },
+        {
+          id: "custom-local-model",
+          provider: "openai" as const,
+          access_mode: "codex_cli",
+          task_fit: {
+            planning: 0.5,
+          },
+          recommended_uses: ["local testing"],
+          avoid_for: ["production plans"],
+        },
+      ],
+    };
+
+    await writeFile(registryPath, stringify(staleRegistry), "utf8");
+
+    const result = await refreshModelRegistry({ root });
+    const refreshed = await loadModelRegistryFile(registryPath);
+
+    expect(result.written).toBe(true);
+    expect(result.updated).toContain(loaded.registry!.models[0]!.id);
+    expect(result.preserved_custom).toEqual(["custom-local-model"]);
+    expect(refreshed.errors).toEqual([]);
+    expect(refreshed.registry?.models.map((model) => model.id)).toContain("custom-local-model");
+    expect(refreshed.registry?.metadata.source).toBe("project_refresh");
   });
 });
 

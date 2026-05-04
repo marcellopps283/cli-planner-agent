@@ -127,6 +127,7 @@ describe("blueprint tui", () => {
     expect(providersOutput).toContain("Model Catalog");
     expect(actionsOutput).toContain("Action Queue");
     expect(actionsOutput).toContain("Configure Model Pool");
+    expect(actionsOutput).toContain("Refresh Registry");
     expect(actionsOutput).toContain("Export Handoffs");
     expect(actionsOutput).toContain("blueprint auth doctor --live");
   });
@@ -138,6 +139,7 @@ describe("blueprint tui", () => {
 
     expect(actions.map((action) => action.id)).toEqual([
       "model-pool",
+      "registry-refresh",
       "lint",
       "export",
       "revise",
@@ -145,6 +147,7 @@ describe("blueprint tui", () => {
       "auth-doctor-live",
     ]);
     expect(actions.find((action) => action.id === "model-pool")?.requiresInput).toBe(true);
+    expect(actions.find((action) => action.id === "registry-refresh")?.requiresConfirmation).toBe(true);
     expect(actions.find((action) => action.id === "export")?.enabled).toBe(true);
     expect(actions.find((action) => action.id === "revise")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "auth-doctor-live")?.requiresConfirmation).toBe(true);
@@ -179,6 +182,18 @@ describe("blueprint tui", () => {
     expect(profile.profile?.available_models).toEqual(["gpt-5.5", "gemini-3.1-pro-preview"]);
     expect(providersOutput).toContain("Model Pool");
     expect(providersOutput).toContain("gpt-5.5");
+  });
+
+  it("refreshes the model registry through a TUI action", async () => {
+    const root = await makePlannedProject();
+    const result = await runTuiAction({
+      root,
+      actionId: "registry-refresh",
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.summary).toContain("model registry");
+    expect(result.lines.some((line) => line.startsWith("updated "))).toBe(true);
   });
 
   it("records TUI action history outside revisions", async () => {

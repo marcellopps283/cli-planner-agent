@@ -87,7 +87,7 @@ Checkpoint:
 
 - [x] Configurar `available_models` dentro da TUI, sem exigir edicao manual de
   YAML.
-- [ ] Definir politica ou comando de atualizacao do model registry, ja que
+- [x] Definir politica ou comando de atualizacao do model registry, ja que
   disponibilidade, precos e benchmarks mudam rapido.
 - [ ] Smoke final de uso real: `blueprint tui` -> setup -> profile/model pool ->
   `plan --engine llm --fallback` -> `lint` -> `export`.

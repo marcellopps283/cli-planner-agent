@@ -22,7 +22,7 @@ import {
   type PlannerProfileValidationResult,
 } from "./profile.js";
 import { DEFAULT_PROVIDER_ADAPTERS, checkProvider, checkProviderAuth, type ProviderDoctorResult } from "./providers.js";
-import { exportModelRegistry, loadModelRegistryForProfile } from "./registry.js";
+import { exportModelRegistry, loadModelRegistryForProfile, refreshModelRegistry } from "./registry.js";
 import { reviseBlueprint, type ReviseResult } from "./revise.js";
 import {
   BlueprintManifestSchema,
@@ -81,6 +81,7 @@ export interface TuiDashboard {
 export const TUI_ACTION_IDS = [
   "setup",
   "model-pool",
+  "registry-refresh",
   "lint",
   "export",
   "revise",
@@ -234,6 +235,14 @@ export function getTuiActions(dashboard: TuiDashboard): TuiAction[] {
       requiresInput: true,
     },
     {
+      id: "registry-refresh",
+      label: "Refresh Registry",
+      command: "blueprint registry refresh",
+      description: "Sync project model_registry.yaml with bundled models and preserve custom ids.",
+      enabled: profileReady,
+      requiresConfirmation: true,
+    },
+    {
       id: "lint",
       label: "Lint Blueprint",
       command: "blueprint lint",
@@ -345,6 +354,22 @@ async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiAction
         `planner ${result.profile.planner_provider}/${result.profile.planner_model}`,
         `models ${result.profile.available_models.join(",")}`,
         ...result.warnings.map((warning) => `warning ${warning}`),
+      ],
+    };
+  }
+
+  if (options.actionId === "registry-refresh") {
+    const result = await refreshModelRegistry({ root: options.root });
+
+    return {
+      actionId: options.actionId,
+      status: "ok",
+      summary: `${result.created ? "Created" : "Refreshed"} model registry with ${result.registry.models.length} model(s).`,
+      lines: [
+        `path ${result.path}`,
+        `added ${result.added.length ? result.added.join(",") : "none"}`,
+        `updated ${result.updated.length ? result.updated.join(",") : "none"}`,
+        `preserved_custom ${result.preserved_custom.length ? result.preserved_custom.join(",") : "none"}`,
       ],
     };
   }
@@ -1691,6 +1716,10 @@ function commandForAction(actionId: TuiActionId): string {
 
   if (actionId === "model-pool") {
     return 'profile available_models "<ids|all>"';
+  }
+
+  if (actionId === "registry-refresh") {
+    return "blueprint registry refresh";
   }
 
   if (actionId === "export") {

@@ -61,6 +61,7 @@ Comandos ja implementados no scaffold atual:
 - `blueprint profile show`
 - `blueprint profile validate`
 - `blueprint registry export`
+- `blueprint registry refresh`
 - `blueprint registry show`
 - `blueprint registry validate`
 - `blueprint auth doctor`
@@ -121,6 +122,7 @@ Registry customizavel por projeto:
 
 ```bash
 blueprint profile init --providers openai,google --planner-provider openai --project-registry --force
+blueprint registry refresh
 blueprint registry validate
 ```
 

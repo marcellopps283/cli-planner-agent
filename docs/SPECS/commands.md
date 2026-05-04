@@ -58,6 +58,18 @@ customizacao por projeto sem editar o codigo do CLI.
 
 Lista modelos do registry bundled ou, com `--project`, do registry local.
 
+### `blueprint registry refresh`
+
+Sincroniza `.blueprint/model_registry.yaml` com o registry bundled atual,
+substituindo entradas conhecidas por suas versoes novas e preservando IDs
+customizados que nao existem no bundled.
+
+Opcoes:
+
+- `--dry-run` mostra `added`, `updated` e `preserved_custom` sem escrever.
+- `--path <path>` permite atualizar um registry alternativo relativo a
+  `.blueprint/`.
+
 ### `blueprint registry validate`
 
 Valida schema, IDs duplicados e orientacoes minimas do registry local.
@@ -169,10 +181,12 @@ MVP atual:
 - lista tasks, dependencias, provider pool, model pool e fila de acoes
   operacionais;
 - executa acoes locais da aba `actions`: `setup project`, `configure model
-  pool`, `lint`, `export`, `revise preview` e `auth doctor`;
+  pool`, `refresh registry`, `lint`, `export`, `revise preview` e `auth
+  doctor`;
 - `configure model pool` aceita IDs exatos separados por virgula ou `all` para
   voltar aos defaults dos providers ativos, e regrava `available_models` em
   `profile.yaml`;
+- `refresh registry` pede confirmacao e roda `blueprint registry refresh`;
 - pede confirmacao antes de `setup project`; quando confirmado, cria arquivos
   locais faltantes (`.blueprint/`, `profile.yaml`, `model_registry.yaml`) sem
   chamada de modelo;

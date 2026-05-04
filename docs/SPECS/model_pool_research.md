@@ -3,6 +3,11 @@
 Verificado em 2026-05-03. O registry bundled deve ser revisado com frequencia,
 porque disponibilidade, nomes de modelos, precos e benchmarks mudam rapido.
 
+Politica MVP: o registry bundled guarda `metadata.bundled_revision` e
+`metadata.research_verified_at`. Projetos que exportam um registry local devem
+rodar `blueprint registry refresh` para sincronizar modelos bundled atualizados
+sem perder modelos customizados do usuario.
+
 ## Conclusao operacional
 
 O roteamento do planner deve escolher IDs exatos de modelos, nao providers. O
