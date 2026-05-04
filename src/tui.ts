@@ -1260,6 +1260,16 @@ export function InteractiveDashboard({
         return;
       }
 
+      if (input === "\t") {
+        const suggestion = getSlashCommandSuggestions(chatCommandInput)[0];
+
+        if (suggestion) {
+          setChatCommandInput(`${suggestion.command} `);
+        }
+
+        return;
+      }
+
       if (key.downArrow) {
         setSelectedActionIndex((index) => Math.min(index + 1, actions.length - 1));
         return;
@@ -2815,7 +2825,16 @@ function ActionsView({
       chatCommandInput,
       actionResult,
     }),
-    h(SlashCommandPanel, null),
+    h(SlashCommandPanel, { chatCommandInput }),
+    h(FocusOverlay, {
+      pendingConfirmation,
+      isEditingRevise,
+      reviseInput,
+      isEditingModelPool,
+      modelPoolInput,
+      planChatStep,
+      planChatInput,
+    }),
     h(ActionHint, {
       actions,
       selectedActionIndex,
@@ -2911,14 +2930,59 @@ function ChatStatusLine({
   );
 }
 
-function SlashCommandPanel(): React.ReactElement {
+function SlashCommandPanel({ chatCommandInput }: { chatCommandInput: string }): React.ReactElement {
+  const suggestions = getSlashCommandSuggestions(chatCommandInput);
+  const commandsToRender = suggestions.length > 0 ? suggestions : TUI_SLASH_COMMANDS;
+  const isFiltering = chatCommandInput.trim().startsWith("/");
+
   return h(
     Box,
     { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Slash Commands"),
-    ...TUI_SLASH_COMMANDS.map((command) =>
-      h(Text, { key: command.command }, `${command.usage} | ${command.description}`),
+    h(Text, { bold: true }, isFiltering ? "Slash Autocomplete" : "Slash Commands"),
+    ...(isFiltering ? [h(Text, { key: "tab-hint", color: "gray" }, "Tab completes the first match. Enter runs typed command.")] : []),
+    ...commandsToRender.map((command, index) =>
+      h(Text, { key: command.command, color: isFiltering && index === 0 ? "cyan" : undefined }, `${index === 0 && isFiltering ? "> " : "  "}${command.usage} | ${command.description}`),
     ),
+  );
+}
+
+function FocusOverlay({
+  pendingConfirmation,
+  isEditingRevise,
+  reviseInput,
+  isEditingModelPool,
+  modelPoolInput,
+  planChatStep = "idle",
+  planChatInput,
+}: {
+  pendingConfirmation?: TuiActionId;
+  isEditingRevise?: boolean;
+  reviseInput?: string;
+  isEditingModelPool?: boolean;
+  modelPoolInput?: string;
+  planChatStep?: PlanChatStep;
+  planChatInput?: string;
+}): React.ReactElement | null {
+  const state = currentFocusOverlay({
+    pendingConfirmation,
+    isEditingRevise,
+    reviseInput,
+    isEditingModelPool,
+    modelPoolInput,
+    planChatStep,
+    planChatInput,
+  });
+
+  if (!state) {
+    return null;
+  }
+
+  return h(
+    Box,
+    { borderStyle: "round", borderColor: state.color, paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, state.title),
+    h(Text, null, state.body),
+    h(Text, { color: "gray" }, state.hint),
   );
 }
 
@@ -3434,6 +3498,74 @@ export function parseTuiSlashCommandInput(input: string): ParsedTuiSlashCommand 
     command,
     argument: argumentParts.join(" ").trim(),
   };
+}
+
+export function getSlashCommandSuggestions(input: string): typeof TUI_SLASH_COMMANDS[number][] {
+  const trimmed = input.trimStart();
+
+  if (!trimmed.startsWith("/")) {
+    return [];
+  }
+
+  const needle = trimmed.split(/\s+/u)[0] ?? "/";
+
+  return TUI_SLASH_COMMANDS.filter((command) => command.command.startsWith(needle));
+}
+
+function currentFocusOverlay({
+  pendingConfirmation,
+  isEditingRevise,
+  reviseInput,
+  isEditingModelPool,
+  modelPoolInput,
+  planChatStep = "idle",
+  planChatInput,
+}: {
+  pendingConfirmation?: TuiActionId;
+  isEditingRevise?: boolean;
+  reviseInput?: string;
+  isEditingModelPool?: boolean;
+  modelPoolInput?: string;
+  planChatStep?: PlanChatStep;
+  planChatInput?: string;
+}): { title: string; body: string; hint: string; color: "cyan" | "yellow" } | undefined {
+  if (pendingConfirmation) {
+    return {
+      title: "Confirmation Overlay",
+      body: `Confirm ${pendingConfirmation}?`,
+      hint: "Press y to confirm, n or Esc to cancel.",
+      color: "yellow",
+    };
+  }
+
+  if (isEditingModelPool) {
+    return {
+      title: "Model Pool Overlay",
+      body: modelPoolInput?.length ? modelPoolInput : "Type exact model IDs separated by comma, or all.",
+      hint: "Enter saves the model pool. Esc cancels.",
+      color: "cyan",
+    };
+  }
+
+  if (isEditingRevise) {
+    return {
+      title: "Revise Overlay",
+      body: reviseInput?.length ? reviseInput : "Describe the targeted change to preview.",
+      hint: "Enter previews the revision. Esc cancels.",
+      color: "cyan",
+    };
+  }
+
+  if (planChatStep !== "idle") {
+    return {
+      title: "Planning Question Overlay",
+      body: PLAN_STEP_PROMPTS[planChatStep],
+      hint: `Current answer: ${planChatInput || "empty"}`,
+      color: "cyan",
+    };
+  }
+
+  return undefined;
 }
 
 function mainMenuIndexForView(view: TuiView): number {

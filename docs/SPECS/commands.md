@@ -210,6 +210,10 @@ MVP atual:
   recente e input permanente;
 - aceita slash commands locais: `/plan`, `/providers`, `/models`, `/registry`,
   `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e `/menu`;
+- filtra slash commands quando o input comeca com `/` e completa a primeira
+  sugestao com `Tab`;
+- mostra overlays de foco para perguntas de planejamento, confirmacoes, model
+  pool e revise;
 - texto livre no chat inicia planejamento; `/plan [brief]` faz o mesmo de forma
   explicita;
 - o planejamento usa o PlannerEngine LLM do profile, mantendo o modo

@@ -2,12 +2,16 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { renderToString } from "ink";
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { exportBlueprint } from "../src/export.js";
 import { generateBlueprintPlan, type PlanAnswers, type PlannerDraft } from "../src/plan.js";
 import { initPlannerProfile, loadPlannerProfile } from "../src/profile.js";
 import {
+  BlueprintDashboard,
+  getSlashCommandSuggestions,
   getTuiActions,
   loadTuiDashboard,
   parseTuiSlashCommandInput,
@@ -207,6 +211,33 @@ describe("blueprint tui", () => {
       command: "/help",
       argument: "unknown /unknown",
     });
+    expect(getSlashCommandSuggestions("/mo").map((command) => command.command)).toEqual(["/models"]);
+  });
+
+  it("renders slash autocomplete and focused overlays", async () => {
+    const root = await makePlannedProject();
+    const dashboard = await loadTuiDashboard({ root });
+    const autocompleteOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        chatCommandInput: "/mo",
+      }),
+    );
+    const overlayOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        isEditingModelPool: true,
+        modelPoolInput: "all",
+      }),
+    );
+
+    expect(autocompleteOutput).toContain("Slash Autocomplete");
+    expect(autocompleteOutput).toContain("> /models <ids|all>");
+    expect(autocompleteOutput).toContain("Tab completes the first match");
+    expect(overlayOutput).toContain("Model Pool Overlay");
+    expect(overlayOutput).toContain("Enter saves the model pool");
   });
 
   it("builds executable TUI actions with quota confirmation metadata", async () => {

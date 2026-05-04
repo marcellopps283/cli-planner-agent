@@ -57,6 +57,10 @@ automacao, smoke e debugging.
 - Texto livre ou `/plan [brief]` inicia o planejamento; `/providers`,
   `/models`, `/registry`, `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`,
   `/help` e `/menu` mantem o usuario em uma unica frente operacional.
+- O autocomplete visual filtra comandos enquanto o input comeca com `/`, e
+  `Tab` completa a primeira sugestao.
+- Perguntas, confirmacoes e edicoes guiadas aparecem em overlays de foco em vez
+  de competirem com o painel principal do chat.
 - O chat comeca por um brief livre e depois pede os campos estruturados minimos
   para manter o contrato de planejamento validavel.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
