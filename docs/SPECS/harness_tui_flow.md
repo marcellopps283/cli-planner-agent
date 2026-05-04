@@ -38,6 +38,8 @@ automacao, smoke e debugging.
 - `blueprint` sem subcomando abre a TUI.
 - O setup interativo passa por providers, modelos por provider, planner e
   confirmacao antes de escrever arquivos.
+- O onboarding mostra a deteccao local dos CLIs `codex`, `claude` e `gemini`
+  antes da selecao de providers.
 - O overview inclui um painel `Operations` com status operacional, planner,
   providers, model pool, tasks, task models e sessoes.
 - O backend de setup aceita selecao explicita de providers/modelos/planner para

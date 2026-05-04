@@ -30,6 +30,7 @@ describe("blueprint tui", () => {
     expect(output).toContain("Blueprint not initialized");
     expect(output).toContain("Press c to choose another directory");
     expect(actionsOutput).toContain("Start Here");
+    expect(actionsOutput).toContain("Provider CLIs");
     expect(actionsOutput).toContain("1 or Enter: configure harness in this directory");
     expect(actionsOutput).toContain("2: create a new project folder here");
     expect(output).not.toContain("Profile error");

@@ -63,6 +63,7 @@ export interface TuiSetupStatus {
   initialized: boolean;
   messages: string[];
   commands: string[];
+  providerChecks: ProviderDoctorResult[];
 }
 
 export interface TuiDashboard {
@@ -223,7 +224,7 @@ const h = createElement;
 export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<TuiDashboard> {
   const root = path.resolve(options.root);
   const blueprintRoot = path.join(root, BLUEPRINT_DIR);
-  const [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions] = await Promise.all([
+  let [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions] = await Promise.all([
     inspectBlueprintSetup(root, blueprintRoot),
     loadPlannerProfile(root),
     inspectProject(root),
@@ -234,6 +235,12 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     readExports(blueprintRoot),
     readTuiSessions(blueprintRoot),
   ]);
+  if (!setup.initialized) {
+    setup = {
+      ...setup,
+      providerChecks: await Promise.all(DEFAULT_PROVIDER_ADAPTERS.map((adapter) => checkProvider(adapter))),
+    };
+  }
   const registryModels = profile.profile ? await readRegistryModels(root, profile.profile) : [];
 
   return {
@@ -694,8 +701,9 @@ function chooseSetupPlanner(providers: ProviderId[]): ProviderId {
   return providers[0] ?? "google";
 }
 
-function makeDefaultSetupDraft(): SetupDraft {
-  const providers = [...SETUP_PROVIDER_OPTIONS];
+function makeDefaultSetupDraft(providerChecks: ProviderDoctorResult[] = []): SetupDraft {
+  const installedProviders = providerChecks.filter((result) => result.installed).map((result) => result.id).sort(byProviderOrder);
+  const providers = installedProviders.length > 0 ? installedProviders : [...SETUP_PROVIDER_OPTIONS];
   const models = defaultSetupModelIds(providers);
 
   return normalizeSetupDraft({
@@ -830,7 +838,7 @@ export function InteractiveDashboard({
   const [rootInputMode, setRootInputMode] = useState<"choose" | "create">("choose");
   const [rootInput, setRootInput] = useState(dashboard.root);
   const [setupStep, setSetupStep] = useState<SetupStep>("idle");
-  const [setupDraft, setSetupDraft] = useState<SetupDraft>(() => makeDefaultSetupDraft());
+  const [setupDraft, setSetupDraft] = useState<SetupDraft>(() => makeDefaultSetupDraft(dashboard.setup.providerChecks));
   const [setupProviderCursor, setSetupProviderCursor] = useState(0);
   const [setupModelProviderCursor, setSetupModelProviderCursor] = useState(0);
   const [setupModelCursor, setSetupModelCursor] = useState(0);
@@ -1150,7 +1158,7 @@ export function InteractiveDashboard({
   }
 
   function beginSetupFlow(): void {
-    const draft = makeDefaultSetupDraft();
+    const draft = makeDefaultSetupDraft(dashboardState.setup.providerChecks);
     setSetupDraft(draft);
     setSetupProviderCursor(0);
     setSetupModelProviderCursor(0);
@@ -1730,6 +1738,7 @@ function SetupView({
       h(SetupStepPanel, {
         setupStep,
         setupDraft,
+        providerChecks: dashboard.setup.providerChecks,
         setupProviderCursor,
         setupModelProviderCursor,
         setupModelCursor,
@@ -1764,6 +1773,12 @@ function SetupView({
       h(Text, null, "1 or Enter: configure harness in this directory"),
       h(Text, null, "2: create a new project folder here"),
       h(Text, null, "3 or c: choose another directory"),
+    ),
+    h(
+      Box,
+      { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Provider CLIs"),
+      ...formatProviderCheckLines(dashboard.setup.providerChecks).map((line) => h(Text, { key: line }, line)),
     ),
     ...(pendingConfirmation === "setup"
       ? [
@@ -1808,6 +1823,7 @@ function SetupView({
 function SetupStepPanel({
   setupStep,
   setupDraft,
+  providerChecks,
   setupProviderCursor,
   setupModelProviderCursor,
   setupModelCursor,
@@ -1815,6 +1831,7 @@ function SetupStepPanel({
 }: {
   setupStep: SetupStep;
   setupDraft: SetupDraft;
+  providerChecks: ProviderDoctorResult[];
   setupProviderCursor: number;
   setupModelProviderCursor: number;
   setupModelCursor: number;
@@ -1836,6 +1853,10 @@ function SetupStepPanel({
       ...SETUP_PROVIDER_OPTIONS.map((provider, index) => {
         const cursor = index + 1;
         const selected = setupDraft.providers.includes(provider);
+        const check = providerChecks.find((result) => result.id === provider);
+        const status = check
+          ? `${check.cli} ${check.installed ? "installed" : "missing"}`
+          : `${PROVIDER_LABELS[provider].split(" / ")[1] ?? provider} unknown`;
 
         return h(
           Text,
@@ -1844,7 +1865,7 @@ function SetupStepPanel({
             color: setupProviderCursor === cursor ? "cyan" : undefined,
             bold: setupProviderCursor === cursor,
           },
-          `${setupProviderCursor === cursor ? ">" : " "} [${selected ? "x" : " "}] ${PROVIDER_LABELS[provider]}`,
+          `${setupProviderCursor === cursor ? ">" : " "} [${selected ? "x" : " "}] ${PROVIDER_LABELS[provider]} | ${status}`,
         );
       }),
       h(Text, { color: "gray" }, "Space toggles, a selects all, Enter continues."),
@@ -2571,6 +2592,7 @@ async function inspectBlueprintSetup(root: string, blueprintRoot: string): Promi
         initialized: true,
         messages: [],
         commands: [],
+        providerChecks: [],
       };
     }
   } catch {
@@ -2590,6 +2612,7 @@ async function inspectBlueprintSetup(root: string, blueprintRoot: string): Promi
       "blueprint",
       "blueprint --view actions",
     ],
+    providerChecks: [],
   };
 }
 
@@ -2649,6 +2672,14 @@ function parsePlanListInput(value: string): string[] {
     .split(/[,;\n]/u)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatProviderCheckLines(results: ProviderDoctorResult[]): string[] {
+  if (results.length === 0) {
+    return ["provider detection pending"];
+  }
+
+  return results.map((result) => `${result.id} ${result.cli} ${result.installed ? "installed" : "missing"} ${result.detail}`);
 }
 
 function planChatValidationMessage(step: Exclude<PlanChatStep, "idle">): string {

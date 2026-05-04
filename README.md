@@ -182,7 +182,8 @@ onboarding: mostra o diretorio atual, permite manter/trocar/criar pasta e depois
 guia a selecao de providers, modelos por provider e modelo planner antes de criar
 `.blueprint/`, `profile.yaml` e `model_registry.yaml`. Nessa tela inicial,
 `Enter` mantem o diretorio atual e `c` permite escolher outro diretorio sem sair
-do app.
+do app. O onboarding tambem mostra quais CLIs de provider foram detectados antes
+da selecao.
 
 Na aba `actions`, a TUI inicia um fluxo de planejamento em estilo chat, mostra o
 preview `task -> modelo` antes de escrever handoffs, configura o model pool por
