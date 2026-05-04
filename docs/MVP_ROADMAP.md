@@ -102,7 +102,7 @@ Checkpoint:
 - [x] `blueprint` sem subcomando abre a TUI diretamente.
 - [x] Onboarding obrigatorio em etapas: diretorio -> providers -> modelos por
   provider -> planner -> confirmacao.
-- [ ] Painel operacional moderno para configuracoes, status, metricas e
+- [x] Painel operacional moderno para configuracoes, status, metricas e
   artefatos.
 - [x] Fluxo de inicio de tarefa em formato chat, semelhante a Codex/Claude
   Code/Hermes.

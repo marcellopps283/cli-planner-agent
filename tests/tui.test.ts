@@ -149,6 +149,9 @@ describe("blueprint tui", () => {
     const output = renderTuiDashboardToString(dashboard);
 
     expect(output).toContain("Blueprint Agent Harness");
+    expect(output).toContain("Operations");
+    expect(output).toContain("status handoffs ready");
+    expect(output).toContain("provider_pool openai,google");
     expect(output).toContain("\u2705 Profile");
     expect(output).toContain("Artifacts");
     expect(output).toContain(".blueprint/tasks");

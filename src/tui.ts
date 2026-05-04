@@ -1943,6 +1943,7 @@ function OverviewView({
   return h(
     Box,
     { flexDirection: "column", gap: 1 },
+    h(OperationalSummary, { dashboard, lintStatus }),
     h(
       Box,
       { gap: 2 },
@@ -2025,6 +2026,51 @@ function OverviewView({
       { borderStyle: "single", borderColor: "cyan", paddingX: 1 },
       h(Box, { flexDirection: "column" }, h(Text, { bold: true }, "Next"), h(Text, null, dashboard.nextAction)),
     ),
+  );
+}
+
+function OperationalSummary({
+  dashboard,
+  lintStatus,
+}: {
+  dashboard: TuiDashboard;
+  lintStatus: "ok" | "error";
+}): React.ReactElement {
+  const profile = dashboard.profile.profile;
+  const status =
+    !dashboard.setup.initialized
+      ? "setup required"
+      : dashboard.profile.errors.length > 0 || !profile
+        ? "profile blocked"
+        : dashboard.tasks.length === 0
+          ? "ready to plan"
+          : lintStatus === "error"
+            ? "lint blocked"
+            : "handoffs ready";
+  const activeModelCount = profile?.available_models.length ?? 0;
+  const taskModels = unique(dashboard.tasks.map((task) => task.suggestedModel));
+
+  return h(
+    Box,
+    { borderStyle: "round", borderColor: lintStatus === "ok" ? "cyan" : "yellow", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "Operations"),
+    h(Text, null, `root ${dashboard.root}`),
+    h(Text, null, `status ${status}`),
+    h(
+      Text,
+      null,
+      `planner ${profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing"} | provider_pool ${
+        profile?.available_providers.join(",") ?? "missing"
+      } | model_pool ${activeModelCount > 0 ? activeModelCount : "default"}`,
+    ),
+    h(
+      Text,
+      null,
+      `tasks ${dashboard.tasks.length} | task_models ${taskModels.length > 0 ? summarizeList(taskModels, 3) : "none"} | sessions ${
+        dashboard.tuiSessions.length
+      }`,
+    ),
+    h(Text, { color: "gray" }, dashboard.nextAction),
   );
 }
 

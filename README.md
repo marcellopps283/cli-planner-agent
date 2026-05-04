@@ -174,6 +174,9 @@ blueprint tui --view actions
 blueprint tui --json
 ```
 
+O overview abre com um painel `Operations` para status operacional, planner,
+provider pool, model pool, tasks, modelos usados e sessoes TUI recentes.
+
 Se a TUI for aberta em um diretorio sem `.blueprint/`, ela entra em modo de
 onboarding: mostra o diretorio atual, permite manter/trocar/criar pasta e depois
 guia a selecao de providers, modelos por provider e modelo planner antes de criar

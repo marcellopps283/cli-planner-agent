@@ -38,6 +38,8 @@ automacao, smoke e debugging.
 - `blueprint` sem subcomando abre a TUI.
 - O setup interativo passa por providers, modelos por provider, planner e
   confirmacao antes de escrever arquivos.
+- O overview inclui um painel `Operations` com status operacional, planner,
+  providers, model pool, tasks, task models e sessoes.
 - O backend de setup aceita selecao explicita de providers/modelos/planner para
   manter o fluxo testavel e auditavel.
 - A aba `actions` tem `Start Planning Chat`, um fluxo guiado que coleta escopo
