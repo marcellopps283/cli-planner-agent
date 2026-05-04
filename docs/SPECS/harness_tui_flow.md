@@ -42,21 +42,23 @@ automacao, smoke e debugging.
   incluindo status de auth quando disponivel sem chamada de modelo.
 - A TUI abre direto no chat `Plan / Actions`; `Main Menu` e uma camada sob
   demanda via `/menu` ou `--view main`.
-- O chat tem uma landing inicial "What are we planning today?", com opcoes de
-  configuracao por slash command antes da primeira mensagem.
+- O chat tem uma landing inicial centrada, com logo, prompt `Ask anything...`,
+  planner/modelo ativo, dica e opcoes de configuracao por slash command antes
+  da primeira mensagem.
 - A referencia principal de evolucao visual/fluxo esta documentada em
-  `docs/SPECS/opencode_tui_reference.md`: landing de chat, status line, slash
-  commands, overlays e artefato de progresso no estilo OpenCode.
+  `docs/SPECS/opencode_tui_reference.md`: landing de chat, feed principal,
+  sidebar contextual, slash commands, overlays e artefato de progresso no
+  estilo OpenCode.
 - O overview fica atras do menu principal e inclui um painel `Operations` com
   status operacional, planner, providers, model pool, tasks, task models e
   sessoes.
 - O backend de setup aceita selecao explicita de providers/modelos/planner para
   manter o fluxo testavel e auditavel.
-- A tela `actions` agora e `Planning Chat`: tem status line, input permanente,
-  historico recente e slash commands para acoes locais.
+- A tela `actions` agora e um workbench de chat: tem feed principal, input
+  permanente, sidebar contextual e slash commands para acoes locais.
 - Depois da primeira mensagem, a tela vira workbench e mostra um artefato de
-  planejamento com checklist/progresso das perguntas, preview ou handoffs
-  gerados.
+  planejamento no feed com checklist/progresso das perguntas, preview ou
+  handoffs gerados.
 - Texto livre ou `/plan [brief]` inicia o planejamento; `/providers`,
   `/models`, `/registry`, `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`,
   `/help` e `/menu` mantem o usuario em uma unica frente operacional.

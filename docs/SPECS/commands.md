@@ -206,9 +206,9 @@ MVP atual:
   permite escolher outro caminho dentro da TUI;
 - mostra status de profile, blueprint, contexto e tasks;
 - lista tasks, dependencias, provider pool, model pool e chat operacional;
-- a tela `actions` e a superficie padrao: abre como landing "What are we
-  planning today?" e vira workbench depois da primeira mensagem;
-- o workbench exibe chat, status line, historico recente, input permanente e
+- a tela `actions` e a superficie padrao: abre como landing centrada com logo,
+  prompt `Ask anything...`, modo/modelo e atalhos;
+- o workbench exibe feed principal, sidebar contextual, input permanente e
   artefato de planejamento com checklist/progresso;
 - aceita slash commands locais: `/plan`, `/providers`, `/models`, `/registry`,
   `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e `/menu`;

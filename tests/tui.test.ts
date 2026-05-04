@@ -156,9 +156,9 @@ describe("blueprint tui", () => {
     const mainOutput = renderTuiDashboardToString(dashboard, "main");
     const overviewOutput = renderTuiDashboardToString(dashboard, "overview");
 
-    expect(output).toContain("Blueprint");
-    expect(output).toContain("ready |");
-    expect(output).toContain("Blueprint Artifact");
+    expect(output).toContain("blueprint");
+    expect(output).toContain("Background Task Completed");
+    expect(output).toContain("Context");
     expect(output).toContain("[x] task-001-update-docs");
     expect(mainOutput).toContain("Operations");
     expect(mainOutput).toContain("status handoffs ready");
@@ -189,11 +189,11 @@ describe("blueprint tui", () => {
     expect(providersOutput).toContain("Provider Pool");
     expect(providersOutput).toContain("available openai,google");
     expect(providersOutput).toContain("Model Catalog");
-    expect(actionsOutput).toContain("Planning Chat");
-    expect(actionsOutput).toContain("ready |");
-    expect(actionsOutput).toContain("Blueprint Artifact");
+    expect(actionsOutput).toContain("Background Task Completed");
+    expect(actionsOutput).toContain("Context");
+    expect(actionsOutput).toContain("Planner");
     expect(actionsOutput).toContain("Type / for commands");
-    expect(actionsOutput).toContain("Use / for commands and /menu for navigation");
+    expect(actionsOutput).toContain("tab switch model");
     expect(actionsOutput).not.toContain("Quick action");
   });
 
@@ -208,8 +208,9 @@ describe("blueprint tui", () => {
     const dashboard = await loadTuiDashboard({ root });
     const output = renderTuiDashboardToString(dashboard);
 
-    expect(output).toContain("What are we planning today?");
-    expect(output).toContain("Configure Before Starting");
+    expect(output).toContain("Ask anything");
+    expect(output).toContain("Plan openai/gpt-5.5");
+    expect(output).toContain("ctrl+p commands");
     expect(output).toContain("/providers");
     expect(output).toContain("/models");
     expect(output).not.toContain("Main Menu");
@@ -271,7 +272,7 @@ describe("blueprint tui", () => {
     expect(autocompleteOutput).toContain("Tab completes the first match");
     expect(overlayOutput).toContain("Model Pool Overlay");
     expect(overlayOutput).toContain("Enter saves the model pool");
-    expect(adaptiveOutput).toContain("Planning Artifact");
+    expect(adaptiveOutput).toContain("Planning Intake");
     expect(adaptiveOutput).toContain("[ ] Criterios de sucesso");
     expect(adaptiveOutput).not.toContain("Resumo do projeto em uma frase");
   });

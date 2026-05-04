@@ -30,8 +30,8 @@ metricas aparecem como comandos ou overlays, sem competir com o prompt principal
   livre com comandos slash.
 - Configuracoes e metricas devem abrir como overlays ou telas temporarias:
   `/providers`, `/models`, `/usage`, `/sessions`, `/export`, `/lint`.
-- A status line deve mostrar `ready`, `planning`, `running`, `needs-confirmation`
-  ou `blocked`, junto de planner/modelo atual.
+- A sidebar/status area deve mostrar `ready`, `planning`, `running`,
+  `needs-confirmation` ou `blocked`, junto de planner/modelo atual.
 - Output de acoes deve streamar dentro do painel de conversa, preservando
   historico e o caminho dos artefatos gerados.
 - O workbench deve manter um artefato visivel para a IA: checklist de
@@ -42,7 +42,7 @@ metricas aparecem como comandos ou overlays, sem competir com o prompt principal
 ## Ordem sugerida
 
 1. Consolidar `Plan / Actions` como chat principal. Feito no MVP atual.
-2. Adicionar status line global com planner/modelo/estado. Feito no MVP atual.
+2. Adicionar sidebar/status area com planner/modelo/estado. Feito no MVP atual.
 3. Adicionar comandos slash locais com autocomplete textual simples. Feito no
    MVP atual.
 4. Trocar formularios longos por overlays modais. Base feita no MVP atual para

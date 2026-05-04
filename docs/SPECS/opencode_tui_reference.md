@@ -8,6 +8,8 @@ Fontes:
 - https://dev.opencode.ai/docs/tui/
 - https://dev.opencode.ai/docs/commands/
 - https://opencode.ai/
+- https://hotaisle.xyz/assets/blog/opencode-vllm-hotaisle/opencode-connected.png
+- https://lliksgqqtckk4xdy.public.blob.vercel-storage.com/kanaries-docs/topics/ai-coding/opencode-how-to-use/oh-my-opencode-preview-gM8JM9P3TMJuY5lYAkolGPNOPo3bvj.jpg
 
 ## O que importa no OpenCode
 
@@ -18,25 +20,25 @@ locais entram pelo prefixo `/`, e o usuario usa comandos como `/help`,
 
 O layout que interessa para Blueprint e:
 
-- entrada inicial centrada em uma pergunta ampla;
+- entrada inicial centrada com logotipo, caixa de prompt, modo/modelo e dica;
 - transicao para uma tela de trabalho apos a primeira mensagem;
-- status line sempre visivel com modo, modelo e informacoes operacionais;
+- painel lateral persistente com contexto, providers, stack, todo e quota;
 - comandos slash com autocomplete;
 - overlays para selecao, configuracao e confirmacao;
-- artefato persistente na tela de trabalho para mostrar plano, progresso e
-  proximas acoes.
+- feed principal com cards de tarefas/background, plano, progresso e input
+  inferior.
 
 ## Decisoes para o Blueprint
 
 - `blueprint` abre em `Plan / Actions`, nao no `Main Menu`.
 - `Main Menu` e uma camada sob demanda via `/menu` ou `--view main`.
-- Antes da primeira solicitacao, o chat mostra "What are we planning today?" e
-  atalhos de configuracao por slash command.
-- Depois da primeira mensagem, a tela vira workbench com `Planning Chat`,
-  status line e `Blueprint Artifact`.
-- O artefato usa checkboxes textuais para requisitos coletados, preview de
-  tarefas e handoffs ja gerados.
-- Quota real ainda e `n/a`, mas o slot de status line fica reservado.
+- Antes da primeira solicitacao, a tela mostra `blueprint`, `Ask anything...`,
+  modo `Plan`, planner primario, dica e atalhos `tab`/`ctrl+p`.
+- Depois da primeira mensagem, a tela vira workbench com feed principal, input
+  inferior e sidebar de `Context`, `MCP`, `LSP` e `Todo`.
+- O feed usa cards textuais para intake, preview de tarefas e handoffs ja
+  gerados.
+- Quota real ainda e `n/a`, mas o slot da sidebar fica reservado.
 
 ## Proximas Fatias
 

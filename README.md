@@ -190,12 +190,12 @@ blueprint tui --view main
 blueprint tui --json
 ```
 
-Por padrao, a TUI abre direto no chat `Plan / Actions`, inspirado no fluxo do
-OpenCode: primeiro aparece uma tela inicial "What are we planning today?", e a
-primeira mensagem transforma a superficie em workbench com chat, status line e
-artefato de planejamento. O `Main Menu` fica sob demanda em `/menu` ou
-`--view main`, com acesso a `Overview`, `Tasks`, `Dependency Graph` e
-`Providers / Models`.
+Por padrao, a TUI abre direto no chat `Plan / Actions`, inspirado no fluxo visual
+do OpenCode: primeiro aparece uma tela inicial centrada com logo, prompt
+`Ask anything...`, modo/modelo, dica e atalhos; a primeira mensagem transforma a
+superficie em workbench com feed principal, input inferior e sidebar contextual.
+O `Main Menu` fica sob demanda em `/menu` ou `--view main`, com acesso a
+`Overview`, `Tasks`, `Dependency Graph` e `Providers / Models`.
 
 Se a TUI for aberta em um diretorio sem `.blueprint/`, ela entra em modo de
 onboarding: mostra o diretorio atual, permite manter/trocar/criar pasta e depois
@@ -210,10 +210,10 @@ digita uma descricao livre para iniciar planejamento ou usa slash commands como
 `/plan`, `/providers`, `/models`, `/registry`, `/lint`, `/export`, `/revise`,
 `/auth` e `/help`. A status line mostra `ready`, `planning`, `running`,
 `needs-confirmation` ou `blocked`, junto do planner, tamanho do model pool e
-campo de quota. O chat filtra slash commands enquanto o usuario digita `/`,
-completa o primeiro match com `Tab` e usa overlays para perguntas,
-confirmacoes, model pool e revise. O workbench mostra um artefato com checklist
-de perguntas, preview de tarefas ou handoffs ja gerados. O intake e adaptativo:
+campo de quota na sidebar. O chat filtra slash commands enquanto o usuario
+digita `/`, completa o primeiro match com `Tab` e usa overlays para perguntas,
+confirmacoes, model pool e revise. O feed mostra cards com checklist de
+perguntas, preview de tarefas ou handoffs ja gerados. O intake e adaptativo:
 briefs curtos abrem perguntas de aprofundamento, enquanto textos ricos pulam
 campos derivaveis e pedem apenas lacunas estruturais. O fluxo mostra o preview
 `task -> modelo` antes de escrever handoffs. Cada acao executada pela TUI fica
