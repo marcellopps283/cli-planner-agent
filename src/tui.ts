@@ -2843,6 +2843,8 @@ function LandingSurface({
   const profile = dashboard.profile.profile;
   const planner = profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing planner";
   const providerLabel = profile ? `${profile.available_models.length || "default"} model(s) active` : "run setup";
+  const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
+  const promptText = chatCommandInput.length > 0 ? chatCommandInput : 'Ask anything... "Plan the next project slice"';
 
   return h(
     Box,
@@ -2854,7 +2856,12 @@ function LandingSurface({
       h(
         Box,
         { width: 72, paddingX: 1, flexDirection: "column" },
-        h(Text, null, h(Text, { color: "cyan" }, "| "), h(Text, { color: "gray" }, 'Ask anything... "Plan the next project slice"')),
+        h(
+          Text,
+          null,
+          h(Text, { color: "cyan" }, "| "),
+          h(Text, { color: chatCommandInput.length > 0 ? "white" : "gray" }, promptText),
+        ),
         h(
           Text,
           null,
@@ -2870,7 +2877,15 @@ function LandingSurface({
       { paddingX: 1 },
       h(Text, null, h(Text, { color: "yellow" }, "* Tip "), h(Text, { color: "gray" }, "Use /providers, /models, /auth, or /registry before the first request.")),
     ),
-    h(SlashCommandPanel, { chatCommandInput, landing: true }),
+    ...(showSlashMenu
+      ? [
+          h(
+            Box,
+            { key: "landing-slash", alignItems: "center", flexDirection: "column" },
+            h(Box, { width: 72 }, h(SlashCommandPanel, { chatCommandInput, landing: true })),
+          ),
+        ]
+      : []),
     h(FocusOverlay, {
       pendingConfirmation,
       isEditingRevise,

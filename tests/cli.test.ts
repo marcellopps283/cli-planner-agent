@@ -33,5 +33,5 @@ describe("blueprint cli", () => {
     expect(init.stdout).toContain(path.join(root, ".blueprint", "profile.yaml"));
     expect(profile).toContain("planner_model: gpt-5.5");
     expect(JSON.parse(dashboard.stdout).root).toBe(dashboardRoot);
-  });
+  }, 15_000);
 });

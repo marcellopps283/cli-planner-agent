@@ -207,12 +207,30 @@ describe("blueprint tui", () => {
     });
     const dashboard = await loadTuiDashboard({ root });
     const output = renderTuiDashboardToString(dashboard);
+    const typedOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        chatCommandInput: "planejar tela inicial",
+      }),
+    );
+    const slashOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        chatCommandInput: "/",
+      }),
+    );
 
     expect(output).toContain("Ask anything");
     expect(output).toContain("Plan openai/gpt-5.5");
     expect(output).toContain("ctrl+p commands");
     expect(output).toContain("/providers");
     expect(output).toContain("/models");
+    expect(typedOutput).toContain("planejar tela inicial");
+    expect(typedOutput).not.toContain("Slash Autocomplete");
+    expect(slashOutput).toContain("Slash Autocomplete");
+    expect(slashOutput).toContain("/plan [brief]");
     expect(output).not.toContain("Main Menu");
     expect(output).not.toContain("Quick action");
   });
