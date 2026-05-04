@@ -165,11 +165,12 @@ export async function checkProviderLive(
     });
     const output = selectLiveSmokeOutput(adapter.id, result.stdout, result.stderr);
     const success = isProviderLiveCheckSuccessful(adapter.id, result.exitCode, output);
+    const detailInput = output || `no provider response exitCode=${result.exitCode} detail=${base.detail}`;
 
     return {
       ...base,
       authCheck: success ? "ok" : "failed",
-      detail: summarizeLiveSmokeOutput(adapter.id, output || base.detail),
+      detail: summarizeLiveSmokeOutput(adapter.id, detailInput),
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : "unknown error";
