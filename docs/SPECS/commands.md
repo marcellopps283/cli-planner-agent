@@ -128,6 +128,8 @@ MVP atual:
 - aceita `--answers <path>` para execucao nao interativa;
 - aceita `--engine deterministic|llm`, onde `llm` chama o planner provider
   ativo via CLI oficial e valida a resposta com schema antes de escrever;
+- em modo interativo, monta um preview em memoria com task graph e
+  `suggested_model` por task, pede confirmacao e so entao escreve os handoffs;
 - aceita `--fallback` para pedir confirmacao e usar o plano deterministico caso
   o planner LLM falhe;
 - aceita `--planner-timeout-ms <number>` para chamadas LLM;

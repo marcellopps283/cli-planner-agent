@@ -20,13 +20,7 @@ const program = new Command();
 program
   .name("blueprint")
   .description("Agent harness for planning rigorous AI coding handoffs.")
-  .version("0.0.0")
-  .option("--root <path>", "target project root", ".")
-  .option("--view <view>", "initial TUI view: overview, tasks, graph, providers, actions", parseTuiView, "overview")
-  .option("--json", "print the dashboard model as JSON instead of rendering Ink")
-  .action(async (options: { root: string; view: TuiView; json?: boolean }) => {
-    await runTuiCommand(options);
-  });
+  .version("0.0.0");
 
 program
   .command("providers")
@@ -75,7 +69,7 @@ profileCommand
       const models = options.models ? parseModelIds(options.models) : undefined;
       const plannerProvider = options.plannerProvider ? parseProviderId(options.plannerProvider) : undefined;
       const result = await initPlannerProfile({
-        root: options.root,
+        root: getOptionRoot(options),
         name: options.name,
         providers,
         models,
@@ -100,7 +94,7 @@ profileCommand
   .description("Print the active local planner profile.")
   .option("--root <path>", "target project root", ".")
   .action(async (options: { root: string }) => {
-    const result = await loadPlannerProfile(options.root);
+    const result = await loadPlannerProfile(getOptionRoot(options));
 
     for (const warning of result.warnings) {
       console.log(`warning\t${warning}`);
@@ -124,7 +118,7 @@ profileCommand
   .description("Validate the active local planner profile.")
   .option("--root <path>", "target project root", ".")
   .action(async (options: { root: string }) => {
-    const result = await loadPlannerProfile(options.root);
+    const result = await loadPlannerProfile(getOptionRoot(options));
 
     for (const warning of result.warnings) {
       console.log(`warning\t${warning}`);
@@ -150,7 +144,7 @@ registryCommand
   .option("--root <path>", "target project root", ".")
   .option("--force", "overwrite an existing project registry")
   .action(async (options: { root: string; force?: boolean }) => {
-    const result = await exportModelRegistry({ root: options.root, force: options.force });
+    const result = await exportModelRegistry({ root: getOptionRoot(options), force: options.force });
 
     for (const warning of result.warnings) {
       console.log(`warning\t${warning}`);
@@ -166,7 +160,7 @@ registryCommand
   .option("--root <path>", "target project root", ".")
   .option("--path <path>", "registry file path", undefined)
   .action(async (options: { root: string; path?: string }) => {
-    const registryPath = options.path ?? getRegistryPath(options.root);
+    const registryPath = options.path ?? getRegistryPath(getOptionRoot(options));
     const result = await loadModelRegistryFile(registryPath);
 
     for (const warning of result.warnings) {
@@ -194,7 +188,7 @@ registryCommand
   .option("--dry-run", "preview changes without writing")
   .action(async (options: { root: string; path?: string; dryRun?: boolean }) => {
     const result = await refreshModelRegistry({
-      root: options.root,
+      root: getOptionRoot(options),
       path: options.path,
       dryRun: options.dryRun,
     });
@@ -225,7 +219,7 @@ registryCommand
       return;
     }
 
-    const result = await loadModelRegistryFile(getRegistryPath(options.root));
+    const result = await loadModelRegistryFile(getRegistryPath(getOptionRoot(options)));
 
     for (const error of result.errors) {
       console.error(`error\t${error}`);
@@ -279,7 +273,7 @@ program
   .option("--root <path>", "target project root", ".")
   .option("--force", "overwrite existing blueprint files")
   .action(async (options: { root: string; force?: boolean }) => {
-    const written = await initBlueprint({ root: options.root, force: options.force });
+    const written = await initBlueprint({ root: getOptionRoot(options), force: options.force });
 
     if (written.length === 0) {
       console.log("No files written; .blueprint already exists. Use --force to overwrite templates.");
@@ -296,7 +290,7 @@ program
   .description("Inspect whether a project has enough readable context for planning.")
   .option("--root <path>", "target project root", ".")
   .action(async (options: { root: string }) => {
-    const report = await inspectProject(options.root);
+    const report = await inspectProject(getOptionRoot(options));
 
     console.log(`root\t${report.root}`);
     console.log(`files\t${report.fileCount}`);
@@ -330,7 +324,7 @@ program
       yes?: boolean;
     }) => {
     await runPlanCommand({
-      root: options.root,
+      root: getOptionRoot(options),
       answersPath: options.answers,
       engine: options.engine,
       fallback: options.fallback,
@@ -363,7 +357,7 @@ program
     }) => {
       const change = await readChangeInput(options.change, options.file);
       const result = await reviseBlueprint({
-        root: options.root,
+        root: getOptionRoot(options),
         change,
         apply: options.apply,
         applyTimeoutMs: options.applyTimeoutMs,
@@ -408,7 +402,7 @@ program
   );
 
 program
-  .command("tui")
+  .command("tui", { isDefault: true })
   .description("Open the Ink dashboard for the current blueprint.")
   .option("--root <path>", "target project root", ".")
   .option("--view <view>", "initial view: overview, tasks, graph, providers, actions", parseTuiView, "overview")
@@ -438,7 +432,7 @@ program
       json?: boolean;
     }) => {
       const result = await exportBlueprint({
-        root: options.root,
+        root: getOptionRoot(options),
         out: options.out,
         force: options.force,
         includeRevisions: options.includeRevisions,
@@ -467,7 +461,7 @@ program
   .description("Validate a generated .blueprint directory.")
   .option("--root <path>", "target project root", ".")
   .action(async (options: { root: string }) => {
-    const result = await lintBlueprint(options.root);
+    const result = await lintBlueprint(getOptionRoot(options));
 
     for (const warning of result.warnings) {
       console.log(`warning\t${warning}`);
@@ -502,13 +496,21 @@ function parsePositiveInteger(value: string): number {
 }
 
 async function runTuiCommand(options: { root: string; view: TuiView; json?: boolean }): Promise<void> {
+  const root = getOptionRoot(options);
+
   if (options.json) {
-    const dashboard = await loadTuiDashboard({ root: options.root, initialView: options.view });
+    const dashboard = await loadTuiDashboard({ root, initialView: options.view });
     console.log(JSON.stringify(dashboard, null, 2));
     return;
   }
 
-  await runTuiDashboard({ root: options.root, initialView: options.view });
+  await runTuiDashboard({ root, initialView: options.view });
+}
+
+function getOptionRoot(options: { root?: unknown; opts?: () => { root?: unknown } }): string {
+  const rawRoot = typeof options.opts === "function" ? options.opts().root : options.root;
+
+  return typeof rawRoot === "string" && rawRoot.length > 0 ? rawRoot : ".";
 }
 
 function parseProviderId(value: string): ProviderId {

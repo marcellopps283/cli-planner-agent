@@ -10,6 +10,7 @@ import {
   buildPlannerPromptForContext,
   generateBlueprintPlan,
   parsePlannerDraft,
+  previewBlueprintPlan,
   type PlanAnswers,
   type PlanContext,
   type PlannerDraft,
@@ -110,6 +111,30 @@ describe("blueprint plan generation", () => {
     expect(result.taskIds).toEqual(["task-001-custom-analysis", "task-002-custom-build"]);
     expect(lint.errors).toEqual([]);
     expect(firstTask).toContain("suggested_model: gemini-3.1-pro-preview");
+  });
+
+  it("previews task model assignments before writing handoffs", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+
+    const preview = await previewBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft: makeDraft(),
+    });
+    const blueprintFiles = await readdir(path.join(root, ".blueprint"));
+
+    expect(preview.engine).toBe("llm");
+    expect(preview.tasks.map((task) => `${task.id}:${task.suggestedModel}`)).toEqual([
+      "task-001-custom-analysis:gemini-3.1-pro-preview",
+      "task-002-custom-build:gpt-5.5",
+    ]);
+    expect(blueprintFiles).not.toContain("dependencies_graph.json");
+    expect(blueprintFiles).not.toContain("tasks");
   });
 
   it("parses planner drafts from fenced JSON", () => {

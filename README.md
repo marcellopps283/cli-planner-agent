@@ -135,6 +135,10 @@ blueprint lint
 blueprint export
 ```
 
+No modo interativo, o planner monta um preview do grafo e mostra o modelo
+sugerido por task antes de escrever os handoffs. Com `--answers` e `--yes`, o
+fluxo continua proprio para automacao e testes.
+
 Para automacao ou testes, o mesmo comando aceita respostas em JSON:
 
 ```bash

@@ -112,6 +112,22 @@ export interface GeneratePlanResult {
   engine: PlanEngine;
 }
 
+export interface PlanPreviewTask {
+  id: string;
+  title: string;
+  suggestedModel: string;
+  dependencies: string[];
+  allowedPaths: string[];
+  riskLevel: number;
+}
+
+export interface PlanPreviewResult {
+  root: string;
+  engine: PlanEngine;
+  overview: string;
+  tasks: PlanPreviewTask[];
+}
+
 export interface PlanContext {
   root: string;
   profile: PlannerProfile;
@@ -145,13 +161,21 @@ interface PlanBuild {
   tasks: PlannedTask[];
 }
 
+interface PreparedPlan {
+  root: string;
+  context: PlanContext;
+  answers: PlanAnswers;
+  plan: PlanBuild;
+  blueprintRoot: string;
+}
+
 export async function runPlanCommand(options: PlanCommandOptions): Promise<void> {
   const root = path.resolve(options.root);
   const context = await loadPlanContext(root);
   const answers = options.answersPath ? await readAnswersFile(options.answersPath) : await collectPlanAnswers(context);
 
   if (!options.yes && !options.answersPath) {
-    const approved = await confirmPlan(context, answers);
+    const approved = await confirmPlanStart(context, answers);
 
     if (!approved) {
       cancel("Planning cancelled.");
@@ -163,11 +187,24 @@ export async function runPlanCommand(options: PlanCommandOptions): Promise<void>
   let result: GeneratePlanResult;
 
   try {
-    result = await generateBlueprintPlan({
+    const prepared = await prepareBlueprintPlan({
       root,
       answers,
       engine,
       plannerTimeoutMs: options.plannerTimeoutMs,
+      force: options.force ?? options.yes ?? Boolean(options.answersPath),
+    });
+
+    if (!options.yes && !options.answersPath) {
+      const approved = await confirmPlanAssignments(prepared);
+
+      if (!approved) {
+        cancel("Planning cancelled.");
+        return;
+      }
+    }
+
+    result = await writePreparedPlan(prepared, {
       force: options.force ?? options.yes ?? Boolean(options.answersPath),
     });
   } catch (error) {
@@ -190,12 +227,23 @@ export async function runPlanCommand(options: PlanCommandOptions): Promise<void>
       }
     }
 
-    result = await generateBlueprintPlan({
+    const prepared = await prepareBlueprintPlan({
       root,
       answers,
       engine: "deterministic",
       force: true,
     });
+
+    if (!options.yes && !options.answersPath) {
+      const approved = await confirmPlanAssignments(prepared);
+
+      if (!approved) {
+        cancel("Planning cancelled.");
+        return;
+      }
+    }
+
+    result = await writePreparedPlan(prepared, { force: true });
   }
   const lint = await lintBlueprint(root);
 
@@ -215,6 +263,22 @@ export async function runPlanCommand(options: PlanCommandOptions): Promise<void>
 }
 
 export async function generateBlueprintPlan(options: GeneratePlanOptions): Promise<GeneratePlanResult> {
+  const prepared = await prepareBlueprintPlan(options);
+  return writePreparedPlan(prepared, { force: options.force });
+}
+
+export async function previewBlueprintPlan(options: GeneratePlanOptions): Promise<PlanPreviewResult> {
+  const prepared = await prepareBlueprintPlan(options);
+
+  return {
+    root: prepared.root,
+    engine: prepared.plan.engine,
+    overview: prepared.plan.overview,
+    tasks: prepared.plan.tasks.map(toPreviewTask),
+  };
+}
+
+async function prepareBlueprintPlan(options: GeneratePlanOptions): Promise<PreparedPlan> {
   const root = path.resolve(options.root);
   const context = await loadPlanContext(root);
   const answers = PlanAnswersSchema.parse(options.answers);
@@ -224,13 +288,29 @@ export async function generateBlueprintPlan(options: GeneratePlanOptions): Promi
     await assertPlanCanBeWritten(blueprintRoot);
   }
 
+  const plan = await buildPlan(context, answers, options);
+
+  return {
+    root,
+    context,
+    answers,
+    plan,
+    blueprintRoot,
+  };
+}
+
+async function writePreparedPlan(
+  prepared: PreparedPlan,
+  options: { force?: boolean },
+): Promise<GeneratePlanResult> {
+  const { root, context, answers, blueprintRoot, plan } = prepared;
+
   await mkdir(path.join(blueprintRoot, "tasks"), { recursive: true });
 
   if (options.force) {
     await clearExistingTaskFiles(blueprintRoot);
   }
 
-  const plan = await buildPlan(context, answers, options);
   const tasks = plan.tasks;
   const manifest: BlueprintManifest = {
     schema_version: "1.0",
@@ -269,6 +349,17 @@ export async function generateBlueprintPlan(options: GeneratePlanOptions): Promi
     files: written,
     taskIds: tasks.map((task) => task.id),
     engine: plan.engine,
+  };
+}
+
+function toPreviewTask(task: PlannedTask): PlanPreviewTask {
+  return {
+    id: task.id,
+    title: task.title,
+    suggestedModel: task.suggestedModel.id,
+    dependencies: task.dependencies,
+    allowedPaths: task.allowedPaths,
+    riskLevel: task.riskLevel,
   };
 }
 
@@ -350,11 +441,11 @@ async function collectPlanAnswers(context: PlanContext): Promise<PlanAnswers> {
   });
 }
 
-async function confirmPlan(context: PlanContext, answers: PlanAnswers): Promise<boolean> {
+async function confirmPlanStart(context: PlanContext, answers: PlanAnswers): Promise<boolean> {
   note(
     [
       `objective: ${answers.objective}`,
-      `tasks: 3 sequential handoffs`,
+      "next: planner will build a task graph preview",
       `planner: ${context.profile.planner_model}`,
       `active models: ${activeModelsForProfile(context.profile, context.registry).map((model) => model.id).join(", ")}`,
       `validation: ${answers.validationCommands.join(" && ") || "manual acceptance only"}`,
@@ -363,7 +454,36 @@ async function confirmPlan(context: PlanContext, answers: PlanAnswers): Promise<
   );
 
   const approved = await confirm({
-    message: "Gerar arquivos em .blueprint/?",
+    message: "Rodar o planner e montar o preview de tarefas?",
+    initialValue: true,
+  });
+
+  if (isCancel(approved)) {
+    return false;
+  }
+
+  return approved;
+}
+
+async function confirmPlanAssignments(prepared: PreparedPlan): Promise<boolean> {
+  const preview = prepared.plan.tasks.map(toPreviewTask);
+
+  note(
+    [
+      `overview: ${prepared.plan.overview}`,
+      `engine: ${prepared.plan.engine}`,
+      `tasks: ${preview.length}`,
+      ...preview.map((task) => {
+        const deps = task.dependencies.length > 0 ? task.dependencies.join(",") : "none";
+        const paths = task.allowedPaths.length > 0 ? task.allowedPaths.join(",") : "read-only";
+        return `${task.id}: ${task.suggestedModel} | risk ${task.riskLevel} | deps ${deps} | paths ${paths}`;
+      }),
+    ].join("\n"),
+    "Task Graph & Model Assignments",
+  );
+
+  const approved = await confirm({
+    message: "Aprovar estas atribuicoes e escrever os handoffs em .blueprint/?",
     initialValue: true,
   });
 

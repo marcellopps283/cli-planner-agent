@@ -40,3 +40,5 @@ automacao, smoke e debugging.
   confirmacao antes de escrever arquivos.
 - O backend de setup aceita selecao explicita de providers/modelos/planner para
   manter o fluxo testavel e auditavel.
+- `blueprint plan` monta preview de task graph/modelo por task e pede
+  confirmacao antes de persistir handoffs no modo interativo.
