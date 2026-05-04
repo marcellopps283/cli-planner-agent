@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isProviderLiveCheckSuccessful,
   isProviderLiveSmokeSuccessful,
   sanitizeProviderOutput,
   summarizeAuthOutput,
@@ -103,5 +104,12 @@ describe("provider output sanitation", () => {
 
     expect(isProviderLiveSmokeSuccessful("openai", output)).toBe(true);
     expect(summarizeGenericLiveOutput("openai", output)).toBe("response=OK");
+  });
+
+  it("accepts Codex live smoke OK even when optional session persistence exits non-zero", () => {
+    const output = "OpenAI Codex\nassistant\nOK";
+
+    expect(isProviderLiveCheckSuccessful("openai", 1, output)).toBe(true);
+    expect(isProviderLiveCheckSuccessful("google", 1, JSON.stringify({ response: "OK" }))).toBe(false);
   });
 });

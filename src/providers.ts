@@ -164,7 +164,7 @@ export async function checkProviderLive(
       timeout: options.liveTimeoutMs ?? DEFAULT_LIVE_CHECK_TIMEOUT_MS,
     });
     const output = selectLiveSmokeOutput(adapter.id, result.stdout, result.stderr);
-    const success = result.exitCode === 0 && isProviderLiveSmokeSuccessful(adapter.id, output);
+    const success = isProviderLiveCheckSuccessful(adapter.id, result.exitCode, output);
 
     return {
       ...base,
@@ -190,6 +190,25 @@ export function isProviderLiveSmokeSuccessful(providerId: ProviderAdapter["id"],
   }
 
   return /\bOK\.?\b/iu.test(output);
+}
+
+export function isProviderLiveCheckSuccessful(
+  providerId: ProviderAdapter["id"],
+  exitCode: number | undefined,
+  output: string,
+): boolean {
+  if (!isProviderLiveSmokeSuccessful(providerId, output)) {
+    return false;
+  }
+
+  if (exitCode === 0) {
+    return true;
+  }
+
+  // Codex can emit the final answer and still return non-zero when it cannot
+  // write optional session metadata in constrained terminals. Trust the answer
+  // for the smoke, but keep stricter exit-code handling for structured CLIs.
+  return providerId === "openai";
 }
 
 export function summarizeLiveSmokeOutput(providerId: ProviderAdapter["id"], output: string): string {
