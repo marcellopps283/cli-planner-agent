@@ -198,9 +198,10 @@ do app. O onboarding tambem mostra quais CLIs de provider foram detectados e o
 status local de auth quando o CLI expoe essa informacao sem chamada de modelo.
 
 Na aba `actions`, a TUI inicia um fluxo de planejamento em estilo chat usando o
-PlannerEngine LLM do profile, mostra o preview `task -> modelo` antes de escrever
-handoffs, configura o model pool por IDs exatos, executa `lint`, `export`,
-`auth doctor` e um fluxo guiado de
+PlannerEngine LLM do profile. O chat comeca por um brief livre, coleta os campos
+estruturados minimos e mostra o preview `task -> modelo` antes de escrever
+handoffs. A mesma aba configura o model pool por IDs exatos, executa `lint`,
+`export`, `auth doctor` e um fluxo guiado de
 `revise`: digita a mudanca, revisa o dry-run e confirma antes de aplicar. Cada
 acao executada pela TUI fica auditada em `.blueprint/tui_sessions/*.json`.
 Se o planner LLM falhar nessa tela, a TUI sugere outro modelo ativo ou o preview

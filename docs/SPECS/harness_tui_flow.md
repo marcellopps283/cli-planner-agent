@@ -47,6 +47,8 @@ automacao, smoke e debugging.
 - A aba `actions` tem `Start Planning Chat`, um fluxo guiado que coleta escopo
   dentro da TUI e chama o PlannerEngine LLM do profile sem exigir que o usuario
   saia para outro comando.
+- O chat comeca por um brief livre e depois pede os campos estruturados minimos
+  para manter o contrato de planejamento validavel.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
   confirmacao antes de persistir handoffs no modo interativo.
 - O PlannerEngine passa o model ID exato ao CLI oficial e tenta reparar uma

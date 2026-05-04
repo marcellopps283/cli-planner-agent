@@ -111,6 +111,7 @@ interface SetupDraft {
 
 type PlanChatStep =
   | "idle"
+  | "brief"
   | "projectSummary"
   | "objective"
   | "successCriteria"
@@ -122,6 +123,7 @@ type PlanChatStep =
   | "notes";
 
 interface PlanChatDraft {
+  brief?: string;
   projectSummary?: string;
   objective?: string;
   successCriteria?: string[];
@@ -141,6 +143,7 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
 };
 
 const PLAN_CHAT_STEPS = [
+  "brief",
   "projectSummary",
   "objective",
   "successCriteria",
@@ -153,6 +156,7 @@ const PLAN_CHAT_STEPS = [
 ] as const satisfies readonly Exclude<PlanChatStep, "idle">[];
 
 const PLAN_STEP_PROMPTS: Record<Exclude<PlanChatStep, "idle">, string> = {
+  brief: "Conte livremente o que vamos planejar agora",
   projectSummary: "Resumo do projeto em uma frase",
   objective: "Qual entrega voce quer planejar agora",
   successCriteria: "Criterios de sucesso, separados por virgula",
@@ -1246,7 +1250,7 @@ export function InteractiveDashboard({
     setLastPlanContinuation(undefined);
     setPendingConfirmation(undefined);
     setActionResult(undefined);
-    setPlanChatStep("projectSummary");
+    setPlanChatStep("brief");
   }
 
   function submitPlanChatInput(): void {
@@ -2763,7 +2767,7 @@ function updatePlanChatDraft(
   step: Exclude<PlanChatStep, "idle">,
   value: string,
 ): PlanChatDraft | undefined {
-  if (step === "projectSummary" || step === "objective") {
+  if (step === "brief" || step === "projectSummary" || step === "objective") {
     if (value.length === 0) {
       return undefined;
     }
@@ -2805,7 +2809,7 @@ function buildPlanAnswersFromDraft(draft: PlanChatDraft): PlanAnswers {
     targetPaths: draft.targetPaths ?? [],
     validationCommands: draft.validationCommands ?? [],
     riskLevel: draft.riskLevel ?? 5,
-    notes: draft.notes ?? [],
+    notes: uniqueStrings([...(draft.brief ? [`Initial brief: ${draft.brief}`] : []), ...(draft.notes ?? [])]),
   };
 }
 
@@ -2840,6 +2844,10 @@ function planChatValidationMessage(step: Exclude<PlanChatStep, "idle">): string 
 
 function summarizePlanDraft(draft: PlanChatDraft): string[] {
   const lines: string[] = [];
+
+  if (draft.brief) {
+    lines.push(`Brief: ${truncateLine(draft.brief, 80)}`);
+  }
 
   if (draft.projectSummary) {
     lines.push(`Project: ${draft.projectSummary}`);
