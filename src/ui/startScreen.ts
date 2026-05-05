@@ -61,13 +61,11 @@ export function LandingSurface({
         h(
           Text,
           null,
-          h(Text, { color: "cyan" }, "| "),
           h(Text, { color: chatCommandInput.length > 0 ? "white" : "gray" }, promptText),
         ),
         h(
           Text,
           null,
-          h(Text, { color: "cyan" }, "Plan "),
           h(Text, { bold: true }, `${planner} `),
           h(Text, { color: "gray" }, `(Primary) ${providerLabel}`),
         ),

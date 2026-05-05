@@ -3049,37 +3049,23 @@ function ActionsView({
     });
   }
 
-  return h(
-    Box,
-    { flexDirection: "column", gap: 1 },
-    h(WorkbenchSurface, {
-      dashboard,
-      runningAction,
-      pendingConfirmation,
-      isEditingRevise,
-      reviseInput,
-      chatCommandInput,
-      planChatStep,
-      planChatDraft,
-      planChatInput,
-      isEditingModelPool,
-      modelPoolInput,
-      isSelectingChatModel,
-      chatModelCursor,
-      slashCommandCursor,
-      actionResult,
-    }),
-    h(FocusOverlay, {
-      pendingConfirmation,
-      isEditingRevise,
-      reviseInput,
-      isEditingModelPool,
-      modelPoolInput,
-      planChatStep,
-      planChatInput,
-    }),
-    h(ActionResultPanel, { result: actionResult }),
-  );
+  return h(WorkbenchSurface, {
+    dashboard,
+    runningAction,
+    pendingConfirmation,
+    isEditingRevise,
+    reviseInput,
+    chatCommandInput,
+    planChatStep,
+    planChatDraft,
+    planChatInput,
+    isEditingModelPool,
+    modelPoolInput,
+    isSelectingChatModel,
+    chatModelCursor,
+    slashCommandCursor,
+    actionResult,
+  });
 }
 
 

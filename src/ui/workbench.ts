@@ -5,6 +5,7 @@ import React, { createElement } from "react";
 import {
   ActionResultPanel,
   ChatModelSelectorPanel,
+  FocusOverlay,
   OpenCodePathBar,
   SlashCommandPanel,
 } from "./panels.js";
@@ -67,11 +68,37 @@ export function WorkbenchSurface({
 
   return h(
     Box,
-    { flexDirection: "column", gap: 1 },
+    { flexDirection: "column", flexGrow: 1 },
     h(
       Box,
-      { flexDirection: "row", gap: 2 },
-      h(WorkbenchFeed, { dashboard, actionResult, planChatStep, planChatDraft }),
+      { flexDirection: "row", gap: 2, flexGrow: 1 },
+      h(
+        Box,
+        { flexDirection: "column", flexGrow: 1, gap: 1, paddingBottom: 1 },
+        h(WorkbenchFeed, { dashboard, actionResult, planChatStep, planChatDraft }),
+        h(FocusOverlay, {
+          pendingConfirmation,
+          isEditingRevise,
+          reviseInput,
+          isEditingModelPool,
+          modelPoolInput,
+          planChatStep,
+          planChatInput,
+        }),
+        h(ActionResultPanel, { result: actionResult }),
+        h(WorkbenchInputPanel, {
+          dashboard,
+          chatCommandInput,
+          planChatStep,
+          planChatInput,
+          isEditingRevise,
+          reviseInput,
+          isEditingModelPool,
+          modelPoolInput,
+        }),
+        ...(showSlashMenu ? [h(SlashCommandPanel, { key: "slash", chatCommandInput, selectedIndex: slashCommandCursor })] : []),
+        ...(isSelectingChatModel ? [h(ChatModelSelectorPanel, { key: "model-selector", dashboard, cursor: chatModelCursor })] : []),
+      ),
       h(WorkbenchSidebar, {
         dashboard,
         runningAction,
@@ -81,18 +108,6 @@ export function WorkbenchSurface({
         planChatStep,
       }),
     ),
-    h(WorkbenchInputPanel, {
-      dashboard,
-      chatCommandInput,
-      planChatStep,
-      planChatInput,
-      isEditingRevise,
-      reviseInput,
-      isEditingModelPool,
-      modelPoolInput,
-    }),
-    ...(showSlashMenu ? [h(SlashCommandPanel, { key: "slash", chatCommandInput, selectedIndex: slashCommandCursor })] : []),
-    ...(isSelectingChatModel ? [h(ChatModelSelectorPanel, { key: "model-selector", dashboard, cursor: chatModelCursor })] : []),
     h(OpenCodePathBar, { dashboard }),
   );
 }

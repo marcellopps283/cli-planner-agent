@@ -220,7 +220,7 @@ describe("blueprint tui", () => {
     );
 
     expect(output).toContain("Ask anything");
-    expect(output).toContain("Plan openai/gpt-5.5");
+    expect(output).toContain("openai/gpt-5.5");
     expect(output).toContain("ctrl+p commands");
     expect(output).not.toContain("Slash Autocomplete");
     expect(typedOutput).toContain("planejar tela inicial");
