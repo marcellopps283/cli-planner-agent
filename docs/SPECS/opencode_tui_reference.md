@@ -38,11 +38,12 @@ O layout que interessa para Blueprint e:
 - Antes da primeira solicitacao, a tela mostra `blueprint`, `Ask anything...`,
   modo `Plan`, planner primario, dica e atalhos `tab`/`ctrl+p`.
 - Depois da primeira mensagem, a tela vira workbench com feed principal, input
-  inferior e sidebar de `Context`, `MCP`, `LSP` e `Todo`.
+  inferior e sidebar de `Context`, `MCP`, `LSP` e `Todo`; no Blueprint, esse
+  workbench renderiza o estado agentico devolvido pelo planner ativo.
 - `tab` abre os modelos disponiveis no provider/CLI conectado ao planner atual;
   `/model [id]` troca o modelo usado no chat.
-- O feed usa cards textuais para intake, preview de tarefas e handoffs ja
-  gerados.
+- O feed usa cards textuais para estado do planner, checklist validada pela IA,
+  perguntas, preview de tarefas e handoffs ja gerados.
 - Quota real ainda e `n/a`, mas o slot da sidebar fica reservado.
 
 ## Proximas Fatias

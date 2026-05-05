@@ -31,6 +31,7 @@ import {
   riskIcon,
   runtimeStatusColor,
   truncateLine,
+  type PlannerAgentWorkflowState,
 } from "../tui.js";
 
 const h = createElement;
@@ -149,6 +150,9 @@ export function WorkbenchFeed({
     Box,
     { flexDirection: "column", gap: 1, flexGrow: 1 },
     h(Text, { color: "gray" }, dashboard.nextAction),
+    ...(dashboard.agentState
+      ? [h(PlannerAgentStateBlock, { key: "agent-state", state: dashboard.agentState })]
+      : []),
     ...(planChatStep !== "idle"
       ? [h(PlanningProgressBlock, { key: "planning", planChatDraft })]
       : []),
@@ -157,10 +161,92 @@ export function WorkbenchFeed({
       : []),
     ...(taskCount > 0
       ? [h(HandoffReadyBlock, { key: "handoffs", dashboard })]
-      : actionResult?.actionId !== "plan"
+      : !dashboard.agentState && actionResult?.actionId !== "plan"
         ? [h(EmptyWorkbenchBlock, { key: "empty" })]
         : []),
   );
+}
+
+export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowState }): React.ReactElement {
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: agentStateColor(state), paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "Planner Agent State"),
+    h(Text, null, `${state.project_state.current_phase} | ${state.project_state.title}`),
+    h(Text, { color: "gray" }, truncateLine(state.project_state.summary, 110)),
+    ...state.messages.slice(0, 3).map((message, index) =>
+      h(Text, { key: `message-${index}` }, truncateLine(message.content, 110)),
+    ),
+    ...(state.checklist.length > 0
+      ? [
+          h(Text, { key: "checks-title", color: "gray" }, "Validated workflow"),
+          ...state.checklist.slice(0, 8).map((item) =>
+            h(
+              Text,
+              { key: item.id, color: agentChecklistColor(item.status) },
+              `${agentCheckbox(item.status)} ${truncateLine(item.label, 92)}${item.evidence ? ` | ${truncateLine(item.evidence, 36)}` : ""}`,
+            ),
+          ),
+        ]
+      : []),
+    ...(state.questions.length > 0
+      ? [
+          h(Text, { key: "questions-title", color: "yellow" }, "Questions"),
+          ...state.questions.slice(0, 4).map((question) =>
+            h(Text, { key: question.id, color: "yellow" }, `? ${truncateLine(question.question, 105)}`),
+          ),
+        ]
+      : []),
+    h(Text, { color: "gray" }, `Next: ${state.next_action.label}`),
+  );
+}
+
+function agentCheckbox(status: PlannerAgentWorkflowState["checklist"][number]["status"]): string {
+  if (status === "done") {
+    return "[x]";
+  }
+
+  if (status === "in_progress") {
+    return "[~]";
+  }
+
+  if (status === "blocked") {
+    return "[!]";
+  }
+
+  return "[ ]";
+}
+
+function agentChecklistColor(status: PlannerAgentWorkflowState["checklist"][number]["status"]): "green" | "yellow" | "red" | "gray" {
+  if (status === "done") {
+    return "green";
+  }
+
+  if (status === "in_progress") {
+    return "yellow";
+  }
+
+  if (status === "blocked") {
+    return "red";
+  }
+
+  return "gray";
+}
+
+function agentStateColor(state: PlannerAgentWorkflowState): "green" | "yellow" | "red" | "blue" {
+  if (state.project_state.health === "ready_to_preview") {
+    return "green";
+  }
+
+  if (state.project_state.health === "blocked") {
+    return "red";
+  }
+
+  if (state.project_state.health === "needs_input") {
+    return "yellow";
+  }
+
+  return "blue";
 }
 
 export function PlanningProgressBlock({ planChatDraft }: { planChatDraft: PlanChatDraft }): React.ReactElement {
@@ -243,12 +329,17 @@ export function WorkbenchInputPanel({
       : isEditingModelPool
         ? modelPoolInput ?? ""
         : chatCommandInput;
+  const hint = planChatStep !== "idle"
+    ? PLAN_STEP_PROMPTS[planChatStep]
+    : dashboard.agentState
+      ? dashboard.agentState.next_action.prompt ?? "Respond to the active planner workflow, or use /commands."
+      : "Type a request, or use /commands.";
 
   return h(
     Box,
     { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
     h(Text, null, h(Text, { color: "gray" }, "Planner "), h(Text, { bold: true }, planner)),
-    h(Text, { color: "gray" }, planChatStep !== "idle" ? PLAN_STEP_PROMPTS[planChatStep] : "Type a request, or use /commands."),
+    h(Text, { color: "gray" }, hint),
     h(Text, null, h(Text, { color: "blue" }, "❯ "), activeText, h(Text, { inverse: true }, " ")),
   );
 }

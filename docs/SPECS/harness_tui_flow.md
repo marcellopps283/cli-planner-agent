@@ -20,10 +20,14 @@ automacao, smoke e debugging.
 8. App abre painel operacional com status, metricas, provider pool, model pool,
    registry, artefatos, tasks e acoes.
 9. Ao iniciar uma tarefa, app muda para uma experiencia de chat.
-10. Planner conversa com o usuario, entende a entrega e monta um plano.
-11. Antes de escrever handoffs, app mostra task graph, modelo sugerido por task
+10. A primeira mensagem aciona o modelo planner ativo, que devolve um estado de
+    workflow agentico: entendimento do projeto, fase atual, checklist validada,
+    perguntas e proxima acao.
+11. O app renderiza esse estado como harness; o modelo controla status
+    semantico de checkboxes/perguntas, nunca layout.
+12. Antes de escrever handoffs, app mostra task graph, modelo sugerido por task
     e pede confirmacao.
-12. Apos confirmacao, app gera os arquivos e informa os paths criados.
+13. Apos confirmacao, app gera os arquivos e informa os paths criados.
 
 ## Regras
 
@@ -58,9 +62,13 @@ automacao, smoke e debugging.
   efforts e planner para manter o fluxo testavel e auditavel.
 - A tela `actions` agora e um workbench de chat: tem feed principal, input
   permanente, sidebar contextual e slash commands para acoes locais.
-- Depois da primeira mensagem, a tela vira workbench e envia o texto direto ao
-  planner LLM do profile; o feed mostra preview, confirmacoes ou handoffs
-  gerados conforme a resposta do planner.
+- Depois da primeira mensagem, a tela vira workbench e executa
+  `agent-workflow`: o texto vai para o planner LLM ativo e a TUI renderiza o
+  estado JSON devolvido pelo modelo.
+- O estado agentico inclui `project_state`, mensagens do planner, checklist com
+  status `done/in_progress/pending/blocked`, perguntas e `next_action`.
+- O modelo decide o estado semantico dos itens interativos que ele valida; a TUI
+  continua dona do layout, controles e renderizacao.
 - Texto livre ou `/plan [brief]` inicia o planejamento; `/providers`,
   `/model`, `/models`, `/registry`, `/lint`, `/export`, `/revise`, `/auth`,
   `/auth-live`, `/help` e `/menu` mantem o usuario em uma unica frente
@@ -72,9 +80,9 @@ automacao, smoke e debugging.
   em `profile.yaml`.
 - Perguntas, confirmacoes e edicoes guiadas aparecem em overlays de foco em vez
   de competirem com o painel principal do chat.
-- O chat comeca por texto livre. Campos estruturados viram contexto interno do
-  prompt; o planner deve inferir lacunas de forma conservadora e so perguntar ao
-  usuario quando estiver realmente bloqueado.
+- O chat comeca por texto livre. Campos estruturados viram schema interno do
+  workflow agentico; o planner deve inferir lacunas de forma conservadora e so
+  perguntar ao usuario quando estiver realmente bloqueado.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
   confirmacao antes de persistir handoffs no modo interativo.
 - O PlannerEngine passa o model ID exato ao CLI oficial e tenta reparar uma

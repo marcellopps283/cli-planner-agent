@@ -21,7 +21,8 @@ import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
 import { lintBlueprint, type BlueprintLintResult } from "./lint.js";
 import { DEFAULT_MODEL_REGISTRY } from "./models.js";
-import type { PlannerPromptRunner } from "./plannerEngine.js";
+import { runLlmPlannerEngine, type PlannerPromptRunner } from "./plannerEngine.js";
+import { extractJsonObject } from "./providerPrompt.js";
 import {
   generateBlueprintPlan,
   getPlannerFallbackCandidatesForRoot,
@@ -50,6 +51,7 @@ import {
   type ModelRegistryEntry,
   type PlannerProfile,
   type ProviderId,
+  ProviderIdSchema,
 } from "./schemas.js";
 
 export interface TuiDashboardOptions {
@@ -94,11 +96,13 @@ export interface TuiDashboard {
   exports: string[];
   tuiSessions: string[];
   chatDraft?: PlanChatDraft;
+  agentState?: PlannerAgentWorkflowState;
   nextAction: string;
 }
 
 export const TUI_ACTION_IDS = [
   "setup",
+  "agent-workflow",
   "plan",
   "model-pool",
   "planner-model",
@@ -147,6 +151,49 @@ export interface PlanChatDraft {
   riskLevel?: number;
   notes?: string[];
 }
+
+export const PlannerAgentWorkflowStateSchema = z.object({
+  schema_version: z.literal("1.0"),
+  user_request: z.string().min(1),
+  planner: z.object({
+    provider: ProviderIdSchema,
+    model: z.string().min(1),
+    reasoning_effort: z.string().min(1).optional(),
+  }),
+  project_state: z.object({
+    title: z.string().min(1),
+    summary: z.string().min(1),
+    current_phase: z.string().min(1),
+    health: z.enum(["planning", "needs_input", "ready_to_preview", "blocked"]).default("planning"),
+    confidence: z.number().min(0).max(1).default(0.5),
+  }),
+  messages: z.array(z.object({
+    role: z.enum(["planner"]),
+    content: z.string().min(1),
+  })).default([]),
+  checklist: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    status: z.enum(["pending", "in_progress", "done", "blocked"]),
+    validated_by: z.string().min(1).optional(),
+    evidence: z.string().min(1).optional(),
+    interactive: z.boolean().default(true),
+  })).default([]),
+  questions: z.array(z.object({
+    id: z.string().min(1),
+    question: z.string().min(1),
+    why: z.string().min(1).optional(),
+    required: z.boolean().default(true),
+  })).default([]),
+  next_action: z.object({
+    type: z.enum(["ask_user", "continue_planning", "preview_plan"]),
+    label: z.string().min(1),
+    prompt: z.string().min(1).optional(),
+  }),
+  plan_answers: z.any().optional(),
+});
+
+export type PlannerAgentWorkflowState = z.infer<typeof PlannerAgentWorkflowStateSchema>;
 
 export const TUI_SLASH_COMMANDS = [
   {
@@ -276,6 +323,7 @@ export interface TuiActionResult {
   status: "ok" | "failed";
   summary: string;
   lines: string[];
+  agentState?: PlannerAgentWorkflowState;
   canApply?: boolean;
   change?: string;
   planContinuation?: PlanContinuation;
@@ -296,6 +344,7 @@ export interface RunTuiActionOptions {
   actionId: TuiActionId;
   change?: string;
   modelPool?: string;
+  agentRequest?: string;
   planAnswers?: PlanAnswers;
   planEngine?: PlanEngine;
   planForce?: boolean;
@@ -377,11 +426,12 @@ export const TUI_APP_NAME = "blueprint";
 export const TUI_APP_VERSION = "0.0.0";
 export const TUI_SLASH_MENU_VISIBLE_ROWS = 6;
 export const TUI_MODEL_SELECTOR_VISIBLE_ROWS = 8;
+const TUI_AGENT_STATE_FILE = "AGENT_STATE.json";
 
 export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<TuiDashboard> {
   const root = path.resolve(options.root);
   const blueprintRoot = path.join(root, BLUEPRINT_DIR);
-  let [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions, chatDraftRaw] = await Promise.all([
+  let [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions, chatDraftRaw, agentStateRaw] = await Promise.all([
     inspectBlueprintSetup(root, blueprintRoot),
     loadPlannerProfile(root),
     inspectProject(root),
@@ -392,6 +442,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     readExports(blueprintRoot),
     readTuiSessions(blueprintRoot),
     readFile(path.join(blueprintRoot, "tui_sessions", "DRAFT.json"), "utf8").catch(() => undefined),
+    readFile(path.join(blueprintRoot, "tui_sessions", TUI_AGENT_STATE_FILE), "utf8").catch(() => undefined),
   ]);
   if (!setup.initialized) {
     setup = {
@@ -405,6 +456,14 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
   if (chatDraftRaw) {
     try {
       chatDraft = JSON.parse(chatDraftRaw);
+    } catch {
+      // Ignore parse errors
+    }
+  }
+  let agentState: PlannerAgentWorkflowState | undefined;
+  if (agentStateRaw) {
+    try {
+      agentState = PlannerAgentWorkflowStateSchema.parse(JSON.parse(agentStateRaw));
     } catch {
       // Ignore parse errors
     }
@@ -423,6 +482,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     exports,
     tuiSessions,
     chatDraft,
+    agentState,
     nextAction: inferNextAction({ setup, profile, lint, tasks, manifest }),
   };
 }
@@ -474,10 +534,19 @@ export function getTuiActions(dashboard: TuiDashboard): TuiAction[] {
 
   const actions: TuiAction[] = [
     {
+      id: "agent-workflow",
+      label: "Start Agent Workflow",
+      command: "planner agent workflow",
+      description: "Send the first message to the active planner model and render its workflow state.",
+      enabled: profileReady,
+      requiresConfirmation: false,
+      requiresInput: true,
+    },
+    {
       id: "plan",
-      label: "Start Planning Chat",
+      label: "Preview Handoffs",
       command: "blueprint plan",
-      description: "Open a chat-like planning flow, preview task-model assignments, then write handoffs.",
+      description: "Preview task-model assignments, then write handoffs.",
       enabled: profileReady,
       requiresConfirmation: false,
       requiresInput: true,
@@ -579,6 +648,10 @@ export async function runTuiAction(options: RunTuiActionOptions): Promise<TuiAct
 async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiActionResult> {
   if (options.actionId === "setup") {
     return setupBlueprintProject(options);
+  }
+
+  if (options.actionId === "agent-workflow") {
+    return runAgentWorkflowTuiAction(options);
   }
 
   if (options.actionId === "plan") {
@@ -730,6 +803,83 @@ async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiAction
     status: "failed",
     summary: `Unknown action ${options.actionId}.`,
     lines: [],
+  };
+}
+
+async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<TuiActionResult> {
+  const request = options.agentRequest?.trim();
+
+  if (!request) {
+    return {
+      actionId: "agent-workflow",
+      status: "failed",
+      summary: "Missing planner request.",
+      lines: ["Type the project request in the chat so the active planner model can build the workflow state."],
+    };
+  }
+
+  const dashboard = await loadTuiDashboard({ root: options.root });
+  const profile = dashboard.profile.profile;
+
+  if (!profile || dashboard.profile.errors.length > 0) {
+    return {
+      actionId: "agent-workflow",
+      status: "failed",
+      summary: "Planner profile is not ready.",
+      lines: [...dashboard.profile.errors, "Run onboarding before starting the agentic workflow."],
+    };
+  }
+
+  const registryResult = await loadModelRegistryForProfile(options.root, profile);
+  const registry = registryResult.registry?.models ?? DEFAULT_MODEL_REGISTRY;
+  const plannerRegistryModel = registry.find((model) => model.id === profile.planner_model);
+  const reasoningEffort =
+    profile.planner_reasoning_effort
+    ?? profile.model_reasoning_efforts[profile.planner_model]
+    ?? plannerRegistryModel?.default_reasoning_effort;
+  const prompt = buildPlannerAgentWorkflowPrompt({
+    request,
+    dashboard,
+    profile,
+    registry,
+    reasoningEffort,
+  });
+  const result = await runLlmPlannerEngine({
+    provider: profile.planner_provider,
+    model: profile.planner_model,
+    reasoningEffort,
+    prompt,
+    parseDraft: parsePlannerAgentWorkflowState,
+    runner: options.plannerPromptRunner,
+    timeoutMs: options.liveTimeoutMs,
+  });
+  const state = PlannerAgentWorkflowStateSchema.parse({
+    ...result.draft,
+    user_request: result.draft.user_request || request,
+    planner: {
+      ...result.draft.planner,
+      provider: profile.planner_provider,
+      model: profile.planner_model,
+      reasoning_effort: reasoningEffort,
+    },
+  });
+
+  await writePlannerAgentWorkflowState(options.root, state);
+
+  return {
+    actionId: "agent-workflow",
+    status: "ok",
+    summary: `${state.project_state.current_phase}: ${state.project_state.summary}`,
+    agentState: state,
+    lines: [
+      `planner ${state.planner.provider}/${state.planner.model}`,
+      `reasoning ${state.planner.reasoning_effort ?? "default"}`,
+      `health ${state.project_state.health}`,
+      `confidence ${state.project_state.confidence.toFixed(2)}`,
+      ...state.checklist.map((item) => `check ${item.status} ${item.id} ${item.label}`),
+      ...state.questions.map((question) => `question ${question.id} ${question.question}`),
+      `next ${state.next_action.type} ${state.next_action.label}`,
+    ],
   };
 }
 
@@ -1874,25 +2024,16 @@ export function InteractiveDashboard({
   }
 
   function submitFreeformPlanRequest(brief: string): void {
-    const answers = buildPlanAnswersFromFreeformRequest(brief, dashboardState);
-    const force = dashboardState.tasks.length > 0;
-    const engine: PlanEngine = "llm";
-
     setPlanChatInput("");
     setPlanChatStep("idle");
     setPlanChatDraft({ brief });
-    setLastPlanAnswers(answers);
-    setLastPlanForce(force);
-    setLastPlanEngine(engine);
+    setLastPlanAnswers(undefined);
+    setLastPlanForce(false);
+    setLastPlanEngine("llm");
     setLastPlanContinuation(undefined);
     setPendingConfirmation(undefined);
     setActionResult(undefined);
-    void executeAction("plan", {
-      planAnswers: answers,
-      planForce: force,
-      planEngine: engine,
-      apply: false,
-    });
+    void executeAction("agent-workflow", { agentRequest: brief });
   }
 
   function beginPlanChat(initialBrief?: string): void {
@@ -2264,6 +2405,7 @@ export function InteractiveDashboard({
     options: {
       change?: string;
       modelPool?: string;
+      agentRequest?: string;
       planAnswers?: PlanAnswers;
       planEngine?: PlanEngine;
       planForce?: boolean;
@@ -2287,6 +2429,7 @@ export function InteractiveDashboard({
         actionId,
         change: options.change,
         modelPool: options.modelPool,
+        agentRequest: options.agentRequest,
         planAnswers: options.planAnswers,
         planEngine: options.planEngine,
         planForce: options.planForce,
@@ -3393,7 +3536,9 @@ function ActionsView({
   const landing = isLandingChatSurface({
     dashboard,
     actionResult,
+    runningAction,
     planChatStep,
+    planChatDraft,
   });
 
   if (landing) {
@@ -3611,15 +3756,23 @@ export function chatRuntimeStatus({
 function isLandingChatSurface({
   dashboard,
   actionResult,
+  runningAction,
   planChatStep = "idle",
+  planChatDraft = {},
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
+  runningAction?: TuiActionId;
   planChatStep?: PlanChatStep;
+  planChatDraft?: PlanChatDraft;
 }): boolean {
   return (
     actionResult?.actionId !== "plan"
+    && actionResult?.actionId !== "agent-workflow"
+    && runningAction !== "agent-workflow"
+    && !dashboard.agentState
     && planChatStep === "idle"
+    && Object.keys(planChatDraft).length === 0
   );
 }
 
@@ -3962,6 +4115,119 @@ export function buildPlanAnswersFromFreeformRequest(brief: string, dashboard: Tu
   };
 }
 
+export function parsePlannerAgentWorkflowState(response: string): PlannerAgentWorkflowState {
+  return PlannerAgentWorkflowStateSchema.parse(JSON.parse(extractJsonObject(response)));
+}
+
+function buildPlannerAgentWorkflowPrompt({
+  request,
+  dashboard,
+  profile,
+  registry,
+  reasoningEffort,
+}: {
+  request: string;
+  dashboard: TuiDashboard;
+  profile: PlannerProfile;
+  registry: ModelRegistryEntry[];
+  reasoningEffort?: string;
+}): string {
+  const activeModels = registry
+    .filter((model) => profile.available_models.length === 0 || profile.available_models.includes(model.id))
+    .map((model) => ({
+      id: model.id,
+      provider: model.provider,
+      tier: model.tier,
+      task_fit: model.task_fit,
+      default_reasoning_effort: model.default_reasoning_effort,
+      selected_reasoning_effort:
+        profile.model_reasoning_efforts[model.id] ?? model.default_reasoning_effort ?? model.reasoning_efforts[0],
+      strengths: model.strengths.slice(0, 4),
+      avoid_for: model.avoid_for.slice(0, 3),
+    }));
+  const context = {
+    user_request: request,
+    root: dashboard.root,
+    active_planner: {
+      provider: profile.planner_provider,
+      model: profile.planner_model,
+      reasoning_effort: reasoningEffort,
+    },
+    project_context: {
+      stack: dashboard.doctor.stack,
+      canonical_files: dashboard.doctor.canonicalFiles,
+      manifests: dashboard.doctor.manifests,
+      scripts: dashboard.doctor.scripts,
+      top_level_dirs: dashboard.doctor.topLevelDirs,
+      warnings: dashboard.doctor.warnings,
+      existing_tasks: dashboard.tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        model: task.suggestedModel,
+        risk: task.riskLevel,
+      })),
+      lint_errors: dashboard.lint.errors,
+      lint_warnings: dashboard.lint.warnings,
+    },
+    active_models: activeModels,
+  };
+
+  return [
+    "You are the active planning model inside the Blueprint terminal harness.",
+    "The app is a harness: it renders state, but you decide the semantic workflow state.",
+    "Do not propose terminal layout, colors, panels, or visual structure.",
+    "You control only project understanding, checklist status, questions, validation state, next action, and optional plan answers.",
+    "Checkboxes are semantic validation state: mark done only when the supplied project context validates it; otherwise use pending, in_progress, or blocked.",
+    "Reiterate the project in your own words, identify what is already known, what still needs validation, and what the next user-facing action should be.",
+    "Ask questions only when the workflow is blocked or a decision would be unsafe to infer.",
+    "Return strict JSON only. No markdown, no prose outside JSON.",
+    "JSON schema:",
+    JSON.stringify(
+      {
+        schema_version: "1.0",
+        user_request: "original user request",
+        planner: {
+          provider: profile.planner_provider,
+          model: profile.planner_model,
+          reasoning_effort: reasoningEffort,
+        },
+        project_state: {
+          title: "short project/work title",
+          summary: "your current understanding of what should happen",
+          current_phase: "short phase label",
+          health: "planning|needs_input|ready_to_preview|blocked",
+          confidence: 0.0,
+        },
+        messages: [{ role: "planner", content: "what you want the user to see in the chat feed" }],
+        checklist: [
+          {
+            id: "understand_request",
+            label: "Understand the requested work",
+            status: "done|in_progress|pending|blocked",
+            validated_by: "active planner model",
+            evidence: "why this status is justified",
+            interactive: true,
+          },
+        ],
+        questions: [{ id: "q1", question: "question if blocked", why: "why it matters", required: true }],
+        next_action: { type: "ask_user|continue_planning|preview_plan", label: "short action", prompt: "optional user prompt" },
+        plan_answers: "optional PlanAnswers object only when ready to preview handoffs",
+      },
+      null,
+      2,
+    ),
+    "Context:",
+    JSON.stringify(context, null, 2),
+  ].join("\n\n");
+}
+
+async function writePlannerAgentWorkflowState(rootInput: string, state: PlannerAgentWorkflowState): Promise<void> {
+  const sessionsRoot = path.join(path.resolve(rootInput), BLUEPRINT_DIR, "tui_sessions");
+
+  await mkdir(sessionsRoot, { recursive: true });
+  await writeFile(path.join(sessionsRoot, TUI_AGENT_STATE_FILE), `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
 function inferTuiValidationCommands(dashboard: TuiDashboard): string[] {
   const scripts = dashboard.doctor.scripts;
 
@@ -4185,7 +4451,7 @@ async function writeTuiSessionRecord(options: RunTuiActionOptions, result: TuiAc
     action: {
       id: options.actionId,
       command: commandForAction(options.actionId),
-      change: options.change?.trim() || options.modelPool?.trim() || undefined,
+      change: options.change?.trim() || options.modelPool?.trim() || options.agentRequest?.trim() || undefined,
       apply: Boolean(options.apply),
     },
     result: {
@@ -4208,6 +4474,10 @@ async function writeTuiSessionRecord(options: RunTuiActionOptions, result: TuiAc
 function commandForAction(actionId: TuiActionId): string {
   if (actionId === "setup") {
     return "blueprint init + profile init";
+  }
+
+  if (actionId === "agent-workflow") {
+    return "planner agent workflow";
   }
 
   if (actionId === "plan") {

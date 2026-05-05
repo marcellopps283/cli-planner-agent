@@ -209,7 +209,7 @@ MVP atual:
 - a tela `actions` e a superficie padrao: abre como landing centrada com logo,
   prompt `Ask anything...`, modo/modelo e atalhos;
 - o workbench exibe feed principal, sidebar contextual, input permanente e
-  artefato de planejamento com checklist/progresso;
+  estado agentico do planner com checklist, perguntas e proxima acao;
 - aceita slash commands locais: `/plan`, `/providers`, `/model`, `/models`,
   `/registry`, `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e
   `/menu`;
@@ -224,11 +224,14 @@ MVP atual:
   modelo nao estiver no pool ativo, ele e adicionado ao pool;
 - mostra overlays de foco para confirmacoes, seletor de modelo, seletor de
   reasoning effort, model pool e revise;
-- texto livre no chat inicia planejamento; `/plan [brief]` faz o mesmo de forma
-  explicita;
-- o texto livre e enviado diretamente ao planner LLM; estrutura de requisitos
-  fica no prompt interno, e perguntas ao usuario so devem acontecer quando o
-  planner estiver realmente bloqueado;
+- texto livre no chat inicia `agent-workflow`: a primeira mensagem vai ao modelo
+  planner ativo e a TUI cai no workbench com o estado devolvido pela IA;
+- o planner LLM controla o estado semantico do workflow, incluindo checkboxes,
+  perguntas, fase atual e proxima acao; a TUI apenas renderiza esse contrato;
+- `/plan [brief]` continua existindo para preview/geracao de handoffs, mas nao
+  e o fluxo primario da primeira mensagem;
+- estrutura de requisitos fica no prompt interno, e perguntas ao usuario so
+  devem acontecer quando o planner estiver realmente bloqueado;
 - o planejamento usa o PlannerEngine LLM do profile, mantendo o modo
   deterministico apenas para fallback, automacao e testes;
 - quando o PlannerEngine LLM falha dentro da TUI, o resultado sugere o proximo

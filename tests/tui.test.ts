@@ -11,7 +11,6 @@ import { generateBlueprintPlan, type PlanAnswers, type PlannerDraft } from "../s
 import { initPlannerProfile, loadPlannerProfile } from "../src/profile.js";
 import {
   BlueprintDashboard,
-  buildPlanAnswersFromFreeformRequest,
   getSlashCommandSuggestions,
   getTuiActions,
   loadTuiDashboard,
@@ -322,15 +321,111 @@ describe("blueprint tui", () => {
     expect(getSlashCommandSuggestions("/mo").map((command) => command.command)).toEqual(["/model", "/models"]);
   });
 
-  it("converts a landing chat request directly into planner answers", async () => {
-    const root = await makePlannedProject();
-    const dashboard = await loadTuiDashboard({ root });
-    const answers = buildPlanAnswersFromFreeformRequest("crie um fluxo de onboarding com providers e modelos", dashboard);
+  it("runs the landing request through the active planner model and renders agent-owned state", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-agent-workflow-test-"));
+    await writeFile(path.join(root, "README.md"), "# Agent workflow\n", "utf8");
+    await runTuiAction({
+      root,
+      actionId: "setup",
+      providerChecker: async () => [
+        {
+          id: "openai",
+          cli: "codex",
+          installed: false,
+          authCheck: "failed",
+          detail: "missing",
+        },
+        {
+          id: "google",
+          cli: "gemini",
+          installed: true,
+          authCheck: "not_checked",
+          detail: "installed",
+        },
+        {
+          id: "anthropic",
+          cli: "claude",
+          installed: false,
+          authCheck: "failed",
+          detail: "missing",
+        },
+      ],
+      recordHistory: false,
+    });
 
-    expect(answers.objective).toContain("onboarding");
-    expect(answers.successCriteria).toContain("Planner returns a task graph and exact model assignments for the requested work.");
-    expect(answers.notes.join("\n")).toContain("Do not ask the user to fill a form before planning");
-    expect(answers.riskLevel).toBe(6);
+    const result = await runTuiAction({
+      root,
+      actionId: "agent-workflow",
+      agentRequest: "planeje um harness agentico com checkboxes validados pela IA",
+      plannerPromptRunner: async (options) => ({
+        provider: options.provider,
+        model: options.model,
+        response: JSON.stringify({
+          schema_version: "1.0",
+          user_request: "planeje um harness agentico com checkboxes validados pela IA",
+          planner: {
+            provider: options.provider,
+            model: options.model,
+            reasoning_effort: options.reasoningEffort,
+          },
+          project_state: {
+            title: "Harness agentico",
+            summary: "O planner deve conduzir o workflow e validar o estado que a TUI renderiza.",
+            current_phase: "Understanding project",
+            health: "needs_input",
+            confidence: 0.72,
+          },
+          messages: [
+            {
+              role: "planner",
+              content: "Entendi que o app renderiza o workflow, mas o modelo decide o estado semantico.",
+            },
+          ],
+          checklist: [
+            {
+              id: "understand_request",
+              label: "Entender pedido inicial",
+              status: "done",
+              validated_by: "active planner model",
+              evidence: "pedido inicial recebido",
+              interactive: true,
+            },
+            {
+              id: "validate_scope",
+              label: "Validar escopo do harness",
+              status: "in_progress",
+              interactive: true,
+            },
+          ],
+          questions: [
+            {
+              id: "q1",
+              question: "O planner pode gerar preview assim que a checklist estiver pronta?",
+              required: true,
+            },
+          ],
+          next_action: {
+            type: "ask_user",
+            label: "Responder pergunta de escopo",
+            prompt: "Responda a pergunta pendente do planner.",
+          },
+        }),
+        rawOutput: "",
+      }),
+      recordHistory: false,
+    });
+    const dashboard = await loadTuiDashboard({ root });
+    const output = renderTuiDashboardToString(dashboard, "actions");
+
+    expect(result.status).toBe("ok");
+    expect(result.summary).toContain("Understanding project");
+    expect(result.lines).toContain("check done understand_request Entender pedido inicial");
+    expect(dashboard.agentState?.checklist[0]?.status).toBe("done");
+    expect(output).toContain("Planner Agent State");
+    expect(output).toContain("[x] Entender pedido inicial");
+    expect(output).toContain("[~] Validar escopo do harness");
+    expect(output).toContain("O planner pode gerar preview");
+    expect(output).not.toContain("Planning Intake");
   });
 
   it("does not render a persistent success panel for chat model switches", () => {
@@ -406,6 +501,7 @@ describe("blueprint tui", () => {
     const actions = getTuiActions(dashboard);
 
     expect(actions.map((action) => action.id)).toEqual([
+      "agent-workflow",
       "plan",
       "model-pool",
       "planner-model",
@@ -416,6 +512,7 @@ describe("blueprint tui", () => {
       "auth-doctor",
       "auth-doctor-live",
     ]);
+    expect(actions.find((action) => action.id === "agent-workflow")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "model-pool")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "planner-model")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "plan")?.requiresInput).toBe(true);

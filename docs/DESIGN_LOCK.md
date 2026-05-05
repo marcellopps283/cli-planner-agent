@@ -28,6 +28,9 @@ dependencias e gera handoffs isolados para agentes executores.
 - Mostra um painel operacional para configuracoes, status, metricas e artefatos.
 - Usa uma experiencia tipo chat quando o usuario inicia uma tarefa de
   planejamento.
+- A primeira mensagem entra no workflow agentico do modelo planner ativo.
+- A TUI renderiza estado; o modelo decide entendimento, checklist, validacoes,
+  perguntas e proxima acao.
 - Gera `.blueprint/` com arquitetura, grafo e tasks.
 - Recomenda modelo/worker por tarefa.
 - Mostra as atribuicoes de modelo por task antes de gerar os handoffs e pede

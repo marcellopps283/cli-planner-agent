@@ -34,8 +34,8 @@ metricas aparecem como comandos ou overlays, sem competir com o prompt principal
   `needs-confirmation` ou `blocked`, junto de planner/modelo atual.
 - Output de acoes deve streamar dentro do painel de conversa, preservando
   historico e o caminho dos artefatos gerados.
-- O workbench deve manter um artefato visivel para a IA: checklist de
-  requisitos, preview de tarefas e handoffs gerados.
+- O workbench deve manter um artefato visivel para a IA: estado agentico,
+  checklist validada pelo planner, preview de tarefas e handoffs gerados.
 - Interrupcao deve ser natural: `Esc` volta ao menu/overlay anterior; `Ctrl+C`
   cancela a acao atual antes de sair do app.
 
