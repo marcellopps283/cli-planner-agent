@@ -208,6 +208,11 @@ export const TUI_SLASH_COMMANDS = [
     usage: "/menu",
     description: "return to the main menu",
   },
+  {
+    command: "/resume",
+    usage: "/resume",
+    description: "resume the last planning draft if one exists",
+  },
 ] as const;
 
 type TuiSlashCommand = (typeof TUI_SLASH_COMMANDS)[number]["command"];
@@ -1116,12 +1121,7 @@ export function InteractiveDashboard({
   const [lastReviseChange, setLastReviseChange] = useState<string | undefined>();
   const [chatCommandInput, setChatCommandInput] = useState("");
   const [planChatDraft, setPlanChatDraft] = useState<PlanChatDraft>(() => dashboard.chatDraft || {});
-  const [planChatStep, setPlanChatStep] = useState<PlanChatStep>(() => {
-     if (dashboard.chatDraft && dashboard.chatDraft.brief) {
-        return firstPlanChatStep(dashboard.chatDraft);
-     }
-     return "idle";
-  });
+  const [planChatStep, setPlanChatStep] = useState<PlanChatStep>("idle");
   const [planChatInput, setPlanChatInput] = useState("");
   const [lastPlanAnswers, setLastPlanAnswers] = useState<PlanAnswers | undefined>();
   const [lastPlanForce, setLastPlanForce] = useState(false);
@@ -1685,6 +1685,23 @@ export function InteractiveDashboard({
 
     if (command.command === "/menu") {
       returnToMainMenu();
+      return;
+    }
+
+    if (command.command === "/resume") {
+      if (dashboardState.chatDraft && dashboardState.chatDraft.brief) {
+        setPlanChatDraft(dashboardState.chatDraft);
+        setPlanChatStep(firstPlanChatStep(dashboardState.chatDraft));
+        setPlanChatInput("");
+        setActionResult(undefined);
+      } else {
+        setActionResult({
+          actionId: "help",
+          status: "failed",
+          summary: "No active planning session draft found to resume.",
+          lines: [],
+        });
+      }
       return;
     }
 
