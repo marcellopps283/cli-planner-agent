@@ -55,6 +55,8 @@ Checkpoint:
   para outro modelo ativo antes do fallback deterministico.
 - [x] Fixtures golden para contrato do planner LLM.
 - [x] TUI rica com Ink: dashboard inicial `blueprint tui`.
+- [x] Refatoração Modular: Extração de componentes para `src/ui/`.
+- [x] Feedback Dinâmico: Integração de `ink-spinner` para ações em background.
 - [ ] Evoluir prompt do planner LLM com exemplos por tipo de projeto.
 
 Smoke local em 2026-05-02: OpenAI/Codex retornou limite de uso no modo planner

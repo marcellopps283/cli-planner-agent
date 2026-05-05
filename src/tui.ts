@@ -10,6 +10,12 @@ import React, { createElement, useState } from "react";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
+import Spinner from "ink-spinner";
+import { OpenCodeLogo } from "./ui/logo.js";
+import { ActionResultPanel, OpenCodePathBar, SlashCommandPanel, ChatModelSelectorPanel, FocusOverlay, MessageList, EmptyPanel } from "./ui/panels.js";
+import { LandingSurface } from "./ui/startScreen.js";
+import { WorkbenchSurface } from "./ui/workbench.js";
+
 import { BLUEPRINT_DIR, initBlueprint } from "./blueprint.js";
 import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
@@ -87,6 +93,7 @@ export interface TuiDashboard {
   registryModels: TuiModelSummary[];
   exports: string[];
   tuiSessions: string[];
+  chatDraft?: PlanChatDraft;
   nextAction: string;
 }
 
@@ -114,7 +121,7 @@ interface SetupDraft {
   plannerModel?: string;
 }
 
-type PlanChatStep =
+export type PlanChatStep =
   | "idle"
   | "brief"
   | "projectSummary"
@@ -127,7 +134,7 @@ type PlanChatStep =
   | "riskLevel"
   | "notes";
 
-interface PlanChatDraft {
+export interface PlanChatDraft {
   brief?: string;
   projectSummary?: string;
   objective?: string;
@@ -230,7 +237,7 @@ const PLAN_CHAT_STEPS = [
   "notes",
 ] as const satisfies readonly Exclude<PlanChatStep, "idle">[];
 
-const PLAN_STEP_PROMPTS: Record<Exclude<PlanChatStep, "idle">, string> = {
+export const PLAN_STEP_PROMPTS: Record<Exclude<PlanChatStep, "idle">, string> = {
   brief: "Conte livremente o que vamos planejar agora",
   projectSummary: "Resumo do projeto em uma frase",
   objective: "Qual entrega voce quer planejar agora",
@@ -303,6 +310,7 @@ export const TuiSessionRecordSchema = z.object({
     command: z.string().min(1),
     change: z.string().min(1).optional(),
     apply: z.boolean().default(false),
+    plan_answers: z.any().optional(),
   }),
   result: z.object({
     status: z.enum(["ok", "failed"]),
@@ -352,13 +360,13 @@ type TuiSectionView = (typeof TUI_SECTION_VIEWS)[number];
 type TuiMainMenuItem = (typeof TUI_MAIN_MENU_ITEMS)[number];
 
 const h = createElement;
-const TUI_APP_NAME = "blueprint";
-const TUI_APP_VERSION = "0.0.0";
+export const TUI_APP_NAME = "blueprint";
+export const TUI_APP_VERSION = "0.0.0";
 
 export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<TuiDashboard> {
   const root = path.resolve(options.root);
   const blueprintRoot = path.join(root, BLUEPRINT_DIR);
-  let [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions] = await Promise.all([
+  let [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions, chatDraftRaw] = await Promise.all([
     inspectBlueprintSetup(root, blueprintRoot),
     loadPlannerProfile(root),
     inspectProject(root),
@@ -368,6 +376,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     readTasks(blueprintRoot),
     readExports(blueprintRoot),
     readTuiSessions(blueprintRoot),
+    readFile(path.join(blueprintRoot, "tui_sessions", "DRAFT.json"), "utf8").catch(() => undefined),
   ]);
   if (!setup.initialized) {
     setup = {
@@ -376,6 +385,15 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     };
   }
   const registryModels = profile.profile ? await readRegistryModels(root, profile.profile) : [];
+
+  let chatDraft: PlanChatDraft | undefined;
+  if (chatDraftRaw) {
+    try {
+      chatDraft = JSON.parse(chatDraftRaw);
+    } catch {
+      // Ignore parse errors
+    }
+  }
 
   return {
     root,
@@ -389,6 +407,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     registryModels,
     exports,
     tuiSessions,
+    chatDraft,
     nextAction: inferNextAction({ setup, profile, lint, tasks, manifest }),
   };
 }
@@ -1096,8 +1115,13 @@ export function InteractiveDashboard({
   const [reviseInput, setReviseInput] = useState("");
   const [lastReviseChange, setLastReviseChange] = useState<string | undefined>();
   const [chatCommandInput, setChatCommandInput] = useState("");
-  const [planChatStep, setPlanChatStep] = useState<PlanChatStep>("idle");
-  const [planChatDraft, setPlanChatDraft] = useState<PlanChatDraft>({});
+  const [planChatDraft, setPlanChatDraft] = useState<PlanChatDraft>(() => dashboard.chatDraft || {});
+  const [planChatStep, setPlanChatStep] = useState<PlanChatStep>(() => {
+     if (dashboard.chatDraft && dashboard.chatDraft.brief) {
+        return firstPlanChatStep(dashboard.chatDraft);
+     }
+     return "idle";
+  });
   const [planChatInput, setPlanChatInput] = useState("");
   const [lastPlanAnswers, setLastPlanAnswers] = useState<PlanAnswers | undefined>();
   const [lastPlanForce, setLastPlanForce] = useState(false);
@@ -1117,6 +1141,15 @@ export function InteractiveDashboard({
   const [setupModelProviderCursor, setSetupModelProviderCursor] = useState(0);
   const [setupModelCursor, setSetupModelCursor] = useState(0);
   const [setupPlannerCursor, setSetupPlannerCursor] = useState(0);
+
+  React.useEffect(() => {
+    if (Object.keys(planChatDraft).length > 0 || dashboardState.chatDraft) {
+       const draftPath = path.join(dashboardState.root, BLUEPRINT_DIR, "tui_sessions", "DRAFT.json");
+       mkdir(path.dirname(draftPath), { recursive: true }).then(() => {
+          writeFile(draftPath, JSON.stringify(planChatDraft, null, 2), "utf8").catch(() => {});
+       }).catch(() => {});
+    }
+  }, [planChatDraft, dashboardState.root]);
 
   useInput((input, key) => {
     if (isEditingRoot) {
@@ -1364,6 +1397,27 @@ export function InteractiveDashboard({
       if (input === "\t") {
         if (!slashMenuOpen) {
           openChatModelSelector();
+          return;
+        }
+
+        const parts = chatCommandInput.trimStart().split(/\s+/u);
+        const typedCommand = parts[0];
+
+        if (parts.length > 1 || chatCommandInput.endsWith(" ")) {
+          const typedArg = parts.slice(1).join(" ").trim();
+          
+          if (typedCommand === "/model" || typedCommand === "/models") {
+            const models = chatModelsForConnectedProvider(dashboardState);
+            const matches = models.filter((m) => m.id.startsWith(typedArg));
+            if (matches.length > 0) {
+               // If there's only one match or we cycle
+               // For simplicity, just autocomplete the first match that isn't exactly the current input
+               const match = matches.find(m => m.id !== typedArg) || matches[0];
+               if (match) {
+                 setChatCommandInput(`${typedCommand} ${match.id} `);
+               }
+            }
+          }
           return;
         }
 
@@ -2982,411 +3036,26 @@ function ActionsView({
   );
 }
 
-function LandingSurface({
-  dashboard,
-  chatCommandInput,
-  actionResult,
-  pendingConfirmation,
-  isEditingRevise,
-  reviseInput,
-  isEditingModelPool,
-  modelPoolInput,
-  isSelectingChatModel,
-  chatModelCursor = 0,
-  slashCommandCursor = 0,
-  planChatStep,
-  planChatInput,
-}: {
-  dashboard: TuiDashboard;
-  chatCommandInput: string;
-  actionResult?: TuiActionResult;
-  pendingConfirmation?: TuiActionId;
-  isEditingRevise?: boolean;
-  reviseInput?: string;
-  isEditingModelPool?: boolean;
-  modelPoolInput?: string;
-  isSelectingChatModel?: boolean;
-  chatModelCursor?: number;
-  slashCommandCursor?: number;
-  planChatStep?: PlanChatStep;
-  planChatInput?: string;
-}): React.ReactElement {
-  const profile = dashboard.profile.profile;
-  const planner = profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing planner";
-  const providerLabel = profile ? `${profile.available_models.length || "default"} model(s) active` : "run setup";
-  const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
-  const promptText = chatCommandInput.length > 0 ? chatCommandInput : 'Ask anything... "Plan the next project slice"';
 
-  return h(
-    Box,
-    { flexDirection: "column", gap: 1 },
-    h(
-      Box,
-      { alignItems: "center", flexDirection: "column", paddingY: 1 },
-      h(OpenCodeLogo),
-      h(
-        Box,
-        { width: 72, paddingX: 1, flexDirection: "column" },
-        h(
-          Text,
-          null,
-          h(Text, { color: "cyan" }, "| "),
-          h(Text, { color: chatCommandInput.length > 0 ? "white" : "gray" }, promptText),
-        ),
-        h(
-          Text,
-          null,
-          h(Text, { color: "cyan" }, "Plan "),
-          h(Text, { bold: true }, `${planner} `),
-          h(Text, { color: "gray" }, `(Primary) ${providerLabel}`),
-        ),
-      ),
-      h(Text, { color: "gray" }, "tab models    ctrl+p commands"),
-    ),
-    h(
-      Box,
-      { paddingX: 1 },
-      h(Text, null, h(Text, { color: "yellow" }, "* Tip "), h(Text, { color: "gray" }, "Use /providers, /models, /auth, or /registry before the first request.")),
-    ),
-    ...(showSlashMenu
-      ? [
-          h(
-            Box,
-            { key: "landing-slash", alignItems: "center", flexDirection: "column" },
-            h(Box, { width: 72 }, h(SlashCommandPanel, { chatCommandInput, landing: true, selectedIndex: slashCommandCursor })),
-          ),
-        ]
-      : []),
-    ...(isSelectingChatModel
-      ? [
-          h(
-            Box,
-            { key: "landing-model-selector", alignItems: "center", flexDirection: "column" },
-            h(Box, { width: 72 }, h(ChatModelSelectorPanel, { dashboard, cursor: chatModelCursor })),
-          ),
-        ]
-      : []),
-    h(FocusOverlay, {
-      pendingConfirmation,
-      isEditingRevise,
-      reviseInput,
-      isEditingModelPool,
-      modelPoolInput,
-      planChatStep,
-      planChatInput,
-    }),
-    h(ActionResultPanel, { result: actionResult }),
-    h(OpenCodePathBar, { dashboard }),
-  );
-}
 
-function OpenCodeLogo(): React.ReactElement {
-  return h(
-    Text,
-    { bold: true },
-    h(Text, { color: "gray" }, "blue"),
-    h(Text, { color: "white" }, "print"),
-  );
-}
 
-function WorkbenchSurface({
-  dashboard,
-  runningAction,
-  pendingConfirmation,
-  isEditingRevise,
-  reviseInput,
-  chatCommandInput,
-  planChatStep,
-  planChatDraft,
-  planChatInput,
-  isEditingModelPool,
-  modelPoolInput,
-  isSelectingChatModel,
-  chatModelCursor = 0,
-  slashCommandCursor = 0,
-  actionResult,
-}: {
-  dashboard: TuiDashboard;
-  runningAction?: TuiActionId;
-  pendingConfirmation?: TuiActionId;
-  isEditingRevise?: boolean;
-  reviseInput?: string;
-  chatCommandInput: string;
-  planChatStep: PlanChatStep;
-  planChatDraft: PlanChatDraft;
-  planChatInput: string;
-  isEditingModelPool?: boolean;
-  modelPoolInput?: string;
-  isSelectingChatModel?: boolean;
-  chatModelCursor?: number;
-  slashCommandCursor?: number;
-  actionResult?: TuiActionResult;
-}): React.ReactElement {
-  const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
 
-  return h(
-    Box,
-    { flexDirection: "column", gap: 1 },
-    h(
-      Box,
-      { flexDirection: "row", gap: 2 },
-      h(WorkbenchFeed, { dashboard, actionResult, planChatStep, planChatDraft }),
-      h(WorkbenchSidebar, {
-        dashboard,
-        runningAction,
-        pendingConfirmation,
-        isEditingRevise,
-        isEditingModelPool,
-        planChatStep,
-      }),
-    ),
-    h(WorkbenchInputPanel, {
-      dashboard,
-      chatCommandInput,
-      planChatStep,
-      planChatInput,
-      isEditingRevise,
-      reviseInput,
-      isEditingModelPool,
-        modelPoolInput,
-      }),
-    ...(showSlashMenu ? [h(SlashCommandPanel, { key: "slash", chatCommandInput, selectedIndex: slashCommandCursor })] : []),
-    ...(isSelectingChatModel ? [h(ChatModelSelectorPanel, { key: "model-selector", dashboard, cursor: chatModelCursor })] : []),
-    h(OpenCodePathBar, { dashboard }),
-  );
-}
 
-function WorkbenchFeed({
-  dashboard,
-  actionResult,
-  planChatStep,
-  planChatDraft,
-}: {
-  dashboard: TuiDashboard;
-  actionResult?: TuiActionResult;
-  planChatStep: PlanChatStep;
-  planChatDraft: PlanChatDraft;
-}): React.ReactElement {
-  const taskCount = dashboard.tasks.length;
 
-  return h(
-    Box,
-    { flexDirection: "column", gap: 1, flexGrow: 1 },
-    h(Text, { color: "gray" }, dashboard.nextAction),
-    ...(planChatStep !== "idle"
-      ? [h(PlanningProgressBlock, { key: "planning", planChatDraft })]
-      : []),
-    ...(actionResult?.actionId === "plan" && actionResult.canApply
-      ? [h(PlanPreviewBlock, { key: "preview", actionResult })]
-      : []),
-    ...(taskCount > 0
-      ? [h(HandoffReadyBlock, { key: "handoffs", dashboard })]
-      : actionResult?.actionId !== "plan"
-        ? [h(EmptyWorkbenchBlock, { key: "empty" })]
-        : []),
-  );
-}
 
-function PlanningProgressBlock({ planChatDraft }: { planChatDraft: PlanChatDraft }): React.ReactElement {
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "green", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Planning Intake"),
-    ...adaptivePlanChatSteps(planChatDraft).map((step) =>
-      h(Text, { key: step }, `${planStepComplete(planChatDraft, step) ? "[x]" : "[ ]"} ${PLAN_STEP_PROMPTS[step]}`),
-    ),
-  );
-}
 
-function PlanPreviewBlock({ actionResult }: { actionResult: TuiActionResult }): React.ReactElement {
-  const taskLines = actionResult.lines.filter((line) => line.startsWith("task-")).slice(0, 6);
 
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "green", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Plan Preview Ready"),
-    h(Text, null, actionResult.summary),
-    ...(taskLines.length > 0
-      ? taskLines.map((line) => h(Text, { key: line }, `[ ] ${truncateLine(line, 110)}`))
-      : [h(Text, { key: "pending" }, "[ ] waiting for preview tasks")]),
-    h(Text, { color: "gray" }, "Confirm to write .blueprint artifacts."),
-  );
-}
 
-function HandoffReadyBlock({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Background Task Completed"),
-    h(Text, null, `Generated ${dashboard.tasks.length} planner handoff(s).`),
-    ...dashboard.tasks.slice(0, 8).map((task) =>
-      h(
-        Text,
-        { key: task.id },
-        `[x] ${task.id} | ${task.suggestedModel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"}`,
-      ),
-    ),
-    ...(dashboard.tasks.length > 8 ? [h(Text, { key: "more", color: "gray" }, `+${dashboard.tasks.length - 8} more task(s)`)] : []),
-  );
-}
 
-function EmptyWorkbenchBlock(): React.ReactElement {
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Blueprint Artifact"),
-    h(Text, { color: "gray" }, "[ ] waiting for the first planning request"),
-  );
-}
 
-function ChatModelSelectorPanel({
-  dashboard,
-  cursor,
-}: {
-  dashboard: TuiDashboard;
-  cursor: number;
-}): React.ReactElement {
-  const profile = dashboard.profile.profile;
-  const models = chatModelsForConnectedProvider(dashboard);
-  const selectedIndex = Math.min(cursor, Math.max(models.length - 1, 0));
-  const provider = profile?.planner_provider ?? "missing";
-
-  if (!profile) {
-    return h(
-      Box,
-      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "Model Selector"),
-      h(Text, null, "Profile is missing. Run setup before selecting a chat model."),
-    );
-  }
-
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Model Selector"),
-    h(Text, { color: "gray" }, `Connected CLI: ${provider}. Enter selects, Esc closes.`),
-    ...(models.length > 0
-      ? models.map((model, index) =>
-          h(
-            Text,
-            {
-              key: model.id,
-              color: index === selectedIndex ? "cyan" : model.id === profile.planner_model ? "green" : undefined,
-              bold: index === selectedIndex,
-            },
-            `${index === selectedIndex ? ">" : " "} ${model.id} ${model.id === profile.planner_model ? "(current)" : ""} ${model.tier}/${model.status}`,
-          ),
-        )
-      : [h(Text, { key: "empty", color: "yellow" }, `No models found for ${provider}. Refresh the registry or update the provider pool.`)]),
-  );
-}
-
-function WorkbenchInputPanel({
-  dashboard,
-  chatCommandInput,
-  planChatStep,
-  planChatInput,
-  isEditingRevise,
-  reviseInput,
-  isEditingModelPool,
-  modelPoolInput,
-}: {
-  dashboard: TuiDashboard;
-  chatCommandInput: string;
-  planChatStep: PlanChatStep;
-  planChatInput: string;
-  isEditingRevise?: boolean;
-  reviseInput?: string;
-  isEditingModelPool?: boolean;
-  modelPoolInput?: string;
-}): React.ReactElement {
-  const profile = dashboard.profile.profile;
-  const activeText = planChatStep !== "idle"
-    ? planChatInput
-    : isEditingRevise
-      ? reviseInput ?? ""
-      : isEditingModelPool
-        ? modelPoolInput ?? ""
-        : chatCommandInput;
-
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-    h(Text, null, h(Text, { color: "cyan" }, "Planner "), h(Text, { bold: true }, profile?.planner_model ?? "missing"), h(Text, { color: "gray" }, ` ${profile?.planner_provider ?? "provider"}`)),
-    h(Text, { color: "gray" }, planChatStep !== "idle" ? PLAN_STEP_PROMPTS[planChatStep] : "Type a request, or use /commands."),
-    h(Text, null, h(Text, { color: "cyan" }, "> "), activeText),
-  );
-}
-
-function WorkbenchSidebar({
-  dashboard,
-  runningAction,
-  pendingConfirmation,
-  isEditingRevise,
-  isEditingModelPool,
-  planChatStep,
-}: {
-  dashboard: TuiDashboard;
-  runningAction?: TuiActionId;
-  pendingConfirmation?: TuiActionId;
-  isEditingRevise?: boolean;
-  isEditingModelPool?: boolean;
-  planChatStep: PlanChatStep;
-}): React.ReactElement {
-  const profile = dashboard.profile.profile;
-  const contextTokens = estimateContextTokens(dashboard);
-  const contextPercent = contextUsePercent(dashboard);
-  const providers = dashboard.setup.providerChecks.length > 0
-    ? dashboard.setup.providerChecks
-    : profile?.available_providers.map((provider) => ({ id: provider, cli: provider, installed: true, authCheck: "not_checked" as const, detail: "profile" })) ?? [];
-  const stacks = dashboard.doctor.stack.length > 0 ? dashboard.doctor.stack : ["unknown"];
-  const taskLines = dashboard.tasks.length > 0
-    ? dashboard.tasks.slice(0, 5).map((task) => `[x] ${task.title}`)
-    : ["[ ] Generate first blueprint"];
-
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column", width: 34 },
-    h(Text, { bold: true }, path.basename(dashboard.root) || TUI_APP_NAME),
-    h(Text, null, ""),
-    h(Text, { bold: true }, "Context"),
-    h(Text, { color: "gray" }, `${formatCompactNumber(contextTokens)} tokens`),
-    h(Text, { color: "gray" }, `${contextPercent}% used`),
-    h(Text, { color: "gray" }, "quota n/a"),
-    h(Text, null, ""),
-    h(Text, { bold: true }, "Status"),
-    h(Text, { color: runtimeStatusColor(chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })) }, chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })),
-    h(Text, null, ""),
-    h(Text, { bold: true }, "MCP"),
-    ...providers.slice(0, 5).map((provider) =>
-      h(Text, { key: `${provider.id}-${provider.cli}`, color: provider.installed ? "green" : "gray" }, `* ${provider.id} ${providerStatusLabel(provider)}`),
-    ),
-    h(Text, null, ""),
-    h(Text, { bold: true }, "LSP"),
-    ...stacks.slice(0, 5).map((stack) => h(Text, { key: stack, color: "gray" }, `* ${stack}`)),
-    h(Text, null, ""),
-    h(Text, { bold: true }, "Todo"),
-    ...taskLines.map((line) => h(Text, { key: line, color: line.startsWith("[x]") ? "green" : "gray" }, truncateLine(line, 30))),
-  );
-}
-
-function OpenCodePathBar({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
-  return h(
-    Box,
-    { justifyContent: "space-between" },
-    h(Text, { color: "gray" }, dashboard.root),
-    h(Text, { color: "gray" }, `${TUI_APP_NAME} ${TUI_APP_VERSION}`),
-  );
-}
-
-function estimateContextTokens(dashboard: TuiDashboard): number {
+export function estimateContextTokens(dashboard: TuiDashboard): number {
   const inventoryBytes = dashboard.doctor.inventoryFiles.reduce((total, file) => total + file.sizeBytes, 0);
   const structuralTokens = dashboard.doctor.fileCount * 8 + dashboard.doctor.canonicalFiles.length * 120;
 
   return Math.max(0, Math.round(inventoryBytes / 4) + structuralTokens);
 }
 
-function contextUsePercent(dashboard: TuiDashboard): number {
+export function contextUsePercent(dashboard: TuiDashboard): number {
   if (dashboard.doctor.warnings.length === 0 && dashboard.lint.errors.length === 0) {
     return dashboard.tasks.length > 0 ? 33 : 18;
   }
@@ -3394,7 +3063,7 @@ function contextUsePercent(dashboard: TuiDashboard): number {
   return dashboard.setup.initialized ? 12 : 4;
 }
 
-function formatCompactNumber(value: number): string {
+export function formatCompactNumber(value: number): string {
   if (value >= 1_000_000) {
     return `${(value / 1_000_000).toFixed(1)}M`;
   }
@@ -3406,7 +3075,7 @@ function formatCompactNumber(value: number): string {
   return String(value);
 }
 
-function providerStatusLabel(provider: ProviderDoctorResult): string {
+export function providerStatusLabel(provider: ProviderDoctorResult): string {
   if (!provider.installed) {
     return "missing";
   }
@@ -3422,7 +3091,7 @@ function providerStatusLabel(provider: ProviderDoctorResult): string {
   return "available";
 }
 
-function chatModelsForConnectedProvider(dashboard: TuiDashboard): TuiModelSummary[] {
+export function chatModelsForConnectedProvider(dashboard: TuiDashboard): TuiModelSummary[] {
   const provider = dashboard.profile.profile?.planner_provider;
 
   if (!provider) {
@@ -3446,7 +3115,7 @@ function chatModelsForConnectedProvider(dashboard: TuiDashboard): TuiModelSummar
     });
 }
 
-function runtimeStatusColor(status: string): "green" | "yellow" | "red" | "gray" {
+export function runtimeStatusColor(status: string): "green" | "yellow" | "red" | "gray" {
   if (status === "ready") {
     return "green";
   }
@@ -3462,108 +3131,8 @@ function runtimeStatusColor(status: string): "green" | "yellow" | "red" | "gray"
   return "gray";
 }
 
-function SlashCommandPanel({
-  chatCommandInput,
-  landing = false,
-  selectedIndex = 0,
-}: {
-  chatCommandInput: string;
-  landing?: boolean;
-  selectedIndex?: number;
-}): React.ReactElement {
-  const suggestions = getSlashCommandSuggestions(chatCommandInput);
-  const isFiltering = chatCommandInput.trim().startsWith("/");
 
-  if (!isFiltering) {
-    return h(
-      Box,
-      { borderStyle: "single", borderColor: "gray", paddingX: 1 },
-      h(
-        Text,
-        { color: "gray" },
-        landing
-          ? "Type / to configure providers, models, auth, registry, or help."
-          : "Type / for commands, /menu for navigation, /help for the full command list.",
-      ),
-    );
-  }
 
-  const commandsToRender = suggestions.length > 0 ? suggestions : TUI_SLASH_COMMANDS;
-  const activeIndex = Math.min(selectedIndex, Math.max(commandsToRender.length - 1, 0));
-
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, isFiltering ? "Slash Autocomplete" : "Slash Commands"),
-    ...(isFiltering ? [h(Text, { key: "tab-hint", color: "gray" }, "Use \u2191\u2193 to choose. Tab completes. Enter runs selected command.")] : []),
-    ...commandsToRender.map((command, index) =>
-      h(
-        Text,
-        { key: command.command, color: isFiltering && index === activeIndex ? "cyan" : undefined },
-        `${index === activeIndex && isFiltering ? "> " : "  "}${command.usage} | ${command.description}`,
-      ),
-    ),
-  );
-}
-
-function FocusOverlay({
-  pendingConfirmation,
-  isEditingRevise,
-  reviseInput,
-  isEditingModelPool,
-  modelPoolInput,
-  planChatStep = "idle",
-  planChatInput,
-}: {
-  pendingConfirmation?: TuiActionId;
-  isEditingRevise?: boolean;
-  reviseInput?: string;
-  isEditingModelPool?: boolean;
-  modelPoolInput?: string;
-  planChatStep?: PlanChatStep;
-  planChatInput?: string;
-}): React.ReactElement | null {
-  const state = currentFocusOverlay({
-    pendingConfirmation,
-    isEditingRevise,
-    reviseInput,
-    isEditingModelPool,
-    modelPoolInput,
-    planChatStep,
-    planChatInput,
-  });
-
-  if (!state) {
-    return null;
-  }
-
-  return h(
-    Box,
-    { borderStyle: "round", borderColor: state.color, paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, state.title),
-    h(Text, null, state.body),
-    h(Text, { color: "gray" }, state.hint),
-  );
-}
-
-function ActionResultPanel({ result }: { result?: TuiActionResult }): React.ReactElement | null {
-  if (!result) {
-    return null;
-  }
-
-  const visibleLines = result.lines.slice(0, 8);
-  const hiddenCount = result.lines.length - visibleLines.length;
-
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: result.status === "ok" ? "green" : "red", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, `${result.actionId} ${result.status}`),
-    h(Text, null, result.summary),
-    ...visibleLines.map((line) => h(Text, { key: line }, line)),
-    ...(hiddenCount > 0 ? [h(Text, { key: "more", color: "gray" }, `+${hiddenCount} more line(s)`)] : []),
-    ...(result.sessionPath ? [h(Text, { key: "session" }, `session ${result.sessionPath}`)] : []),
-  );
-}
 
 function buildHelpSlashResult(): TuiActionResult {
   return {
@@ -3600,7 +3169,7 @@ function buildProvidersSlashResult(dashboard: TuiDashboard): TuiActionResult {
   };
 }
 
-function chatRuntimeStatus({
+export function chatRuntimeStatus({
   dashboard,
   runningAction,
   pendingConfirmation,
@@ -3650,7 +3219,7 @@ function isLandingChatSurface({
   );
 }
 
-function planStepComplete(draft: PlanChatDraft, step: Exclude<PlanChatStep, "idle">): boolean {
+export function planStepComplete(draft: PlanChatDraft, step: Exclude<PlanChatStep, "idle">): boolean {
   const value = draft[step];
 
   if (Array.isArray(value)) {
@@ -3704,23 +3273,7 @@ function TaskList({ tasks }: { tasks: TuiTaskSummary[] }): React.ReactElement | 
   );
 }
 
-function MessageList({ title, messages }: { title: string; messages: string[] }): React.ReactElement {
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: messages.length > 0 ? "yellow" : "green", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, title),
-    ...(messages.length > 0 ? messages : ["none"]).map((message) => h(Text, { key: message }, message)),
-  );
-}
 
-function EmptyPanel({ title, message }: { title: string; message: string }): React.ReactElement {
-  return h(
-    Box,
-    { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, title),
-    h(Text, null, message),
-  );
-}
 
 async function readManifest(blueprintRoot: string): Promise<BlueprintManifest | undefined> {
   try {
@@ -3923,7 +3476,7 @@ function nextPlanChatStep(
   return steps[index + 1];
 }
 
-function adaptivePlanChatSteps(draft: PlanChatDraft): Exclude<PlanChatStep, "idle">[] {
+export function adaptivePlanChatSteps(draft: PlanChatDraft): Exclude<PlanChatStep, "idle">[] {
   if (!draft.brief) {
     return [...PLAN_CHAT_STEPS];
   }
@@ -4094,7 +3647,8 @@ export function getSlashCommandSuggestions(input: string): typeof TUI_SLASH_COMM
   return TUI_SLASH_COMMANDS.filter((command) => command.command.startsWith(needle));
 }
 
-function currentFocusOverlay({
+export function currentFocusOverlay({
+
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
@@ -4314,7 +3868,7 @@ function summarizeTuiError(error: unknown): string {
   return cleaned.length > 500 ? `${cleaned.slice(0, 500)}...` : cleaned;
 }
 
-function truncateLine(line: string, maxWidth: number): string {
+export function truncateLine(line: string, maxWidth: number): string {
   if (line.length <= maxWidth) {
     return line;
   }
@@ -4375,7 +3929,7 @@ function statusIcon(status: "ok" | "warn" | "error"): string {
   return "\u274C";
 }
 
-function riskIcon(riskLevel: number): string {
+export function riskIcon(riskLevel: number): string {
   if (riskLevel >= 7) {
     return "\u{1F534}";
   }
@@ -4410,7 +3964,7 @@ function KeyHints({
   runningAction?: TuiActionId;
   setupStep?: SetupStep;
 }): React.ReactElement {
-  let hints: string;
+  let hints: React.ReactNode;
 
   if (isEditingRoot) {
     hints = "Enter \u2192 open dir  \u2502  Esc \u2192 cancel";
@@ -4423,7 +3977,7 @@ function KeyHints({
   } else if (pendingConfirmation) {
     hints = "y \u2192 confirm  \u2502  n \u2192 cancel";
   } else if (runningAction) {
-    hints = `Running ${runningAction}...`;
+    hints = h(Text, { color: "cyan" }, h(Spinner, { type: "dots" }), ` Running ${runningAction}...`);
   } else if (!setupInitialized) {
     hints = "1/Enter \u2192 use current  \u2502  2 \u2192 new folder  \u2502  3/c \u2192 choose dir  \u2502  q quit";
   } else if (view === "main") {
