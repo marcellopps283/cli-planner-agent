@@ -1374,6 +1374,11 @@ export function InteractiveDashboard({
           return;
         }
 
+        if (actionResult) {
+          setActionResult(undefined);
+          return;
+        }
+
         returnToMainMenu();
         return;
       }

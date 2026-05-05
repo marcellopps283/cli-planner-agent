@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import React, { createElement } from "react";
 
 import { OpenCodeLogo } from "./logo.js";
@@ -36,6 +36,8 @@ export function LandingSurface({
   planChatStep?: PlanChatStep;
   planChatInput?: string;
 }): React.ReactElement {
+  const { stdout } = useStdout();
+  const minHeight = stdout?.rows || 24;
   const profile = dashboard.profile.profile;
   const planner = profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing planner";
   const providerLabel = profile ? `${profile.available_models.length || "default"} model(s) active` : "run setup";
@@ -44,14 +46,18 @@ export function LandingSurface({
 
   return h(
     Box,
-    { flexDirection: "column", gap: 1 },
+    { flexDirection: "column", minHeight, flexGrow: 1 },
     h(
       Box,
-      { alignItems: "center", flexDirection: "column", paddingY: 1 },
+      { alignItems: "center", flexDirection: "column", paddingTop: 2, paddingBottom: 1 },
       h(OpenCodeLogo),
+    ),
+    h(
+      Box,
+      { alignItems: "center", flexDirection: "column", flexGrow: 1, justifyContent: "center" },
       h(
         Box,
-        { width: 72, paddingX: 1, flexDirection: "column" },
+        { width: 72, paddingX: 1, flexDirection: "column", borderStyle: "single", borderColor: "cyan" },
         h(
           Text,
           null,
@@ -66,41 +72,49 @@ export function LandingSurface({
           h(Text, { color: "gray" }, `(Primary) ${providerLabel}`),
         ),
       ),
-      h(Text, { color: "gray" }, "tab models    ctrl+p commands"),
+      h(
+        Box,
+        { width: 72, flexDirection: "column" },
+        ...(showSlashMenu
+          ? [
+              h(
+                Box,
+                { key: "landing-slash", marginTop: 1, flexDirection: "column" },
+                h(SlashCommandPanel, { chatCommandInput, landing: true, selectedIndex: slashCommandCursor }),
+              ),
+            ]
+          : []),
+        ...(isSelectingChatModel
+          ? [
+              h(
+                Box,
+                { key: "landing-model-selector", marginTop: 1, flexDirection: "column" },
+                h(ChatModelSelectorPanel, { dashboard, cursor: chatModelCursor }),
+              ),
+            ]
+          : []),
+        h(FocusOverlay, {
+          pendingConfirmation,
+          isEditingRevise,
+          reviseInput,
+          isEditingModelPool,
+          modelPoolInput,
+          planChatStep,
+          planChatInput,
+        }),
+      )
     ),
     h(
       Box,
-      { paddingX: 1 },
-      h(Text, null, h(Text, { color: "yellow" }, "* Tip "), h(Text, { color: "gray" }, "Use /providers, /models, /auth, or /registry before the first request.")),
-    ),
-    ...(showSlashMenu
-      ? [
-          h(
-            Box,
-            { key: "landing-slash", alignItems: "center", flexDirection: "column" },
-            h(Box, { width: 72 }, h(SlashCommandPanel, { chatCommandInput, landing: true, selectedIndex: slashCommandCursor })),
-          ),
-        ]
-      : []),
-    ...(isSelectingChatModel
-      ? [
-          h(
-            Box,
-            { key: "landing-model-selector", alignItems: "center", flexDirection: "column" },
-            h(Box, { width: 72 }, h(ChatModelSelectorPanel, { dashboard, cursor: chatModelCursor })),
-          ),
-        ]
-      : []),
-    h(FocusOverlay, {
-      pendingConfirmation,
-      isEditingRevise,
-      reviseInput,
-      isEditingModelPool,
-      modelPoolInput,
-      planChatStep,
-      planChatInput,
-    }),
-    h(ActionResultPanel, { result: actionResult }),
-    h(OpenCodePathBar, { dashboard }),
+      { flexDirection: "column" },
+      h(ActionResultPanel, { result: actionResult }),
+      h(
+        Box,
+        { paddingX: 1, paddingBottom: 1, justifyContent: "space-between" },
+        h(Text, null, h(Text, { color: "yellow" }, "* Tip "), h(Text, { color: "gray" }, "Use /providers, /models, /auth, or /registry before the first request.")),
+        h(Text, { color: "gray" }, "type / for commands"),
+      ),
+      h(OpenCodePathBar, { dashboard }),
+    )
   );
 }
