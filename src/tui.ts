@@ -367,6 +367,8 @@ type TuiMainMenuItem = (typeof TUI_MAIN_MENU_ITEMS)[number];
 const h = createElement;
 export const TUI_APP_NAME = "blueprint";
 export const TUI_APP_VERSION = "0.0.0";
+export const TUI_SLASH_MENU_VISIBLE_ROWS = 6;
+export const TUI_MODEL_SELECTOR_VISIBLE_ROWS = 8;
 
 export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<TuiDashboard> {
   const root = path.resolve(options.root);
@@ -1131,7 +1133,9 @@ export function InteractiveDashboard({
   const [modelPoolInput, setModelPoolInput] = useState("");
   const [isSelectingChatModel, setIsSelectingChatModel] = useState(false);
   const [chatModelCursor, setChatModelCursor] = useState(0);
+  const [chatModelScrollOffset, setChatModelScrollOffset] = useState(0);
   const [slashCommandCursor, setSlashCommandCursor] = useState(0);
+  const [slashCommandScrollOffset, setSlashCommandScrollOffset] = useState(0);
   const [isEditingRoot, setIsEditingRoot] = useState(false);
   const [rootInputMode, setRootInputMode] = useState<"choose" | "create">("choose");
   const [rootInput, setRootInput] = useState(dashboard.root);
@@ -1221,12 +1225,16 @@ export function InteractiveDashboard({
       }
 
       if (key.upArrow) {
-        setChatModelCursor((cursor) => Math.max(cursor - 1, 0));
+        const nextCursor = Math.max(chatModelCursor - 1, 0);
+        setChatModelCursor(nextCursor);
+        setChatModelScrollOffset(keepIndexVisible(nextCursor, chatModelScrollOffset, TUI_MODEL_SELECTOR_VISIBLE_ROWS));
         return;
       }
 
       if (key.downArrow) {
-        setChatModelCursor((cursor) => Math.min(cursor + 1, maxCursor));
+        const nextCursor = Math.min(chatModelCursor + 1, maxCursor);
+        setChatModelCursor(nextCursor);
+        setChatModelScrollOffset(keepIndexVisible(nextCursor, chatModelScrollOffset, TUI_MODEL_SELECTOR_VISIBLE_ROWS));
         return;
       }
 
@@ -1387,7 +1395,7 @@ export function InteractiveDashboard({
     }
 
     if (dashboardState.setup.initialized && view === "actions") {
-      const slashSuggestions = getSlashCommandSuggestions(chatCommandInput);
+      const slashSuggestions = getSlashCommandMenuItems(chatCommandInput);
       const slashMenuOpen = chatCommandInput.trimStart().startsWith("/");
       const maxSlashCursor = Math.max(slashSuggestions.length - 1, 0);
 
@@ -1395,6 +1403,7 @@ export function InteractiveDashboard({
         if (chatCommandInput.length > 0) {
           setChatCommandInput("");
           setSlashCommandCursor(0);
+          setSlashCommandScrollOffset(0);
           return;
         }
 
@@ -1410,20 +1419,25 @@ export function InteractiveDashboard({
       if ((key.ctrl && input.toLowerCase() === "p") || input === "\u0010") {
         setChatCommandInput("/");
         setSlashCommandCursor(0);
+        setSlashCommandScrollOffset(0);
         return;
       }
 
       if (slashMenuOpen && key.upArrow) {
-        setSlashCommandCursor((cursor) => Math.max(cursor - 1, 0));
+        const nextCursor = Math.max(slashCommandCursor - 1, 0);
+        setSlashCommandCursor(nextCursor);
+        setSlashCommandScrollOffset(keepIndexVisible(nextCursor, slashCommandScrollOffset, TUI_SLASH_MENU_VISIBLE_ROWS));
         return;
       }
 
       if (slashMenuOpen && key.downArrow) {
-        setSlashCommandCursor((cursor) => Math.min(cursor + 1, maxSlashCursor));
+        const nextCursor = Math.min(slashCommandCursor + 1, maxSlashCursor);
+        setSlashCommandCursor(nextCursor);
+        setSlashCommandScrollOffset(keepIndexVisible(nextCursor, slashCommandScrollOffset, TUI_SLASH_MENU_VISIBLE_ROWS));
         return;
       }
 
-      if (input === "\t") {
+      if (key.tab || input === "\t") {
         if (!slashMenuOpen) {
           openChatModelSelector();
           return;
@@ -1434,17 +1448,18 @@ export function InteractiveDashboard({
 
         if (parts.length > 1 || chatCommandInput.endsWith(" ")) {
           const typedArg = parts.slice(1).join(" ").trim();
-          
+
           if (typedCommand === "/model" || typedCommand === "/models") {
             const models = chatModelsForConnectedProvider(dashboardState);
-            const matches = models.filter((m) => m.id.startsWith(typedArg));
+            const matches = models.filter((model) => model.id.startsWith(typedArg));
+
             if (matches.length > 0) {
-               // If there's only one match or we cycle
-               // For simplicity, just autocomplete the first match that isn't exactly the current input
-               const match = matches.find(m => m.id !== typedArg) || matches[0];
-               if (match) {
-                 setChatCommandInput(`${typedCommand} ${match.id} `);
-               }
+              const match = matches.find((model) => model.id !== typedArg) || matches[0];
+
+              if (match) {
+                setChatCommandInput(`${typedCommand} ${match.id} `);
+                setSlashCommandScrollOffset(0);
+              }
             }
           }
           return;
@@ -1455,6 +1470,7 @@ export function InteractiveDashboard({
         if (suggestion) {
           setChatCommandInput(`${suggestion.command} `);
           setSlashCommandCursor(0);
+          setSlashCommandScrollOffset(0);
         }
 
         return;
@@ -1463,6 +1479,7 @@ export function InteractiveDashboard({
       if (key.backspace || key.delete) {
         setChatCommandInput((current) => current.slice(0, -1));
         setSlashCommandCursor(0);
+        setSlashCommandScrollOffset(0);
         return;
       }
 
@@ -1474,6 +1491,7 @@ export function InteractiveDashboard({
       if (input.length > 0 && !key.ctrl && !key.meta) {
         setChatCommandInput((current) => `${current}${input}`);
         setSlashCommandCursor(0);
+        setSlashCommandScrollOffset(0);
       }
 
       return;
@@ -1581,8 +1599,10 @@ export function InteractiveDashboard({
     const models = chatModelsForConnectedProvider(dashboardState);
     const currentModel = dashboardState.profile.profile?.planner_model;
     const currentIndex = models.findIndex((model) => model.id === currentModel);
+    const nextCursor = Math.max(currentIndex, 0);
 
-    setChatModelCursor(Math.max(currentIndex, 0));
+    setChatModelCursor(nextCursor);
+    setChatModelScrollOffset(keepIndexVisible(nextCursor, 0, TUI_MODEL_SELECTOR_VISIBLE_ROWS));
     setIsSelectingChatModel(true);
     setActionResult(undefined);
   }
@@ -1591,6 +1611,7 @@ export function InteractiveDashboard({
     const value = chatCommandInput.trim();
     setChatCommandInput("");
     setSlashCommandCursor(0);
+    setSlashCommandScrollOffset(0);
 
     if (value.length === 0) {
       if (isLandingChatSurface({
@@ -2076,7 +2097,9 @@ export function InteractiveDashboard({
     modelPoolInput,
     isSelectingChatModel,
     chatModelCursor,
+    chatModelScrollOffset,
     slashCommandCursor,
+    slashCommandScrollOffset,
     isEditingRoot,
     rootInputMode,
     rootInput,
@@ -2106,7 +2129,9 @@ export function BlueprintDashboard({
   modelPoolInput,
   isSelectingChatModel,
   chatModelCursor = 0,
+  chatModelScrollOffset = 0,
   slashCommandCursor = 0,
+  slashCommandScrollOffset = 0,
   isEditingRoot,
   rootInputMode,
   rootInput,
@@ -2133,7 +2158,9 @@ export function BlueprintDashboard({
   modelPoolInput?: string;
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
+  chatModelScrollOffset?: number;
   slashCommandCursor?: number;
+  slashCommandScrollOffset?: number;
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
@@ -2189,7 +2216,9 @@ export function BlueprintDashboard({
       modelPoolInput,
       isSelectingChatModel,
       chatModelCursor,
+      chatModelScrollOffset,
       slashCommandCursor,
+      slashCommandScrollOffset,
       isEditingRoot,
       rootInputMode,
       rootInput,
@@ -2233,7 +2262,9 @@ function ActiveView({
   modelPoolInput,
   isSelectingChatModel,
   chatModelCursor,
+  chatModelScrollOffset,
   slashCommandCursor,
+  slashCommandScrollOffset,
   isEditingRoot,
   rootInputMode,
   rootInput,
@@ -2261,7 +2292,9 @@ function ActiveView({
   modelPoolInput?: string;
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
+  chatModelScrollOffset?: number;
   slashCommandCursor?: number;
+  slashCommandScrollOffset?: number;
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
@@ -2322,7 +2355,9 @@ function ActiveView({
       modelPoolInput,
       isSelectingChatModel,
       chatModelCursor,
+      chatModelScrollOffset,
       slashCommandCursor,
+      slashCommandScrollOffset,
     });
   }
 
@@ -3007,7 +3042,9 @@ function ActionsView({
   modelPoolInput,
   isSelectingChatModel,
   chatModelCursor = 0,
+  chatModelScrollOffset = 0,
   slashCommandCursor = 0,
+  slashCommandScrollOffset = 0,
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
@@ -3023,7 +3060,9 @@ function ActionsView({
   modelPoolInput?: string;
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
+  chatModelScrollOffset?: number;
   slashCommandCursor?: number;
+  slashCommandScrollOffset?: number;
 }): React.ReactElement {
   const landing = isLandingChatSurface({
     dashboard,
@@ -3043,7 +3082,9 @@ function ActionsView({
       modelPoolInput,
       isSelectingChatModel,
       chatModelCursor,
+      chatModelScrollOffset,
       slashCommandCursor,
+      slashCommandScrollOffset,
       planChatStep,
       planChatInput,
     });
@@ -3063,7 +3104,9 @@ function ActionsView({
     modelPoolInput,
     isSelectingChatModel,
     chatModelCursor,
+    chatModelScrollOffset,
     slashCommandCursor,
+    slashCommandScrollOffset,
     actionResult,
   });
 }
@@ -3678,8 +3721,11 @@ export function getSlashCommandSuggestions(input: string): typeof TUI_SLASH_COMM
   return TUI_SLASH_COMMANDS.filter((command) => command.command.startsWith(needle));
 }
 
-export function currentFocusOverlay({
+export function getSlashCommandMenuItems(input: string): typeof TUI_SLASH_COMMANDS[number][] {
+  return getSlashCommandSuggestions(input);
+}
 
+export function currentFocusOverlay({
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
@@ -3886,6 +3932,20 @@ function unique<T>(values: T[]): T[] {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+function keepIndexVisible(index: number, currentOffset: number, visibleRows: number): number {
+  const offset = Math.max(currentOffset, 0);
+
+  if (index < offset) {
+    return Math.max(index, 0);
+  }
+
+  if (index >= offset + visibleRows) {
+    return Math.max(index - visibleRows + 1, 0);
+  }
+
+  return offset;
 }
 
 function summarizeTuiError(error: unknown): string {

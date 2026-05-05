@@ -218,6 +218,15 @@ describe("blueprint tui", () => {
         chatCommandInput: "/",
       }),
     );
+    const scrolledSlashOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        chatCommandInput: "/",
+        slashCommandCursor: 9,
+        slashCommandScrollOffset: 6,
+      }),
+    );
 
     expect(output).toContain("Ask anything");
     expect(output).toContain("openai/gpt-5.5");
@@ -229,6 +238,9 @@ describe("blueprint tui", () => {
     expect(slashOutput).toContain("/plan [brief]");
     expect(slashOutput).toContain("/providers");
     expect(slashOutput).toContain("/model [id]");
+    expect(slashOutput).not.toContain("/auth-live");
+    expect(scrolledSlashOutput).not.toContain("/plan [brief]");
+    expect(scrolledSlashOutput).toContain("> /auth-live");
     expect(output).not.toContain("Main Menu");
     expect(output).not.toContain("Quick action");
   });

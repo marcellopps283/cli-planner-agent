@@ -1,9 +1,16 @@
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 import React, { createElement } from "react";
 
 import { OpenCodeLogo } from "./logo.js";
 import { ChatModelSelectorPanel, FocusOverlay, SlashCommandPanel, ActionResultPanel, OpenCodePathBar } from "./panels.js";
-import { type PlanChatStep, type TuiActionId, type TuiActionResult, type TuiDashboard } from "../tui.js";
+import {
+  TUI_MODEL_SELECTOR_VISIBLE_ROWS,
+  TUI_SLASH_MENU_VISIBLE_ROWS,
+  type PlanChatStep,
+  type TuiActionId,
+  type TuiActionResult,
+  type TuiDashboard,
+} from "../tui.js";
 
 const h = createElement;
 
@@ -18,7 +25,9 @@ export function LandingSurface({
   modelPoolInput,
   isSelectingChatModel,
   chatModelCursor = 0,
+  chatModelScrollOffset = 0,
   slashCommandCursor = 0,
+  slashCommandScrollOffset = 0,
   planChatStep,
   planChatInput,
 }: {
@@ -32,12 +41,12 @@ export function LandingSurface({
   modelPoolInput?: string;
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
+  chatModelScrollOffset?: number;
   slashCommandCursor?: number;
+  slashCommandScrollOffset?: number;
   planChatStep?: PlanChatStep;
   planChatInput?: string;
 }): React.ReactElement {
-  const { stdout } = useStdout();
-  const minHeight = stdout?.rows || 24;
   const profile = dashboard.profile.profile;
   const planner = profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing planner";
   const providerLabel = profile ? `${profile.available_models.length || "default"} model(s) active` : "run setup";
@@ -72,13 +81,21 @@ export function LandingSurface({
       ),
       h(
         Box,
-        { width: 72, flexDirection: "column" },
+        { width: 72, height: 13, overflowY: "hidden", flexDirection: "column" },
         ...(showSlashMenu
           ? [
               h(
                 Box,
                 { key: "landing-slash", marginTop: 1, flexDirection: "column" },
-                h(SlashCommandPanel, { chatCommandInput, landing: true, selectedIndex: slashCommandCursor }),
+                h(SlashCommandPanel, {
+                  chatCommandInput,
+                  landing: true,
+                  selectedIndex: slashCommandCursor,
+                  scrollOffset: slashCommandScrollOffset,
+                  maxVisible: TUI_SLASH_MENU_VISIBLE_ROWS,
+                  maxLineWidth: 66,
+                  width: 72,
+                }),
               ),
             ]
           : []),
@@ -87,7 +104,14 @@ export function LandingSurface({
               h(
                 Box,
                 { key: "landing-model-selector", marginTop: 1, flexDirection: "column" },
-                h(ChatModelSelectorPanel, { dashboard, cursor: chatModelCursor }),
+                h(ChatModelSelectorPanel, {
+                  dashboard,
+                  cursor: chatModelCursor,
+                  scrollOffset: chatModelScrollOffset,
+                  maxVisible: TUI_MODEL_SELECTOR_VISIBLE_ROWS,
+                  maxLineWidth: 66,
+                  width: 72,
+                }),
               ),
             ]
           : []),

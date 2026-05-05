@@ -11,6 +11,8 @@ import {
 } from "./panels.js";
 import {
   TUI_APP_NAME,
+  TUI_MODEL_SELECTOR_VISIBLE_ROWS,
+  TUI_SLASH_MENU_VISIBLE_ROWS,
   PLAN_STEP_PROMPTS,
   type PlanChatDraft,
   type PlanChatStep,
@@ -30,6 +32,7 @@ import {
 } from "../tui.js";
 
 const h = createElement;
+const WORKBENCH_SIDEBAR_WIDTH = 44;
 
 export function WorkbenchSurface({
   dashboard,
@@ -45,7 +48,9 @@ export function WorkbenchSurface({
   modelPoolInput,
   isSelectingChatModel,
   chatModelCursor = 0,
+  chatModelScrollOffset = 0,
   slashCommandCursor = 0,
+  slashCommandScrollOffset = 0,
   actionResult,
 }: {
   dashboard: TuiDashboard;
@@ -61,7 +66,9 @@ export function WorkbenchSurface({
   modelPoolInput?: string;
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
+  chatModelScrollOffset?: number;
   slashCommandCursor?: number;
+  slashCommandScrollOffset?: number;
   actionResult?: TuiActionResult;
 }): React.ReactElement {
   const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
@@ -87,7 +94,6 @@ export function WorkbenchSurface({
         }),
         h(ActionResultPanel, { result: actionResult }),
         h(WorkbenchInputPanel, {
-          dashboard,
           chatCommandInput,
           planChatStep,
           planChatInput,
@@ -96,8 +102,6 @@ export function WorkbenchSurface({
           isEditingModelPool,
           modelPoolInput,
         }),
-        ...(showSlashMenu ? [h(SlashCommandPanel, { key: "slash", chatCommandInput, selectedIndex: slashCommandCursor })] : []),
-        ...(isSelectingChatModel ? [h(ChatModelSelectorPanel, { key: "model-selector", dashboard, cursor: chatModelCursor })] : []),
       ),
       h(WorkbenchSidebar, {
         dashboard,
@@ -106,6 +110,13 @@ export function WorkbenchSurface({
         isEditingRevise,
         isEditingModelPool,
         planChatStep,
+        showSlashMenu,
+        chatCommandInput,
+        slashCommandCursor,
+        slashCommandScrollOffset,
+        isSelectingChatModel,
+        chatModelCursor,
+        chatModelScrollOffset,
       }),
     ),
     h(OpenCodePathBar, { dashboard }),
@@ -196,7 +207,6 @@ export function EmptyWorkbenchBlock(): React.ReactElement {
 }
 
 export function WorkbenchInputPanel({
-  dashboard,
   chatCommandInput,
   planChatStep,
   planChatInput,
@@ -205,7 +215,6 @@ export function WorkbenchInputPanel({
   isEditingModelPool,
   modelPoolInput,
 }: {
-  dashboard: TuiDashboard;
   chatCommandInput: string;
   planChatStep: PlanChatStep;
   planChatInput: string;
@@ -237,6 +246,13 @@ export function WorkbenchSidebar({
   isEditingRevise,
   isEditingModelPool,
   planChatStep,
+  showSlashMenu,
+  chatCommandInput = "",
+  slashCommandCursor = 0,
+  slashCommandScrollOffset = 0,
+  isSelectingChatModel,
+  chatModelCursor = 0,
+  chatModelScrollOffset = 0,
 }: {
   dashboard: TuiDashboard;
   runningAction?: TuiActionId;
@@ -244,6 +260,13 @@ export function WorkbenchSidebar({
   isEditingRevise?: boolean;
   isEditingModelPool?: boolean;
   planChatStep: PlanChatStep;
+  showSlashMenu?: boolean;
+  chatCommandInput?: string;
+  slashCommandCursor?: number;
+  slashCommandScrollOffset?: number;
+  isSelectingChatModel?: boolean;
+  chatModelCursor?: number;
+  chatModelScrollOffset?: number;
 }): React.ReactElement {
   const profile = dashboard.profile.profile;
   const contextTokens = estimateContextTokens(dashboard);
@@ -256,15 +279,37 @@ export function WorkbenchSidebar({
     ? dashboard.tasks.slice(0, 5).map((task) => `[x] ${task.title}`)
     : ["[ ] Generate first blueprint"];
 
-  const sidebarColor = dashboard.lint.errors.length > 0 
-    ? "red" 
-    : dashboard.doctor.warnings.length > 0 
-      ? "yellow" 
+  if (isSelectingChatModel) {
+    return h(ChatModelSelectorPanel, {
+      dashboard,
+      cursor: chatModelCursor,
+      scrollOffset: chatModelScrollOffset,
+      maxVisible: TUI_MODEL_SELECTOR_VISIBLE_ROWS,
+      maxLineWidth: 38,
+      width: WORKBENCH_SIDEBAR_WIDTH,
+    });
+  }
+
+  if (showSlashMenu) {
+    return h(SlashCommandPanel, {
+      chatCommandInput,
+      selectedIndex: slashCommandCursor,
+      scrollOffset: slashCommandScrollOffset,
+      maxVisible: TUI_SLASH_MENU_VISIBLE_ROWS,
+      maxLineWidth: 38,
+      width: WORKBENCH_SIDEBAR_WIDTH,
+    });
+  }
+
+  const sidebarColor = dashboard.lint.errors.length > 0
+    ? "red"
+    : dashboard.doctor.warnings.length > 0
+      ? "yellow"
       : dashboard.tasks.length > 0 ? "green" : "gray";
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: sidebarColor, paddingX: 1, flexDirection: "column", width: 34 },
+    { borderStyle: "single", borderColor: sidebarColor, paddingX: 1, flexDirection: "column", width: WORKBENCH_SIDEBAR_WIDTH },
     h(Text, { bold: true }, path.basename(dashboard.root) || TUI_APP_NAME),
     h(Text, null, ""),
     h(Text, { bold: true }, "Context"),
@@ -275,16 +320,18 @@ export function WorkbenchSidebar({
     h(Text, { bold: true }, "Status"),
     h(Text, { color: runtimeStatusColor(chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })) }, chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })),
     h(Text, null, ""),
-    h(Text, { bold: true }, "MCP"),
+    h(Text, { bold: true }, "Providers"),
     ...providers.slice(0, 5).map((provider) =>
       h(Text, { key: `${provider.id}-${provider.cli}`, color: provider.installed ? "green" : "gray" }, `* ${provider.id} ${providerStatusLabel(provider)}`),
     ),
     h(Text, null, ""),
-    h(Text, { bold: true }, "LSP"),
+    h(Text, { bold: true }, "Stack"),
     ...stacks.slice(0, 5).map((stack) => h(Text, { key: stack, color: "gray" }, `* ${stack}`)),
+    h(Text, null, ""),
+    h(Text, { bold: true }, "Planner"),
+    h(Text, { color: "gray" }, profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing"),
     h(Text, null, ""),
     h(Text, { bold: true }, "Todo"),
     ...taskLines.map((line) => h(Text, { key: line, color: line.startsWith("[x]") ? "green" : "gray" }, truncateLine(line, 30))),
   );
 }
-

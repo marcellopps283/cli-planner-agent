@@ -4,14 +4,13 @@ import React, { createElement } from "react";
 import {
   TUI_APP_NAME,
   TUI_APP_VERSION,
-  TUI_SLASH_COMMANDS,
   type TuiActionId,
   type TuiActionResult,
   type TuiDashboard,
   type PlanChatStep,
   chatModelsForConnectedProvider,
   currentFocusOverlay,
-  getSlashCommandSuggestions,
+  getSlashCommandMenuItems,
 } from "../tui.js";
 
 const h = createElement;
@@ -62,24 +61,32 @@ export function EmptyPanel({ title, message }: { title: string; message: string 
   );
 }
 
-
-
 export function ChatModelSelectorPanel({
   dashboard,
   cursor,
+  scrollOffset = 0,
+  maxVisible = 8,
+  maxLineWidth = 96,
+  width,
 }: {
   dashboard: TuiDashboard;
   cursor: number;
+  scrollOffset?: number;
+  maxVisible?: number;
+  maxLineWidth?: number;
+  width?: number;
 }): React.ReactElement {
   const profile = dashboard.profile.profile;
   const models = chatModelsForConnectedProvider(dashboard);
   const selectedIndex = Math.min(cursor, Math.max(models.length - 1, 0));
+  const safeOffset = clampScrollOffset(scrollOffset, models.length, maxVisible);
+  const visibleModels = models.slice(safeOffset, safeOffset + maxVisible);
   const provider = profile?.planner_provider ?? "missing";
 
   if (!profile) {
     return h(
       Box,
-      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column", width },
       h(Text, { bold: true }, "Model Selector"),
       h(Text, null, "Profile is missing. Run setup before selecting a chat model."),
     );
@@ -87,22 +94,38 @@ export function ChatModelSelectorPanel({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column", width },
     h(Text, { bold: true }, "Model Selector"),
     h(Text, { color: "gray" }, `Connected CLI: ${provider}. Enter selects, Esc closes.`),
     ...(models.length > 0
-      ? models.map((model, index) =>
-          h(
+      ? visibleModels.map((model, index) => {
+          const absoluteIndex = safeOffset + index;
+          const line = `${absoluteIndex === selectedIndex ? ">" : " "} ${model.id} ${model.id === profile.planner_model ? "(current)" : ""} ${model.tier}/${model.status}`;
+
+          return h(
             Text,
             {
               key: model.id,
-              color: index === selectedIndex ? "cyan" : model.id === profile.planner_model ? "green" : undefined,
-              bold: index === selectedIndex,
+              color: absoluteIndex === selectedIndex ? "cyan" : model.id === profile.planner_model ? "green" : undefined,
+              bold: absoluteIndex === selectedIndex,
+              wrap: "truncate",
             },
-            `${index === selectedIndex ? ">" : " "} ${model.id} ${model.id === profile.planner_model ? "(current)" : ""} ${model.tier}/${model.status}`,
-          ),
-        )
+            truncatePanelLine(line, maxLineWidth),
+          );
+        })
       : [h(Text, { key: "empty", color: "yellow" }, `No models found for ${provider}. Refresh the registry or update the provider pool.`)]),
+    ...(models.length > maxVisible
+      ? [
+          h(
+            Text,
+            {
+              key: "scroll",
+              color: "gray",
+            },
+            `↑↓ scroll ${safeOffset + 1}-${safeOffset + visibleModels.length}/${models.length}`,
+          ),
+        ]
+      : []),
   );
 }
 
@@ -110,18 +133,26 @@ export function SlashCommandPanel({
   chatCommandInput,
   landing = false,
   selectedIndex = 0,
+  scrollOffset = 0,
+  maxVisible = 6,
+  maxLineWidth = 96,
+  width,
 }: {
   chatCommandInput: string;
   landing?: boolean;
   selectedIndex?: number;
+  scrollOffset?: number;
+  maxVisible?: number;
+  maxLineWidth?: number;
+  width?: number;
 }): React.ReactElement {
-  const suggestions = getSlashCommandSuggestions(chatCommandInput);
+  const suggestions = getSlashCommandMenuItems(chatCommandInput);
   const isFiltering = chatCommandInput.trim().startsWith("/");
 
   if (!isFiltering) {
     return h(
       Box,
-      { borderStyle: "single", borderColor: "gray", paddingX: 1 },
+      { borderStyle: "single", borderColor: "gray", paddingX: 1, width },
       h(
         Text,
         { color: "gray" },
@@ -132,22 +163,54 @@ export function SlashCommandPanel({
     );
   }
 
-  const commandsToRender = suggestions.length > 0 ? suggestions : TUI_SLASH_COMMANDS;
+  const commandsToRender = suggestions;
   const activeIndex = Math.min(selectedIndex, Math.max(commandsToRender.length - 1, 0));
+  const safeOffset = clampScrollOffset(scrollOffset, commandsToRender.length, maxVisible);
+  const visibleCommands = commandsToRender.slice(safeOffset, safeOffset + maxVisible);
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column", width },
     h(Text, { bold: true }, isFiltering ? "Slash Autocomplete" : "Slash Commands"),
     ...(isFiltering ? [h(Text, { key: "tab-hint", color: "gray" }, "Use \u2191\u2193 to choose. Tab completes. Enter runs selected command.")] : []),
-    ...commandsToRender.map((command, index) =>
-      h(
-        Text,
-        { key: command.command, color: isFiltering && index === activeIndex ? "cyan" : undefined },
-        `${index === activeIndex && isFiltering ? "> " : "  "}${command.usage} | ${command.description}`,
-      ),
-    ),
+    ...(visibleCommands.length > 0
+      ? visibleCommands.map((command, index) => {
+          const absoluteIndex = safeOffset + index;
+          const line = `${absoluteIndex === activeIndex && isFiltering ? "> " : "  "}${command.usage} | ${command.description}`;
+
+          return h(
+            Text,
+            {
+              key: command.command,
+              color: isFiltering && absoluteIndex === activeIndex ? "cyan" : undefined,
+              wrap: "truncate",
+            },
+            truncatePanelLine(line, maxLineWidth),
+          );
+        })
+      : [h(Text, { key: "empty", color: "yellow" }, "No matching slash command.")]),
+    ...(commandsToRender.length > maxVisible
+      ? [
+          h(
+            Text,
+            { key: "scroll", color: "gray" },
+            `↑↓ scroll ${safeOffset + 1}-${safeOffset + visibleCommands.length}/${commandsToRender.length}`,
+          ),
+        ]
+      : []),
   );
+}
+
+function clampScrollOffset(scrollOffset: number, itemCount: number, maxVisible: number): number {
+  return Math.min(Math.max(scrollOffset, 0), Math.max(itemCount - maxVisible, 0));
+}
+
+function truncatePanelLine(line: string, maxLineWidth: number): string {
+  if (line.length <= maxLineWidth) {
+    return line;
+  }
+
+  return `${line.slice(0, Math.max(maxLineWidth - 1, 0))}…`;
 }
 
 export function FocusOverlay({
