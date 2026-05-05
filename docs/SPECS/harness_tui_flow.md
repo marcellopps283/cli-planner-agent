@@ -13,15 +13,17 @@ automacao, smoke e debugging.
 3. App detecta CLIs oficiais instalados e pede quais providers o usuario possui.
 4. Para cada provider selecionado, app mostra uma tela de modelos suportados,
    com acao de selecionar todos ou marcar manualmente.
-5. Usuario escolhe o provider/modelo planner.
-6. App cria ou atualiza `.blueprint/`, `profile.yaml` e `model_registry.yaml`.
-7. App abre painel operacional com status, metricas, provider pool, model pool,
+5. Para cada modelo selecionado com suporte a reasoning, app pede o esforco de
+   raciocinio daquele modelo em uma tela dedicada.
+6. Usuario escolhe o provider/modelo planner entre o pool selecionado.
+7. App cria ou atualiza `.blueprint/`, `profile.yaml` e `model_registry.yaml`.
+8. App abre painel operacional com status, metricas, provider pool, model pool,
    registry, artefatos, tasks e acoes.
-8. Ao iniciar uma tarefa, app muda para uma experiencia de chat.
-9. Planner conversa com o usuario, entende a entrega e monta um plano.
-10. Antes de escrever handoffs, app mostra task graph, modelo sugerido por task
+9. Ao iniciar uma tarefa, app muda para uma experiencia de chat.
+10. Planner conversa com o usuario, entende a entrega e monta um plano.
+11. Antes de escrever handoffs, app mostra task graph, modelo sugerido por task
     e pede confirmacao.
-11. Apos confirmacao, app gera os arquivos e informa os paths criados.
+12. Apos confirmacao, app gera os arquivos e informa os paths criados.
 
 ## Regras
 
@@ -36,8 +38,8 @@ automacao, smoke e debugging.
 ## Status implementado
 
 - `blueprint` sem subcomando abre a TUI.
-- O setup interativo passa por providers, modelos por provider, planner e
-  confirmacao antes de escrever arquivos.
+- O setup interativo passa por providers, modelos por provider, reasoning
+  effort por modelo, planner e confirmacao antes de escrever arquivos.
 - O onboarding mostra a deteccao local dos CLIs `codex`, `claude` e `gemini`,
   incluindo status de auth quando disponivel sem chamada de modelo.
 - A TUI abre direto no chat `Plan / Actions`; `Main Menu` e uma camada sob
@@ -52,28 +54,27 @@ automacao, smoke e debugging.
 - O overview fica atras do menu principal e inclui um painel `Operations` com
   status operacional, planner, providers, model pool, tasks, task models e
   sessoes.
-- O backend de setup aceita selecao explicita de providers/modelos/planner para
-  manter o fluxo testavel e auditavel.
+- O backend de setup aceita selecao explicita de providers, modelos, reasoning
+  efforts e planner para manter o fluxo testavel e auditavel.
 - A tela `actions` agora e um workbench de chat: tem feed principal, input
   permanente, sidebar contextual e slash commands para acoes locais.
-- Depois da primeira mensagem, a tela vira workbench e mostra um artefato de
-  planejamento no feed com checklist/progresso das perguntas, preview ou
-  handoffs gerados.
+- Depois da primeira mensagem, a tela vira workbench e envia o texto direto ao
+  planner LLM do profile; o feed mostra preview, confirmacoes ou handoffs
+  gerados conforme a resposta do planner.
 - Texto livre ou `/plan [brief]` inicia o planejamento; `/providers`,
   `/model`, `/models`, `/registry`, `/lint`, `/export`, `/revise`, `/auth`,
   `/auth-live`, `/help` e `/menu` mantem o usuario em uma unica frente
   operacional.
 - O autocomplete visual filtra comandos enquanto o input comeca com `/`; `↑↓`
   navega pelas sugestoes e `Tab` completa a opcao selecionada.
-- `Tab` sem slash abre o seletor do modelo de conversa, listando os modelos do
-  provider/CLI conectado ao planner atual e persistindo a escolha em
-  `profile.yaml`.
+- `Tab` sem slash abre o seletor do modelo de conversa; ao escolher um modelo
+  com reasoning configuravel, a proxima tela escolhe o esforco e persiste ambos
+  em `profile.yaml`.
 - Perguntas, confirmacoes e edicoes guiadas aparecem em overlays de foco em vez
   de competirem com o painel principal do chat.
-- O chat comeca por um brief livre e depois pede os campos estruturados minimos
-  para manter o contrato de planejamento validavel.
-- Se o brief inicial for rico, a coleta pula resumo/objetivo e pergunta apenas
-  lacunas como criterios, restricoes, paths, validacao e risco.
+- O chat comeca por texto livre. Campos estruturados viram contexto interno do
+  prompt; o planner deve inferir lacunas de forma conservadora e so perguntar ao
+  usuario quando estiver realmente bloqueado.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
   confirmacao antes de persistir handoffs no modo interativo.
 - O PlannerEngine passa o model ID exato ao CLI oficial e tenta reparar uma

@@ -549,9 +549,16 @@ function parsePlanEngine(value: string): PlanEngine {
 
 function printProfile(profile: PlannerProfile): void {
   console.log(`name\t${profile.name}`);
-  console.log(`planner\t${profile.planner_provider}\t${profile.planner_model}`);
+  console.log(`planner\t${profile.planner_provider}\t${profile.planner_model}\t${profile.planner_reasoning_effort ?? "default"}`);
   console.log(`providers\t${profile.available_providers.join(",")}`);
   console.log(`models\t${profile.available_models.length > 0 ? profile.available_models.join(",") : "all-provider-models"}`);
+  console.log(
+    `reasoning\t${
+      Object.keys(profile.model_reasoning_efforts).length > 0
+        ? Object.entries(profile.model_reasoning_efforts).map(([model, effort]) => `${model}:${effort}`).join(",")
+        : "defaults"
+    }`,
+  );
   console.log(`excluded\t${profile.excluded_providers.length ? profile.excluded_providers.join(",") : "none"}`);
   console.log(
     `model_registry\t${profile.model_registry.source}${

@@ -1,8 +1,16 @@
 import { Box, Text } from "ink";
 import React, { createElement } from "react";
 
+import { DEFAULT_MODEL_REGISTRY } from "../models.js";
 import { OpenCodeLogo } from "./logo.js";
-import { ChatModelSelectorPanel, FocusOverlay, SlashCommandPanel, ActionResultPanel, OpenCodePathBar } from "./panels.js";
+import {
+  ChatModelSelectorPanel,
+  FocusOverlay,
+  SlashCommandPanel,
+  ActionResultPanel,
+  OpenCodePathBar,
+  ReasoningEffortSelectorPanel,
+} from "./panels.js";
 import {
   TUI_MODEL_SELECTOR_VISIBLE_ROWS,
   TUI_SLASH_MENU_VISIBLE_ROWS,
@@ -26,6 +34,8 @@ export function LandingSurface({
   isSelectingChatModel,
   chatModelCursor = 0,
   chatModelScrollOffset = 0,
+  chatModelEffortCandidate,
+  chatModelEffortCursor = 0,
   slashCommandCursor = 0,
   slashCommandScrollOffset = 0,
   planChatStep,
@@ -42,6 +52,8 @@ export function LandingSurface({
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
   chatModelScrollOffset?: number;
+  chatModelEffortCandidate?: string;
+  chatModelEffortCursor?: number;
   slashCommandCursor?: number;
   slashCommandScrollOffset?: number;
   planChatStep?: PlanChatStep;
@@ -52,6 +64,9 @@ export function LandingSurface({
   const providerLabel = profile ? `${profile.available_models.length || "default"} model(s) active` : "run setup";
   const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
   const promptText = chatCommandInput.length > 0 ? chatCommandInput : 'Ask anything... "Plan the next project slice"';
+  const effortModel = chatModelEffortCandidate
+    ? DEFAULT_MODEL_REGISTRY.find((model) => model.id === chatModelEffortCandidate)
+    : undefined;
 
   return h(
     Box,
@@ -99,7 +114,23 @@ export function LandingSurface({
               ),
             ]
           : []),
-        ...(isSelectingChatModel
+        ...(effortModel
+          ? [
+              h(
+                Box,
+                { key: "landing-effort-selector", marginTop: 1, flexDirection: "column" },
+                h(ReasoningEffortSelectorPanel, {
+                  modelId: effortModel.id,
+                  provider: effortModel.provider,
+                  efforts: effortModel.reasoning_efforts,
+                  cursor: chatModelEffortCursor,
+                  currentEffort: profile?.model_reasoning_efforts[effortModel.id],
+                  width: 72,
+                }),
+              ),
+            ]
+          : []),
+        ...(isSelectingChatModel && !effortModel
           ? [
               h(
                 Box,

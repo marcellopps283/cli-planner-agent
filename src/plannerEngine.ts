@@ -17,6 +17,7 @@ export interface PlannerEngineAttempt {
 export interface RunLlmPlannerEngineOptions<TDraft> {
   provider: ProviderId;
   model: string;
+  reasoningEffort?: string;
   prompt: string;
   parseDraft: (response: string) => TDraft;
   timeoutMs?: number;
@@ -57,6 +58,7 @@ export async function runLlmPlannerEngine<TDraft>(
       const result = await runner({
         provider: options.provider,
         model: options.model,
+        reasoningEffort: options.reasoningEffort,
         prompt,
         timeoutMs: options.timeoutMs,
       });

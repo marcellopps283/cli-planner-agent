@@ -2,11 +2,13 @@ import { Box, Text } from "ink";
 import path from "node:path";
 import React, { createElement } from "react";
 
+import { DEFAULT_MODEL_REGISTRY } from "../models.js";
 import {
   ActionResultPanel,
   ChatModelSelectorPanel,
   FocusOverlay,
   OpenCodePathBar,
+  ReasoningEffortSelectorPanel,
   SlashCommandPanel,
 } from "./panels.js";
 import {
@@ -49,6 +51,8 @@ export function WorkbenchSurface({
   isSelectingChatModel,
   chatModelCursor = 0,
   chatModelScrollOffset = 0,
+  chatModelEffortCandidate,
+  chatModelEffortCursor = 0,
   slashCommandCursor = 0,
   slashCommandScrollOffset = 0,
   actionResult,
@@ -67,6 +71,8 @@ export function WorkbenchSurface({
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
   chatModelScrollOffset?: number;
+  chatModelEffortCandidate?: string;
+  chatModelEffortCursor?: number;
   slashCommandCursor?: number;
   slashCommandScrollOffset?: number;
   actionResult?: TuiActionResult;
@@ -118,6 +124,8 @@ export function WorkbenchSurface({
         isSelectingChatModel,
         chatModelCursor,
         chatModelScrollOffset,
+        chatModelEffortCandidate,
+        chatModelEffortCursor,
       }),
     ),
     h(OpenCodePathBar, { dashboard }),
@@ -259,6 +267,8 @@ export function WorkbenchSidebar({
   isSelectingChatModel,
   chatModelCursor = 0,
   chatModelScrollOffset = 0,
+  chatModelEffortCandidate,
+  chatModelEffortCursor = 0,
 }: {
   dashboard: TuiDashboard;
   runningAction?: TuiActionId;
@@ -273,6 +283,8 @@ export function WorkbenchSidebar({
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
   chatModelScrollOffset?: number;
+  chatModelEffortCandidate?: string;
+  chatModelEffortCursor?: number;
 }): React.ReactElement {
   const profile = dashboard.profile.profile;
   const contextTokens = estimateContextTokens(dashboard);
@@ -284,6 +296,20 @@ export function WorkbenchSidebar({
   const taskLines = dashboard.tasks.length > 0
     ? dashboard.tasks.slice(0, 5).map((task) => `[x] ${task.title}`)
     : ["[ ] Generate first blueprint"];
+  const effortModel = chatModelEffortCandidate
+    ? DEFAULT_MODEL_REGISTRY.find((model) => model.id === chatModelEffortCandidate)
+    : undefined;
+
+  if (effortModel) {
+    return h(ReasoningEffortSelectorPanel, {
+      modelId: effortModel.id,
+      provider: effortModel.provider,
+      efforts: effortModel.reasoning_efforts,
+      cursor: chatModelEffortCursor,
+      currentEffort: profile?.model_reasoning_efforts[effortModel.id],
+      width: WORKBENCH_SIDEBAR_WIDTH,
+    });
+  }
 
   if (isSelectingChatModel) {
     return h(ChatModelSelectorPanel, {

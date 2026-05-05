@@ -26,9 +26,12 @@ describe("planner profiles", () => {
 
     expect(result.written).toBe(true);
     expect(raw).toContain("planner_provider: openai");
+    expect(raw).toContain("planner_reasoning_effort: xhigh");
+    expect(raw).toContain("model_reasoning_efforts:");
     expect(loaded.errors).toEqual([]);
     expect(loaded.profile?.available_providers).toEqual(["openai", "google"]);
     expect(loaded.profile?.excluded_providers).toEqual(["anthropic"]);
+    expect(loaded.profile?.model_reasoning_efforts["gpt-5.5"]).toBe("xhigh");
   });
 
   it("creates the project registry when the profile points at it", async () => {
@@ -58,8 +61,14 @@ describe("planner profiles", () => {
       name: "default",
       planner_provider: "anthropic" as const,
       planner_model: "claude-opus-4-7",
+      planner_reasoning_effort: "high",
       available_providers: ["openai" as const, "google" as const],
       available_models: ["gpt-5.5", "gemini-3.1-pro-preview"],
+      model_reasoning_efforts: {
+        "claude-opus-4-7": "high",
+        "gpt-5.5": "xhigh",
+        "gemini-3.1-pro-preview": "thinking_budget:-1",
+      },
       excluded_providers: ["anthropic" as const],
       model_registry: {
         source: "bundled" as const,
@@ -96,6 +105,7 @@ describe("planner profiles", () => {
 
     expect(result.profile.planner_provider).toBe("google");
     expect(result.profile.planner_model).toBe("gemini-3.1-pro-preview");
+    expect(result.profile.planner_reasoning_effort).toBe("high");
     expect(loaded.errors).toEqual([]);
     expect(loaded.profile?.available_models).toEqual(["gemini-3.1-pro-preview"]);
   });

@@ -11,6 +11,7 @@ import { generateBlueprintPlan, type PlanAnswers, type PlannerDraft } from "../s
 import { initPlannerProfile, loadPlannerProfile } from "../src/profile.js";
 import {
   BlueprintDashboard,
+  buildPlanAnswersFromFreeformRequest,
   getSlashCommandSuggestions,
   getTuiActions,
   loadTuiDashboard,
@@ -85,6 +86,56 @@ describe("blueprint tui", () => {
     expect(registry).toContain("gemini-3.1-pro-preview");
     expect(dashboard.setup.initialized).toBe(true);
     expect(dashboard.profile.errors).toEqual([]);
+  });
+
+  it("renders setup as provider, model, then reasoning-effort flow", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-setup-flow-test-"));
+    const dashboard = await loadTuiDashboard({ root });
+    const setupDraft = {
+      providers: ["openai" as const, "google" as const],
+      models: ["gpt-5.5", "gemini-3.1-pro-preview"],
+      reasoningEfforts: {
+        "gpt-5.5": "xhigh",
+        "gemini-3.1-pro-preview": "high",
+      },
+      plannerModel: "gpt-5.5",
+    };
+    const providersOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        setupStep: "providers",
+        setupDraft,
+      }),
+    );
+    const modelsOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        setupStep: "models",
+        setupDraft,
+        setupModelProviderCursor: 1,
+      }),
+    );
+    const reasoningOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        setupStep: "reasoning",
+        setupDraft,
+        setupReasoningModelCursor: 0,
+        setupReasoningEffortCursor: 4,
+      }),
+    );
+
+    expect(providersOutput).toContain("OPENAI");
+    expect(providersOutput).toContain("GOOGLE");
+    expect(providersOutput).not.toContain("gpt-5.5");
+    expect(modelsOutput).toContain("GOOGLE");
+    expect(modelsOutput).toContain("gemini-3.1-pro-preview");
+    expect(reasoningOutput).toContain("Reasoning Effort");
+    expect(reasoningOutput).toContain("gpt-5.5");
+    expect(reasoningOutput).toContain("> [x] xhigh");
   });
 
   it("runs setup with explicit provider, model, and planner selections", async () => {
@@ -269,6 +320,17 @@ describe("blueprint tui", () => {
       argument: "unknown /unknown",
     });
     expect(getSlashCommandSuggestions("/mo").map((command) => command.command)).toEqual(["/model", "/models"]);
+  });
+
+  it("converts a landing chat request directly into planner answers", async () => {
+    const root = await makePlannedProject();
+    const dashboard = await loadTuiDashboard({ root });
+    const answers = buildPlanAnswersFromFreeformRequest("crie um fluxo de onboarding com providers e modelos", dashboard);
+
+    expect(answers.objective).toContain("onboarding");
+    expect(answers.successCriteria).toContain("Planner returns a task graph and exact model assignments for the requested work.");
+    expect(answers.notes.join("\n")).toContain("Do not ask the user to fill a form before planning");
+    expect(answers.riskLevel).toBe(6);
   });
 
   it("does not render a persistent success panel for chat model switches", () => {

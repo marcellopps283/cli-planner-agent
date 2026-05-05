@@ -22,7 +22,8 @@ dependencias e gera handoffs isolados para agentes executores.
 ### 1.0 - Planner
 
 - Abre a TUI por padrao com `blueprint`.
-- Faz onboarding obrigatorio de diretorio, providers, modelos e planner.
+- Faz onboarding obrigatorio de diretorio, providers, modelos, effort de
+  raciocinio e planner.
 - Usa um provedor/modelo como planner mestre.
 - Mostra um painel operacional para configuracoes, status, metricas e artefatos.
 - Usa uma experiencia tipo chat quando o usuario inicia uma tarefa de
@@ -46,7 +47,7 @@ dependencias e gera handoffs isolados para agentes executores.
 2. Artefatos versionaveis antes de memoria implicita.
 3. Contexto minimo suficiente antes de leitura total.
 4. Planejamento explicito antes de execucao.
-5. Schemas antes de texto livre.
+5. Schemas internos e artefatos validaveis antes de prompts soltos.
 6. Replanejamento cirurgico quando seguro; global quando necessario.
 7. Usuario controla provedores, custos, privacidade e fallback.
 8. Uma unica frente de uso antes de multiplos comandos soltos.
@@ -74,6 +75,8 @@ possivel. Se o usuario nao tiver um provedor, ele nao entra no pool.
 
 O onboarding deve apresentar providers primeiro e depois, uma tela por provider,
 os modelos suportados. O usuario pode selecionar todos ou marcar uma pool fina.
+Modelos com reasoning configuravel abrem uma etapa propria para escolher o
+effort antes da selecao do planner.
 
 ## 7. Roteamento
 

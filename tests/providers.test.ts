@@ -9,8 +9,15 @@ import {
   summarizeGenericLiveOutput,
   summarizeGeminiLiveOutput,
 } from "../src/providers.js";
+import { providerPromptReasoningArgs } from "../src/providerPrompt.js";
 
 describe("provider output sanitation", () => {
+  it("maps provider reasoning efforts to supported CLI flags", () => {
+    expect(providerPromptReasoningArgs("anthropic", "high")).toEqual(["--effort", "high"]);
+    expect(providerPromptReasoningArgs("openai", "xhigh")).toEqual(["-c", 'model_reasoning_effort="xhigh"']);
+    expect(providerPromptReasoningArgs("google", "thinking_budget:-1")).toEqual([]);
+  });
+
   it("redacts emails and ids from plain text output", () => {
     const output = sanitizeProviderOutput("logged in as user@example.com org 11111111-1111-4111-8111-111111111111");
 

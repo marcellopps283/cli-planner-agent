@@ -201,6 +201,45 @@ export function SlashCommandPanel({
   );
 }
 
+export function ReasoningEffortSelectorPanel({
+  modelId,
+  provider,
+  efforts,
+  cursor,
+  currentEffort,
+  width,
+}: {
+  modelId: string;
+  provider: string;
+  efforts: string[];
+  cursor: number;
+  currentEffort?: string;
+  width?: number;
+}): React.ReactElement {
+  const selectedIndex = Math.min(cursor, Math.max(efforts.length - 1, 0));
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column", width },
+    h(Text, { bold: true }, "Reasoning Effort"),
+    h(Text, { color: "gray" }, `${provider.toUpperCase()}/${modelId}`),
+    ...(efforts.length > 0
+      ? efforts.map((effort, index) =>
+          h(
+            Text,
+            {
+              key: effort,
+              color: index === selectedIndex ? "cyan" : effort === currentEffort ? "green" : undefined,
+              bold: index === selectedIndex,
+            },
+            `${index === selectedIndex ? ">" : " "} ${effort}${effort === currentEffort ? " current" : ""}`,
+          ),
+        )
+      : [h(Text, { key: "empty", color: "yellow" }, "This model does not expose effort levels.")]),
+    h(Text, { color: "gray" }, "Up/down selects, Enter confirms, b returns, Esc closes."),
+  );
+}
+
 function clampScrollOffset(scrollOffset: number, itemCount: number, maxVisible: number): number {
   return Math.min(Math.max(scrollOffset, 0), Math.max(itemCount - maxVisible, 0));
 }

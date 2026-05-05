@@ -23,8 +23,10 @@ export interface InitPlannerProfileOptions {
   name?: string;
   providers?: ProviderId[];
   models?: string[];
+  modelReasoningEfforts?: Record<string, string>;
   plannerProvider?: ProviderId;
   plannerModel?: string;
+  plannerReasoningEffort?: string;
   modelRegistrySource?: "bundled" | "project";
   modelRegistryPath?: string;
   force?: boolean;
@@ -47,6 +49,7 @@ export interface UpdatePlannerProfileModelsOptions {
 export interface UpdatePlannerProfilePlannerModelOptions {
   root: string;
   plannerModel: string;
+  plannerReasoningEffort?: string;
 }
 
 export interface PlannerProfileValidationResult {
@@ -65,6 +68,9 @@ export async function initPlannerProfile(
   const availableModels = uniqueStrings(options.models ?? defaultModelIdsForProviders(availableProviders));
   const plannerProvider = options.plannerProvider ?? pickDefaultPlannerProvider(availableProviders);
   const plannerModel = options.plannerModel ?? defaultModelForProvider(plannerProvider, availableModels);
+  const modelReasoningEfforts = normalizeModelReasoningEfforts(availableModels, options.modelReasoningEfforts);
+  const plannerReasoningEffort =
+    options.plannerReasoningEffort ?? modelReasoningEfforts[plannerModel] ?? defaultReasoningEffortForModel(plannerModel);
   const modelRegistrySource = options.modelRegistrySource ?? "bundled";
   const modelRegistry =
     modelRegistrySource === "project"
@@ -76,8 +82,10 @@ export async function initPlannerProfile(
     name: options.name ?? "default",
     planner_provider: plannerProvider,
     planner_model: plannerModel,
+    planner_reasoning_effort: plannerReasoningEffort,
     available_providers: availableProviders,
     available_models: availableModels,
+    model_reasoning_efforts: modelReasoningEfforts,
     excluded_providers: KNOWN_PROVIDER_IDS.filter((provider) => !availableProviders.includes(provider)),
     model_registry: modelRegistry,
     routing: {
@@ -222,11 +230,18 @@ export async function updatePlannerProfileModels(
   const currentPlannerModel = selectedModels.find((model) => model.id === profileResult.profile!.planner_model);
   const sameProviderModel = selectedModels.find((model) => model.provider === profileResult.profile!.planner_provider);
   const plannerModel = requestedPlannerModel ?? currentPlannerModel ?? sameProviderModel ?? selectedModels[0]!;
+  const modelReasoningEfforts = normalizeModelReasoningEfforts(
+    selectedModelIds,
+    profileResult.profile.model_reasoning_efforts,
+  );
   const profile = PlannerProfileSchema.parse({
     ...profileResult.profile,
     planner_provider: plannerModel.provider,
     planner_model: plannerModel.id,
+    planner_reasoning_effort:
+      modelReasoningEfforts[plannerModel.id] ?? defaultReasoningEffortForModel(plannerModel.id),
     available_models: selectedModelIds,
+    model_reasoning_efforts: modelReasoningEfforts,
   });
   const validation = validatePlannerProfile(profile, getProfilePath(root), registry);
 
@@ -276,11 +291,22 @@ export async function updatePlannerProfilePlannerModel(
     profileResult.profile.available_models.length > 0
       ? uniqueStrings([...profileResult.profile.available_models, plannerModel.id])
       : profileResult.profile.available_models;
+  const modelReasoningEfforts = normalizeModelReasoningEfforts(
+    availableModels.length > 0 ? availableModels : defaultModelIdsForProviders(profileResult.profile.available_providers, registryResult.registry.models),
+    {
+      ...profileResult.profile.model_reasoning_efforts,
+      ...(options.plannerReasoningEffort ? { [plannerModel.id]: options.plannerReasoningEffort } : {}),
+    },
+    registryResult.registry.models,
+  );
   const profile = PlannerProfileSchema.parse({
     ...profileResult.profile,
     planner_provider: plannerModel.provider,
     planner_model: plannerModel.id,
+    planner_reasoning_effort:
+      options.plannerReasoningEffort ?? modelReasoningEfforts[plannerModel.id] ?? defaultReasoningEffortForModel(plannerModel.id),
     available_models: availableModels,
+    model_reasoning_efforts: modelReasoningEfforts,
   });
   const validation = validatePlannerProfile(profile, getProfilePath(root), registryResult.registry.models);
 
@@ -350,6 +376,36 @@ export function validatePlannerProfile(
     );
   } else if (profile.available_models.length > 0 && !activeModelIds.has(profile.planner_model)) {
     errors.push(`planner_model ${profile.planner_model} is not in available_models.`);
+  }
+
+  for (const [modelId, effort] of Object.entries(profile.model_reasoning_efforts)) {
+    const model = registry.find((entry) => entry.id === modelId);
+
+    if (!model) {
+      errors.push(`model_reasoning_efforts.${modelId} was not found in the active registry.`);
+      continue;
+    }
+
+    if (!activeModelIds.has(modelId)) {
+      errors.push(`model_reasoning_efforts.${modelId} is not in the active model pool.`);
+    }
+
+    if (model.reasoning_efforts.length > 0 && !model.reasoning_efforts.includes(effort)) {
+      errors.push(
+        `reasoning effort ${effort} is not available for ${modelId}. Expected one of: ${model.reasoning_efforts.join(", ")}.`,
+      );
+    }
+  }
+
+  if (profile.planner_reasoning_effort && selectedModel) {
+    if (
+      selectedModel.reasoning_efforts.length > 0
+      && !selectedModel.reasoning_efforts.includes(profile.planner_reasoning_effort)
+    ) {
+      errors.push(
+        `planner_reasoning_effort ${profile.planner_reasoning_effort} is not available for ${selectedModel.id}.`,
+      );
+    }
   }
 
   if (profile.model_registry.source === "project" && !profile.model_registry.path) {
@@ -443,6 +499,34 @@ function defaultModelForProvider(provider: ProviderId, availableModels?: string[
   }
 
   return model.id;
+}
+
+function normalizeModelReasoningEfforts(
+  modelIds: string[],
+  selected: Record<string, string> = {},
+  registry: ModelRegistryEntry[] = DEFAULT_MODEL_REGISTRY,
+): Record<string, string> {
+  const selectedIds = new Set(modelIds);
+  const efforts: Record<string, string> = {};
+
+  for (const model of registry) {
+    if (!selectedIds.has(model.id) || model.reasoning_efforts.length === 0) {
+      continue;
+    }
+
+    efforts[model.id] = selected[model.id] ?? model.default_reasoning_effort ?? model.reasoning_efforts[0]!;
+  }
+
+  return efforts;
+}
+
+function defaultReasoningEffortForModel(
+  modelId: string,
+  registry: ModelRegistryEntry[] = DEFAULT_MODEL_REGISTRY,
+): string | undefined {
+  const model = registry.find((entry) => entry.id === modelId);
+
+  return model?.default_reasoning_effort ?? model?.reasoning_efforts[0];
 }
 
 export function defaultModelIdsForProviders(

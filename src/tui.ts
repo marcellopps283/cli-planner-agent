@@ -113,11 +113,12 @@ export type TuiActionId = (typeof TUI_ACTION_IDS)[number];
 type TuiLocalResultId = "help" | "providers";
 type TuiActionResultId = TuiActionId | TuiLocalResultId;
 
-type SetupStep = "idle" | "providers" | "models" | "planner" | "confirm";
+type SetupStep = "idle" | "providers" | "models" | "reasoning" | "planner" | "confirm";
 
 interface SetupDraft {
   providers: ProviderId[];
   models: string[];
+  reasoningEfforts: Record<string, string>;
   plannerModel?: string;
 }
 
@@ -223,6 +224,11 @@ export interface ParsedTuiSlashCommand {
 }
 
 const SETUP_PROVIDER_OPTIONS = ["openai", "anthropic", "google"] as const satisfies readonly ProviderId[];
+const PROVIDER_DISPLAY_NAMES: Record<ProviderId, string> = {
+  openai: "OPENAI",
+  anthropic: "ANTHROPIC",
+  google: "GOOGLE",
+};
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: "OpenAI / Codex",
   anthropic: "Anthropic / Claude Code",
@@ -297,8 +303,10 @@ export interface RunTuiActionOptions {
   plannerPromptRunner?: PlannerPromptRunner;
   providers?: ProviderId[];
   models?: string[];
+  modelReasoningEfforts?: Record<string, string>;
   plannerProvider?: ProviderId;
   plannerModel?: string;
+  plannerReasoningEffort?: string;
   apply?: boolean;
   liveTimeoutMs?: number;
   providerChecker?: (live: boolean) => Promise<ProviderDoctorResult[]>;
@@ -635,6 +643,7 @@ async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiAction
     const result = await updatePlannerProfilePlannerModel({
       root: options.root,
       plannerModel,
+      plannerReasoningEffort: options.plannerReasoningEffort,
     });
 
     return {
@@ -643,6 +652,7 @@ async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiAction
       summary: `Chat model switched to ${result.profile.planner_model}.`,
       lines: [
         `planner ${result.profile.planner_provider}/${result.profile.planner_model}`,
+        `reasoning ${result.profile.planner_reasoning_effort ?? "default"}`,
         `models ${result.profile.available_models.join(",") || "all provider defaults"}`,
         ...result.warnings.map((warning) => `warning ${warning}`),
       ],
@@ -902,6 +912,7 @@ async function setupBlueprintProject(options: RunTuiActionOptions): Promise<TuiA
     `providers ${providers.join(",")}`,
     `models ${options.models?.join(",") ?? "default_for_selected_providers"}`,
     `planner ${plannerProvider}${options.plannerModel ? `/${options.plannerModel}` : ""}`,
+    `reasoning ${formatReasoningEfforts(options.modelReasoningEfforts)}`,
   ];
 
   for (const result of providerResults) {
@@ -915,8 +926,10 @@ async function setupBlueprintProject(options: RunTuiActionOptions): Promise<TuiA
       root,
       providers,
       models: options.models,
+      modelReasoningEfforts: options.modelReasoningEfforts,
       plannerProvider,
       plannerModel: options.plannerModel,
+      plannerReasoningEffort: options.plannerReasoningEffort,
       modelRegistrySource: "project",
     });
 
@@ -1003,6 +1016,7 @@ function makeDefaultSetupDraft(providerChecks: ProviderDoctorResult[] = []): Set
   return normalizeSetupDraft({
     providers,
     models,
+    reasoningEfforts: {},
     plannerModel: chooseDefaultPlannerModel(models),
   });
 }
@@ -1036,6 +1050,7 @@ function reconcileSetupDraft(current: SetupDraft, providers: ProviderId[]): Setu
   return normalizeSetupDraft({
     providers: nextProviders,
     models: sortModelIds(nextModelIds),
+    reasoningEfforts: current.reasoningEfforts,
     plannerModel: current.plannerModel,
   });
 }
@@ -1060,12 +1075,51 @@ function normalizeSetupDraft(draft: SetupDraft): SetupDraft {
   const plannerModel = draft.plannerModel && models.includes(draft.plannerModel)
     ? draft.plannerModel
     : chooseDefaultPlannerModel(models);
+  const reasoningEfforts = normalizeSetupReasoningEfforts(models, draft.reasoningEfforts);
 
   return {
     providers,
     models,
+    reasoningEfforts,
     plannerModel,
   };
+}
+
+function normalizeSetupReasoningEfforts(modelIds: string[], selected: Record<string, string> = {}): Record<string, string> {
+  const selectedIds = new Set(modelIds);
+  const efforts: Record<string, string> = {};
+
+  for (const model of DEFAULT_MODEL_REGISTRY) {
+    if (!selectedIds.has(model.id) || model.reasoning_efforts.length === 0) {
+      continue;
+    }
+
+    const selectedEffort = selected[model.id];
+    efforts[model.id] =
+      selectedEffort && model.reasoning_efforts.includes(selectedEffort)
+        ? selectedEffort
+        : model.default_reasoning_effort ?? model.reasoning_efforts[0]!;
+  }
+
+  return efforts;
+}
+
+function setupReasoningModels(modelIds: string[]): ModelRegistryEntry[] {
+  const selected = new Set(modelIds);
+
+  return DEFAULT_MODEL_REGISTRY.filter(
+    (model) => selected.has(model.id) && model.reasoning_efforts.length > 0,
+  );
+}
+
+function updateSetupReasoningEffort(draft: SetupDraft, modelId: string, effort: string): SetupDraft {
+  return normalizeSetupDraft({
+    ...draft,
+    reasoningEfforts: {
+      ...draft.reasoningEfforts,
+      [modelId]: effort,
+    },
+  });
 }
 
 function setupPlannerModels(modelIds: string[]): ModelRegistryEntry[] {
@@ -1104,6 +1158,16 @@ function formatScore(score: number | undefined): string {
   return typeof score === "number" ? score.toFixed(2) : "n/a";
 }
 
+function formatReasoningEfforts(efforts: Record<string, string> | undefined): string {
+  const entries = Object.entries(efforts ?? {});
+
+  if (entries.length === 0) {
+    return "defaults";
+  }
+
+  return entries.map(([model, effort]) => `${model}:${effort}`).join(",");
+}
+
 export function InteractiveDashboard({
   dashboard,
   initialView,
@@ -1134,6 +1198,8 @@ export function InteractiveDashboard({
   const [isSelectingChatModel, setIsSelectingChatModel] = useState(false);
   const [chatModelCursor, setChatModelCursor] = useState(0);
   const [chatModelScrollOffset, setChatModelScrollOffset] = useState(0);
+  const [chatModelEffortCandidate, setChatModelEffortCandidate] = useState<string | undefined>();
+  const [chatModelEffortCursor, setChatModelEffortCursor] = useState(0);
   const [slashCommandCursor, setSlashCommandCursor] = useState(0);
   const [slashCommandScrollOffset, setSlashCommandScrollOffset] = useState(0);
   const [isEditingRoot, setIsEditingRoot] = useState(false);
@@ -1144,6 +1210,8 @@ export function InteractiveDashboard({
   const [setupProviderCursor, setSetupProviderCursor] = useState(0);
   const [setupModelProviderCursor, setSetupModelProviderCursor] = useState(0);
   const [setupModelCursor, setSetupModelCursor] = useState(0);
+  const [setupReasoningModelCursor, setSetupReasoningModelCursor] = useState(0);
+  const [setupReasoningEffortCursor, setSetupReasoningEffortCursor] = useState(0);
   const [setupPlannerCursor, setSetupPlannerCursor] = useState(0);
 
   React.useEffect(() => {
@@ -1215,6 +1283,53 @@ export function InteractiveDashboard({
       return;
     }
 
+    if (view === "actions" && chatModelEffortCandidate) {
+      const model = chatModelsForConnectedProvider(dashboardState).find(
+        (candidate) => candidate.id === chatModelEffortCandidate,
+      );
+      const fullModel = DEFAULT_MODEL_REGISTRY.find((candidate) => candidate.id === chatModelEffortCandidate);
+      const efforts = fullModel?.reasoning_efforts ?? [];
+
+      if (key.escape) {
+        setChatModelEffortCandidate(undefined);
+        setIsSelectingChatModel(false);
+        return;
+      }
+
+      if (input.toLowerCase() === "b") {
+        setChatModelEffortCandidate(undefined);
+        setIsSelectingChatModel(true);
+        return;
+      }
+
+      if (key.upArrow) {
+        setChatModelEffortCursor((cursor) => Math.max(cursor - 1, 0));
+        return;
+      }
+
+      if (key.downArrow) {
+        setChatModelEffortCursor((cursor) => Math.min(cursor + 1, Math.max(efforts.length - 1, 0)));
+        return;
+      }
+
+      if (key.return || input === " ") {
+        const effort = efforts[chatModelEffortCursor] ?? fullModel?.default_reasoning_effort;
+
+        if (model) {
+          setChatModelEffortCandidate(undefined);
+          setIsSelectingChatModel(false);
+          void executeAction("planner-model", {
+            plannerModel: model.id,
+            plannerReasoningEffort: effort,
+          });
+        }
+
+        return;
+      }
+
+      return;
+    }
+
     if (view === "actions" && isSelectingChatModel) {
       const models = chatModelsForConnectedProvider(dashboardState);
       const maxCursor = Math.max(models.length - 1, 0);
@@ -1242,8 +1357,7 @@ export function InteractiveDashboard({
         const model = models[Math.min(chatModelCursor, maxCursor)];
 
         if (model) {
-          setIsSelectingChatModel(false);
-          void executeAction("planner-model", { plannerModel: model.id });
+          selectChatModelForPlanning(model);
         }
 
         return;
@@ -1603,8 +1717,32 @@ export function InteractiveDashboard({
 
     setChatModelCursor(nextCursor);
     setChatModelScrollOffset(keepIndexVisible(nextCursor, 0, TUI_MODEL_SELECTOR_VISIBLE_ROWS));
+    setChatModelEffortCandidate(undefined);
+    setChatModelEffortCursor(0);
     setIsSelectingChatModel(true);
     setActionResult(undefined);
+  }
+
+  function selectChatModelForPlanning(model: TuiModelSummary): void {
+    const registryModel = DEFAULT_MODEL_REGISTRY.find((candidate) => candidate.id === model.id);
+    const efforts = registryModel?.reasoning_efforts ?? [];
+
+    if (efforts.length > 1) {
+      const currentEffort =
+        dashboardState.profile.profile?.model_reasoning_efforts[model.id]
+        ?? registryModel?.default_reasoning_effort
+        ?? efforts[0];
+
+      setChatModelEffortCandidate(model.id);
+      setChatModelEffortCursor(Math.max(efforts.findIndex((effort) => effort === currentEffort), 0));
+      return;
+    }
+
+    setIsSelectingChatModel(false);
+    void executeAction("planner-model", {
+      plannerModel: model.id,
+      plannerReasoningEffort: registryModel?.default_reasoning_effort ?? efforts[0],
+    });
   }
 
   function submitActionChatInput(): void {
@@ -1614,22 +1752,13 @@ export function InteractiveDashboard({
     setSlashCommandScrollOffset(0);
 
     if (value.length === 0) {
-      if (isLandingChatSurface({
-        dashboard: dashboardState,
-        actionResult,
-        planChatStep,
-      })) {
-        beginPlanChat();
-        return;
-      }
-
       return;
     }
 
     const slash = resolveTuiSlashCommandInput(value, slashCommandCursor);
 
     if (!slash) {
-      beginPlanChat(value);
+      submitFreeformPlanRequest(value);
       return;
     }
 
@@ -1638,7 +1767,17 @@ export function InteractiveDashboard({
 
   function handleSlashCommand(command: ParsedTuiSlashCommand): void {
     if (command.command === "/plan") {
-      beginPlanChat(command.argument || undefined);
+      if (command.argument.length > 0) {
+        submitFreeformPlanRequest(command.argument);
+        return;
+      }
+
+      setActionResult({
+        actionId: "plan",
+        status: "failed",
+        summary: "Missing planning request.",
+        lines: ["Type the request directly in the chat, or use /plan <brief>."],
+      });
       return;
     }
 
@@ -1660,6 +1799,13 @@ export function InteractiveDashboard({
 
     if (command.command === "/model") {
       if (command.argument.length > 0) {
+        const model = chatModelsForConnectedProvider(dashboardState).find((candidate) => candidate.id === command.argument);
+
+        if (model) {
+          selectChatModelForPlanning(model);
+          return;
+        }
+
         void executeAction("planner-model", { plannerModel: command.argument });
         return;
       }
@@ -1711,9 +1857,7 @@ export function InteractiveDashboard({
 
     if (command.command === "/resume") {
       if (dashboardState.chatDraft && dashboardState.chatDraft.brief) {
-        setPlanChatDraft(dashboardState.chatDraft);
-        setPlanChatStep(firstPlanChatStep(dashboardState.chatDraft));
-        setPlanChatInput("");
+        submitFreeformPlanRequest(dashboardState.chatDraft.brief);
         setActionResult(undefined);
       } else {
         setActionResult({
@@ -1727,6 +1871,28 @@ export function InteractiveDashboard({
     }
 
     setActionResult(buildHelpSlashResult());
+  }
+
+  function submitFreeformPlanRequest(brief: string): void {
+    const answers = buildPlanAnswersFromFreeformRequest(brief, dashboardState);
+    const force = dashboardState.tasks.length > 0;
+    const engine: PlanEngine = "llm";
+
+    setPlanChatInput("");
+    setPlanChatStep("idle");
+    setPlanChatDraft({ brief });
+    setLastPlanAnswers(answers);
+    setLastPlanForce(force);
+    setLastPlanEngine(engine);
+    setLastPlanContinuation(undefined);
+    setPendingConfirmation(undefined);
+    setActionResult(undefined);
+    void executeAction("plan", {
+      planAnswers: answers,
+      planForce: force,
+      planEngine: engine,
+      apply: false,
+    });
   }
 
   function beginPlanChat(initialBrief?: string): void {
@@ -1792,10 +1958,30 @@ export function InteractiveDashboard({
     setSetupProviderCursor(0);
     setSetupModelProviderCursor(0);
     setSetupModelCursor(0);
+    setSetupReasoningModelCursor(0);
+    setSetupReasoningEffortCursor(0);
     setSetupPlannerCursor(0);
     setSetupStep("providers");
     setPendingConfirmation(undefined);
     setActionResult(undefined);
+  }
+
+  function openSetupPlannerStep(draft: SetupDraft): void {
+    const plannerModels = setupPlannerModels(draft.models);
+    const plannerIndex = Math.max(
+      plannerModels.findIndex((model) => model.id === draft.plannerModel),
+      0,
+    );
+
+    setSetupPlannerCursor(plannerIndex);
+    setSetupStep("planner");
+  }
+
+  function setupReasoningEffortIndex(draft: SetupDraft, model: ModelRegistryEntry): number {
+    return Math.max(
+      model.reasoning_efforts.findIndex((effort) => effort === draft.reasoningEfforts[model.id]),
+      0,
+    );
   }
 
   function handleSetupInput(
@@ -1928,13 +2114,66 @@ export function InteractiveDashboard({
           return;
         }
 
-        const plannerModels = setupPlannerModels(setupDraft.models);
-        const plannerIndex = Math.max(
-          plannerModels.findIndex((model) => model.id === setupDraft.plannerModel),
-          0,
-        );
-        setSetupPlannerCursor(plannerIndex);
-        setSetupStep("planner");
+        const reasoningModels = setupReasoningModels(setupDraft.models);
+
+        if (reasoningModels.length > 0) {
+          setSetupReasoningModelCursor(0);
+          setSetupReasoningEffortCursor(setupReasoningEffortIndex(setupDraft, reasoningModels[0]!));
+          setSetupStep("reasoning");
+          setActionResult(undefined);
+          return;
+        }
+
+        openSetupPlannerStep(setupDraft);
+        setActionResult(undefined);
+        return;
+      }
+    }
+
+    if (setupStep === "reasoning") {
+      const models = setupReasoningModels(setupDraft.models);
+      const model = models[setupReasoningModelCursor];
+      const efforts = model?.reasoning_efforts ?? [];
+
+      if (input.toLowerCase() === "b") {
+        if (setupReasoningModelCursor > 0) {
+          const previousCursor = setupReasoningModelCursor - 1;
+          setSetupReasoningModelCursor(previousCursor);
+          setSetupReasoningEffortCursor(setupReasoningEffortIndex(setupDraft, models[previousCursor]!));
+        } else {
+          setSetupStep("models");
+        }
+        return;
+      }
+
+      if (!model || efforts.length === 0) {
+        openSetupPlannerStep(setupDraft);
+        return;
+      }
+
+      if (key.upArrow) {
+        setSetupReasoningEffortCursor((cursor) => Math.max(cursor - 1, 0));
+        return;
+      }
+
+      if (key.downArrow) {
+        setSetupReasoningEffortCursor((cursor) => Math.min(cursor + 1, efforts.length - 1));
+        return;
+      }
+
+      if (key.return || input === " ") {
+        const nextDraft = updateSetupReasoningEffort(setupDraft, model.id, efforts[setupReasoningEffortCursor] ?? efforts[0]!);
+        setSetupDraft(nextDraft);
+
+        if (setupReasoningModelCursor < models.length - 1) {
+          const nextCursor = setupReasoningModelCursor + 1;
+          setSetupReasoningModelCursor(nextCursor);
+          setSetupReasoningEffortCursor(setupReasoningEffortIndex(nextDraft, models[nextCursor]!));
+          setActionResult(undefined);
+          return;
+        }
+
+        openSetupPlannerStep(nextDraft);
         setActionResult(undefined);
         return;
       }
@@ -1944,7 +2183,16 @@ export function InteractiveDashboard({
       const models = setupPlannerModels(setupDraft.models);
 
       if (input.toLowerCase() === "b") {
-        setSetupStep("models");
+        const reasoningModels = setupReasoningModels(setupDraft.models);
+
+        if (reasoningModels.length > 0) {
+          const lastReasoningCursor = Math.max(reasoningModels.length - 1, 0);
+          setSetupReasoningModelCursor(lastReasoningCursor);
+          setSetupReasoningEffortCursor(setupReasoningEffortIndex(setupDraft, reasoningModels[lastReasoningCursor]!));
+          setSetupStep("reasoning");
+        } else {
+          setSetupStep("models");
+        }
         return;
       }
 
@@ -2002,8 +2250,10 @@ export function InteractiveDashboard({
         void executeAction("setup", {
           providers: setupDraft.providers,
           models: setupDraft.models,
+          modelReasoningEfforts: setupDraft.reasoningEfforts,
           plannerProvider,
           plannerModel,
+          plannerReasoningEffort: setupDraft.reasoningEfforts[plannerModel],
         });
       }
     }
@@ -2020,8 +2270,10 @@ export function InteractiveDashboard({
       planAttemptedModels?: string[];
       providers?: ProviderId[];
       models?: string[];
+      modelReasoningEfforts?: Record<string, string>;
       plannerProvider?: ProviderId;
       plannerModel?: string;
+      plannerReasoningEffort?: string;
       apply?: boolean;
     } = {},
   ): Promise<void> {
@@ -2041,8 +2293,10 @@ export function InteractiveDashboard({
         planAttemptedModels: options.planAttemptedModels,
         providers: options.providers,
         models: options.models,
+        modelReasoningEfforts: options.modelReasoningEfforts,
         plannerProvider: options.plannerProvider,
         plannerModel: options.plannerModel,
+        plannerReasoningEffort: options.plannerReasoningEffort,
         apply: options.apply,
       });
       setActionResult(shouldDisplayTuiActionResult(result) ? result : undefined);
@@ -2098,6 +2352,8 @@ export function InteractiveDashboard({
     isSelectingChatModel,
     chatModelCursor,
     chatModelScrollOffset,
+    chatModelEffortCandidate,
+    chatModelEffortCursor,
     slashCommandCursor,
     slashCommandScrollOffset,
     isEditingRoot,
@@ -2108,6 +2364,8 @@ export function InteractiveDashboard({
     setupProviderCursor,
     setupModelProviderCursor,
     setupModelCursor,
+    setupReasoningModelCursor,
+    setupReasoningEffortCursor,
     setupPlannerCursor,
   });
 }
@@ -2130,6 +2388,8 @@ export function BlueprintDashboard({
   isSelectingChatModel,
   chatModelCursor = 0,
   chatModelScrollOffset = 0,
+  chatModelEffortCandidate,
+  chatModelEffortCursor = 0,
   slashCommandCursor = 0,
   slashCommandScrollOffset = 0,
   isEditingRoot,
@@ -2140,6 +2400,8 @@ export function BlueprintDashboard({
   setupProviderCursor = 0,
   setupModelProviderCursor = 0,
   setupModelCursor = 0,
+  setupReasoningModelCursor = 0,
+  setupReasoningEffortCursor = 0,
   setupPlannerCursor = 0,
 }: {
   dashboard: TuiDashboard;
@@ -2159,6 +2421,8 @@ export function BlueprintDashboard({
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
   chatModelScrollOffset?: number;
+  chatModelEffortCandidate?: string;
+  chatModelEffortCursor?: number;
   slashCommandCursor?: number;
   slashCommandScrollOffset?: number;
   isEditingRoot?: boolean;
@@ -2169,6 +2433,8 @@ export function BlueprintDashboard({
   setupProviderCursor?: number;
   setupModelProviderCursor?: number;
   setupModelCursor?: number;
+  setupReasoningModelCursor?: number;
+  setupReasoningEffortCursor?: number;
   setupPlannerCursor?: number;
 }): React.ReactElement {
   const lintStatus = dashboard.lint.errors.length === 0 ? "ok" : "error";
@@ -2217,6 +2483,8 @@ export function BlueprintDashboard({
       isSelectingChatModel,
       chatModelCursor,
       chatModelScrollOffset,
+      chatModelEffortCandidate,
+      chatModelEffortCursor,
       slashCommandCursor,
       slashCommandScrollOffset,
       isEditingRoot,
@@ -2227,6 +2495,8 @@ export function BlueprintDashboard({
       setupProviderCursor,
       setupModelProviderCursor,
       setupModelCursor,
+      setupReasoningModelCursor,
+      setupReasoningEffortCursor,
       setupPlannerCursor,
     }),
     h(KeyHints, {
@@ -2263,6 +2533,8 @@ function ActiveView({
   isSelectingChatModel,
   chatModelCursor,
   chatModelScrollOffset,
+  chatModelEffortCandidate,
+  chatModelEffortCursor,
   slashCommandCursor,
   slashCommandScrollOffset,
   isEditingRoot,
@@ -2273,6 +2545,8 @@ function ActiveView({
   setupProviderCursor,
   setupModelProviderCursor,
   setupModelCursor,
+  setupReasoningModelCursor,
+  setupReasoningEffortCursor,
   setupPlannerCursor,
 }: {
   dashboard: TuiDashboard;
@@ -2293,6 +2567,8 @@ function ActiveView({
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
   chatModelScrollOffset?: number;
+  chatModelEffortCandidate?: string;
+  chatModelEffortCursor?: number;
   slashCommandCursor?: number;
   slashCommandScrollOffset?: number;
   isEditingRoot?: boolean;
@@ -2303,6 +2579,8 @@ function ActiveView({
   setupProviderCursor?: number;
   setupModelProviderCursor?: number;
   setupModelCursor?: number;
+  setupReasoningModelCursor?: number;
+  setupReasoningEffortCursor?: number;
   setupPlannerCursor?: number;
 }): React.ReactElement {
   if (isEditingRoot || !dashboard.setup.initialized) {
@@ -2319,6 +2597,8 @@ function ActiveView({
       setupProviderCursor,
       setupModelProviderCursor,
       setupModelCursor,
+      setupReasoningModelCursor,
+      setupReasoningEffortCursor,
       setupPlannerCursor,
     });
   }
@@ -2356,6 +2636,8 @@ function ActiveView({
       isSelectingChatModel,
       chatModelCursor,
       chatModelScrollOffset,
+      chatModelEffortCandidate,
+      chatModelEffortCursor,
       slashCommandCursor,
       slashCommandScrollOffset,
     });
@@ -2490,6 +2772,8 @@ function SetupView({
   setupProviderCursor = 0,
   setupModelProviderCursor = 0,
   setupModelCursor = 0,
+  setupReasoningModelCursor = 0,
+  setupReasoningEffortCursor = 0,
   setupPlannerCursor = 0,
 }: {
   dashboard: TuiDashboard;
@@ -2504,6 +2788,8 @@ function SetupView({
   setupProviderCursor?: number;
   setupModelProviderCursor?: number;
   setupModelCursor?: number;
+  setupReasoningModelCursor?: number;
+  setupReasoningEffortCursor?: number;
   setupPlannerCursor?: number;
 }): React.ReactElement {
   if (isEditingRoot) {
@@ -2537,7 +2823,7 @@ function SetupView({
         { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
         h(Text, { bold: true }, "Onboarding"),
         h(Text, null, `Current directory: ${dashboard.root}`),
-        h(Text, null, "Configure providers, model pool, and planner before the harness writes files."),
+        h(Text, null, "Configure providers, model pool, reasoning effort, and planner before the harness writes files."),
       ),
       h(SetupStepPanel, {
         setupStep,
@@ -2546,6 +2832,8 @@ function SetupView({
         setupProviderCursor,
         setupModelProviderCursor,
         setupModelCursor,
+        setupReasoningModelCursor,
+        setupReasoningEffortCursor,
         setupPlannerCursor,
       }),
       ...(runningAction === "setup"
@@ -2631,6 +2919,8 @@ function SetupStepPanel({
   setupProviderCursor,
   setupModelProviderCursor,
   setupModelCursor,
+  setupReasoningModelCursor,
+  setupReasoningEffortCursor,
   setupPlannerCursor,
 }: {
   setupStep: SetupStep;
@@ -2639,6 +2929,8 @@ function SetupStepPanel({
   setupProviderCursor: number;
   setupModelProviderCursor: number;
   setupModelCursor: number;
+  setupReasoningModelCursor: number;
+  setupReasoningEffortCursor: number;
   setupPlannerCursor: number;
 }): React.ReactElement {
   if (setupStep === "providers") {
@@ -2652,7 +2944,7 @@ function SetupStepPanel({
       h(
         Text,
         { color: setupProviderCursor === 0 ? "cyan" : undefined, bold: setupProviderCursor === 0 },
-        `${setupProviderCursor === 0 ? ">" : " "} [${allSelected ? "x" : " "}] Select all providers`,
+        `${setupProviderCursor === 0 ? ">" : " "} [${allSelected ? "x" : " "}] ALL PROVIDERS`,
       ),
       ...SETUP_PROVIDER_OPTIONS.map((provider, index) => {
         const cursor = index + 1;
@@ -2669,7 +2961,7 @@ function SetupStepPanel({
             color: setupProviderCursor === cursor ? "cyan" : undefined,
             bold: setupProviderCursor === cursor,
           },
-          `${setupProviderCursor === cursor ? ">" : " "} [${selected ? "x" : " "}] ${PROVIDER_LABELS[provider]} | ${status}`,
+          `${setupProviderCursor === cursor ? ">" : " "} [${selected ? "x" : " "}] ${PROVIDER_DISPLAY_NAMES[provider]} | ${status}`,
         );
       }),
       h(Text, { color: "gray" }, "Space toggles, a selects all, Enter continues."),
@@ -2688,7 +2980,7 @@ function SetupStepPanel({
       h(
         Text,
         { bold: true },
-        `2. Model Pool ${provider ? `(${setupModelProviderCursor + 1}/${setupDraft.providers.length} ${PROVIDER_LABELS[provider]})` : ""}`,
+        `2. Model Pool ${provider ? `(${setupModelProviderCursor + 1}/${setupDraft.providers.length} ${PROVIDER_DISPLAY_NAMES[provider]})` : ""}`,
       ),
       h(Text, null, "Choose exact models available for routing."),
       h(
@@ -2714,13 +3006,42 @@ function SetupStepPanel({
     );
   }
 
+  if (setupStep === "reasoning") {
+    const models = setupReasoningModels(setupDraft.models);
+    const model = models[setupReasoningModelCursor];
+    const efforts = model?.reasoning_efforts ?? [];
+
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(
+        Text,
+        { bold: true },
+        `3. Reasoning Effort ${model ? `(${setupReasoningModelCursor + 1}/${models.length})` : ""}`,
+      ),
+      h(Text, null, model ? `${model.id} | ${PROVIDER_DISPLAY_NAMES[model.provider]}` : "No selected model exposes effort options."),
+      ...efforts.map((effort, index) =>
+        h(
+          Text,
+          {
+            key: effort,
+            color: setupReasoningEffortCursor === index ? "cyan" : undefined,
+            bold: setupReasoningEffortCursor === index,
+          },
+          `${setupReasoningEffortCursor === index ? ">" : " "} [${setupDraft.reasoningEfforts[model!.id] === effort ? "x" : " "}] ${effort}${model?.default_reasoning_effort === effort ? " default" : ""}`,
+        ),
+      ),
+      h(Text, { color: "gray" }, "Up/down selects effort, Enter confirms this model, b goes back."),
+    );
+  }
+
   if (setupStep === "planner") {
     const models = setupPlannerModels(setupDraft.models);
 
     return h(
       Box,
       { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-      h(Text, { bold: true }, "3. Planner Model"),
+      h(Text, { bold: true }, "4. Planner Model"),
       h(Text, null, "Choose the model that will run the planning conversation."),
       ...models.map((model, index) =>
         h(
@@ -2730,7 +3051,7 @@ function SetupStepPanel({
             color: setupPlannerCursor === index ? "cyan" : undefined,
             bold: setupPlannerCursor === index,
           },
-          `${setupPlannerCursor === index ? ">" : " "} ${model.id} | ${PROVIDER_LABELS[model.provider]} | planning ${formatScore(model.task_fit.planning)}`,
+          `${setupPlannerCursor === index ? ">" : " "} ${model.id} | ${PROVIDER_DISPLAY_NAMES[model.provider]} | effort ${setupDraft.reasoningEfforts[model.id] ?? "default"} | planning ${formatScore(model.task_fit.planning)}`,
         ),
       ),
       h(Text, { color: "gray" }, "Up/down selects, b goes back, Enter confirms."),
@@ -2743,11 +3064,12 @@ function SetupStepPanel({
   return h(
     Box,
     { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "4. Confirm Setup"),
+    h(Text, { bold: true }, "5. Confirm Setup"),
     h(Text, null, `Status: ${plannerProvider ? "ready to write" : "needs planner model"}`),
     h(Text, null, `Providers: ${setupDraft.providers.join(",")}`),
     h(Text, null, `Models: ${setupDraft.models.length} selected`),
-    h(Text, null, `Planner: ${plannerProvider ?? "unknown"}/${plannerModel}`),
+    h(Text, null, `Reasoning: ${Object.keys(setupDraft.reasoningEfforts).length} configured`),
+    h(Text, null, `Planner: ${plannerProvider ?? "unknown"}/${plannerModel} effort ${setupDraft.reasoningEfforts[plannerModel] ?? "default"}`),
     h(Text, { color: "gray" }, "Press y or Enter to write .blueprint files, b/n to revise."),
   );
 }
@@ -3043,6 +3365,8 @@ function ActionsView({
   isSelectingChatModel,
   chatModelCursor = 0,
   chatModelScrollOffset = 0,
+  chatModelEffortCandidate,
+  chatModelEffortCursor = 0,
   slashCommandCursor = 0,
   slashCommandScrollOffset = 0,
 }: {
@@ -3061,6 +3385,8 @@ function ActionsView({
   isSelectingChatModel?: boolean;
   chatModelCursor?: number;
   chatModelScrollOffset?: number;
+  chatModelEffortCandidate?: string;
+  chatModelEffortCursor?: number;
   slashCommandCursor?: number;
   slashCommandScrollOffset?: number;
 }): React.ReactElement {
@@ -3083,6 +3409,8 @@ function ActionsView({
       isSelectingChatModel,
       chatModelCursor,
       chatModelScrollOffset,
+      chatModelEffortCandidate,
+      chatModelEffortCursor,
       slashCommandCursor,
       slashCommandScrollOffset,
       planChatStep,
@@ -3105,6 +3433,8 @@ function ActionsView({
     isSelectingChatModel,
     chatModelCursor,
     chatModelScrollOffset,
+    chatModelEffortCandidate,
+    chatModelEffortCursor,
     slashCommandCursor,
     slashCommandScrollOffset,
     actionResult,
@@ -3608,6 +3938,58 @@ function buildPlanAnswersFromDraft(draft: PlanChatDraft): PlanAnswers {
     riskLevel: draft.riskLevel ?? 5,
     notes: uniqueStrings([...(draft.brief ? [`Initial brief: ${draft.brief}`] : []), ...(draft.notes ?? [])]),
   };
+}
+
+export function buildPlanAnswersFromFreeformRequest(brief: string, dashboard: TuiDashboard): PlanAnswers {
+  const normalized = brief.replace(/\s+/gu, " ").trim();
+  const inferred = truncateLine(normalized, 180);
+  const validationCommands = inferTuiValidationCommands(dashboard);
+
+  return {
+    projectSummary: inferred,
+    objective: inferred,
+    successCriteria: ["Planner returns a task graph and exact model assignments for the requested work."],
+    constraints: [],
+    outOfScope: [],
+    targetPaths: [],
+    validationCommands,
+    riskLevel: inferTuiRiskLevel(normalized),
+    notes: [
+      "Initial user request was submitted directly from the chat surface.",
+      "Do not ask the user to fill a form before planning. Infer missing fields conservatively and ask only if truly blocked.",
+      `Initial brief: ${normalized}`,
+    ],
+  };
+}
+
+function inferTuiValidationCommands(dashboard: TuiDashboard): string[] {
+  const scripts = dashboard.doctor.scripts;
+
+  if (scripts.test) {
+    return ["corepack pnpm test"];
+  }
+
+  if (scripts.check) {
+    return ["corepack pnpm check"];
+  }
+
+  if (dashboard.doctor.stack.includes("typescript")) {
+    return ["corepack pnpm typecheck", "corepack pnpm test"];
+  }
+
+  return [];
+}
+
+function inferTuiRiskLevel(brief: string): number {
+  if (/(auth|pagamento|payment|infra|database|banco|seguran|security|deploy|prod|migra)/iu.test(brief)) {
+    return 8;
+  }
+
+  if (/(refator|arquitet|fluxo|integra|frontend|backend|api|modelo|provider)/iu.test(brief)) {
+    return 6;
+  }
+
+  return 4;
 }
 
 function parsePlanListInput(value: string): string[] {

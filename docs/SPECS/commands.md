@@ -216,14 +216,19 @@ MVP atual:
 - filtra slash commands quando o input comeca com `/`, navega sugestoes com
   `↑↓` e completa a opcao selecionada com `Tab`;
 - `Tab` fora de slash command abre o seletor do modelo usado pelo chat/planner;
+  modelos com reasoning configuravel abrem uma segunda etapa para escolher o
+  esforco antes de persistir;
 - `/model [id]` troca `planner_model` para um modelo disponivel no CLI/provider
-  conectado; se o modelo nao estiver no pool ativo, ele e adicionado ao pool;
-- mostra overlays de foco para perguntas de planejamento, confirmacoes, model
-  pool e revise;
+  conectado; se o modelo suportar reasoning configuravel, abre a etapa de
+  esforco e grava `planner_reasoning_effort`/`model_reasoning_efforts`; se o
+  modelo nao estiver no pool ativo, ele e adicionado ao pool;
+- mostra overlays de foco para confirmacoes, seletor de modelo, seletor de
+  reasoning effort, model pool e revise;
 - texto livre no chat inicia planejamento; `/plan [brief]` faz o mesmo de forma
   explicita;
-- o intake e adaptativo: brief curto aprofunda perguntas; brief rico pula
-  campos derivaveis e pede apenas lacunas estruturais;
+- o texto livre e enviado diretamente ao planner LLM; estrutura de requisitos
+  fica no prompt interno, e perguntas ao usuario so devem acontecer quando o
+  planner estiver realmente bloqueado;
 - o planejamento usa o PlannerEngine LLM do profile, mantendo o modo
   deterministico apenas para fallback, automacao e testes;
 - quando o PlannerEngine LLM falha dentro da TUI, o resultado sugere o proximo

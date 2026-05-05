@@ -629,6 +629,7 @@ async function buildPlan(
     const result = await runLlmPlannerEngine({
       provider: plannerModel.provider,
       model: plannerModel.id,
+      reasoningEffort: resolvePlannerReasoningEffort(context, plannerModel.id),
       prompt,
       parseDraft: parsePlannerDraft,
       runner: options.plannerPromptRunner,
@@ -851,6 +852,14 @@ function resolvePlannerExecutionModel(context: PlanContext, options: GeneratePla
   return model;
 }
 
+function resolvePlannerReasoningEffort(context: PlanContext, modelId: string): string | undefined {
+  return (
+    context.profile.planner_reasoning_effort
+    ?? context.profile.model_reasoning_efforts[modelId]
+    ?? context.registry.find((model) => model.id === modelId)?.default_reasoning_effort
+  );
+}
+
 function isNonPlannerFallbackError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
 
@@ -896,6 +905,8 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     output_price_usd_per_mtok: model.output_price_usd_per_mtok,
     reasoning_efforts: model.reasoning_efforts,
     default_reasoning_effort: model.default_reasoning_effort,
+    selected_reasoning_effort:
+      context.profile.model_reasoning_efforts[model.id] ?? model.default_reasoning_effort ?? model.reasoning_efforts[0],
     latency_class: model.latency_class,
     cost_class: model.cost_class,
     routing_tags: model.routing_tags,
@@ -910,8 +921,10 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     profile: {
       planner_provider: context.profile.planner_provider,
       planner_model: context.profile.planner_model,
+      planner_reasoning_effort: context.profile.planner_reasoning_effort,
       available_providers: context.profile.available_providers,
       available_models: context.profile.available_models,
+      model_reasoning_efforts: context.profile.model_reasoning_efforts,
       excluded_providers: context.profile.excluded_providers,
       fallback_requires_confirmation: context.profile.routing.require_confirmation_for_fallback,
     },
@@ -972,6 +985,7 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     "- acceptable_alternatives may contain up to 3 active model ids that can execute the same task if the primary model is unavailable.",
     "- Prefer the smallest active model that clears the task risk, context, and benchmark needs.",
     "- Use benchmark_scores, routing_tags, task_fit, reasoning_efforts, default_reasoning_effort, context_window, latency_class, and prices when choosing a model.",
+    "- Treat selected_reasoning_effort as the configured execution effort for that exact model.",
     "- If a task is read-only, set allowed_paths to [] and say read-only in context_rules.",
     "- If a task edits files, allowed_paths must be the narrowest relative paths or globs needed.",
     "- Prefer small, isolated handoffs with explicit allowed_paths and acceptance_contract.",

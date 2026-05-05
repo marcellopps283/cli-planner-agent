@@ -80,8 +80,10 @@ export const PlannerProfileSchema = z.object({
   name: z.string().min(1).default("default"),
   planner_provider: ProviderIdSchema,
   planner_model: z.string().min(1),
+  planner_reasoning_effort: z.string().min(1).optional(),
   available_providers: z.array(ProviderIdSchema).min(1),
   available_models: z.array(z.string().min(1)).default([]),
+  model_reasoning_efforts: z.record(z.string(), z.string().min(1)).default({}),
   excluded_providers: z.array(ProviderIdSchema).default([]),
   model_registry: z
     .object({

@@ -12,6 +12,7 @@ const DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS = 120_000;
 export interface ProviderPromptOptions {
   provider: ProviderId;
   model?: string;
+  reasoningEffort?: string;
   prompt: string;
   timeoutMs?: number;
 }
@@ -98,6 +99,7 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
     [
       "exec",
       ...providerPromptModelArgs("openai", options.model),
+      ...providerPromptReasoningArgs("openai", options.reasoningEffort),
       "--skip-git-repo-check",
       "--ephemeral",
       "--sandbox",
@@ -138,7 +140,7 @@ async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Pro
     [
       ...providerPromptModelArgs("google", options.model),
       "-p",
-      options.prompt,
+      promptWithReasoningEffort(options.prompt, options.reasoningEffort),
       "--skip-trust",
       "--output-format",
       "json",
@@ -177,6 +179,7 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
       "-p",
       options.prompt,
       ...providerPromptModelArgs("anthropic", options.model),
+      ...providerPromptReasoningArgs("anthropic", options.reasoningEffort),
       "--output-format",
       "json",
       "--permission-mode",
@@ -211,6 +214,30 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
     response: response.trim(),
     rawOutput,
   };
+}
+
+export function providerPromptReasoningArgs(provider: ProviderId, effort?: string): string[] {
+  if (!effort) {
+    return [];
+  }
+
+  if (provider === "anthropic") {
+    return ["--effort", effort];
+  }
+
+  if (provider === "openai" && effort !== "none") {
+    return ["-c", `model_reasoning_effort="${effort}"`];
+  }
+
+  return [];
+}
+
+function promptWithReasoningEffort(prompt: string, effort?: string): string {
+  if (!effort) {
+    return prompt;
+  }
+
+  return [`Requested reasoning effort for this run: ${effort}.`, prompt].join("\n\n");
 }
 
 function parseProviderJson(rawOutput: string): Record<string, unknown> {

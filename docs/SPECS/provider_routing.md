@@ -124,6 +124,7 @@ schema_version: "1.0"
 name: default
 planner_provider: openai
 planner_model: gpt-5.5
+planner_reasoning_effort: xhigh
 available_providers:
   - openai
   - google
@@ -135,6 +136,14 @@ available_models:
   - gemini-3.1-pro-preview-customtools
   - gemini-3-flash-preview
   - gemini-3.1-flash-lite-preview
+model_reasoning_efforts:
+  gpt-5.5: xhigh
+  gpt-5.4: high
+  gpt-5.4-mini: medium
+  gemini-3.1-pro-preview: high
+  gemini-3.1-pro-preview-customtools: high
+  gemini-3-flash-preview: medium
+  gemini-3.1-flash-lite-preview: medium
 excluded_providers:
   - anthropic
 model_registry:

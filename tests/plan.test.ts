@@ -365,8 +365,13 @@ function makePlanContext(): PlanContext {
       name: "default",
       planner_provider: "google",
       planner_model: "gemini-3.1-pro-preview",
+      planner_reasoning_effort: "thinking_budget:-1",
       available_providers: ["openai", "google"],
       available_models: ["gpt-5.5", "gemini-3.1-pro-preview"],
+      model_reasoning_efforts: {
+        "gpt-5.5": "xhigh",
+        "gemini-3.1-pro-preview": "thinking_budget:-1",
+      },
       excluded_providers: ["anthropic"],
       model_registry: {
         source: "bundled",
