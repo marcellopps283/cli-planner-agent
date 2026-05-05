@@ -146,7 +146,7 @@ export function WorkbenchFeed({
 export function PlanningProgressBlock({ planChatDraft }: { planChatDraft: PlanChatDraft }): React.ReactElement {
   return h(
     Box,
-    { borderStyle: "single", borderColor: "green", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Planning Intake"),
     ...adaptivePlanChatSteps(planChatDraft).map((step) =>
       h(Text, { key: step }, `${planStepComplete(planChatDraft, step) ? "[x]" : "[ ]"} ${PLAN_STEP_PROMPTS[step]}`),
@@ -159,7 +159,7 @@ export function PlanPreviewBlock({ actionResult }: { actionResult: TuiActionResu
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "green", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Plan Preview Ready"),
     h(Text, null, actionResult.summary),
     ...(taskLines.length > 0
@@ -214,7 +214,6 @@ export function WorkbenchInputPanel({
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
 }): React.ReactElement {
-  const profile = dashboard.profile.profile;
   const activeText = planChatStep !== "idle"
     ? planChatInput
     : isEditingRevise
@@ -225,10 +224,9 @@ export function WorkbenchInputPanel({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
-    h(Text, null, h(Text, { color: "cyan" }, "Planner "), h(Text, { bold: true }, profile?.planner_model ?? "missing"), h(Text, { color: "gray" }, ` ${profile?.planner_provider ?? "provider"}`)),
+    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
     h(Text, { color: "gray" }, planChatStep !== "idle" ? PLAN_STEP_PROMPTS[planChatStep] : "Type a request, or use /commands."),
-    h(Text, null, h(Text, { color: "cyan" }, "> "), activeText),
+    h(Text, null, h(Text, { color: "blue" }, "❯ "), activeText, h(Text, { inverse: true }, " ")),
   );
 }
 
@@ -289,3 +287,4 @@ export function WorkbenchSidebar({
     ...taskLines.map((line) => h(Text, { key: line, color: line.startsWith("[x]") ? "green" : "gray" }, truncateLine(line, 30))),
   );
 }
+

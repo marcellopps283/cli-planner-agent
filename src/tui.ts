@@ -3245,8 +3245,7 @@ function isLandingChatSurface({
   planChatStep?: PlanChatStep;
 }): boolean {
   return (
-    !dashboard.chatDraft?.brief
-    && actionResult?.actionId !== "plan"
+    actionResult?.actionId !== "plan"
     && planChatStep === "idle"
   );
 }
