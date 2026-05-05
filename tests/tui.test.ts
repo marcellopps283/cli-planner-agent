@@ -415,12 +415,21 @@ describe("blueprint tui", () => {
       recordHistory: false,
     });
     const dashboard = await loadTuiDashboard({ root });
-    const output = renderTuiDashboardToString(dashboard, "actions");
+    const firstScreenOutput = renderTuiDashboardToString(dashboard, "actions");
+    const output = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        hasStartedChatWorkflow: true,
+      }),
+    );
 
     expect(result.status).toBe("ok");
     expect(result.summary).toContain("Understanding project");
     expect(result.lines).toContain("check done understand_request Entender pedido inicial");
     expect(dashboard.agentState?.checklist[0]?.status).toBe("done");
+    expect(firstScreenOutput).toContain("Ask anything");
+    expect(firstScreenOutput).not.toContain("Planner Agent State");
     expect(output).toContain("Planner Agent State");
     expect(output).toContain("[x] Entender pedido inicial");
     expect(output).toContain("[~] Validar escopo do harness");

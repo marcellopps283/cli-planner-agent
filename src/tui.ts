@@ -1339,6 +1339,7 @@ export function InteractiveDashboard({
   const [planChatDraft, setPlanChatDraft] = useState<PlanChatDraft>(() => dashboard.chatDraft || {});
   const [planChatStep, setPlanChatStep] = useState<PlanChatStep>("idle");
   const [planChatInput, setPlanChatInput] = useState("");
+  const [hasStartedChatWorkflow, setHasStartedChatWorkflow] = useState(false);
   const [lastPlanAnswers, setLastPlanAnswers] = useState<PlanAnswers | undefined>();
   const [lastPlanForce, setLastPlanForce] = useState(false);
   const [lastPlanEngine, setLastPlanEngine] = useState<PlanEngine>("llm");
@@ -2024,6 +2025,7 @@ export function InteractiveDashboard({
   }
 
   function submitFreeformPlanRequest(brief: string): void {
+    setHasStartedChatWorkflow(true);
     setPlanChatInput("");
     setPlanChatStep("idle");
     setPlanChatDraft({ brief });
@@ -2487,6 +2489,7 @@ export function InteractiveDashboard({
     isEditingRevise,
     reviseInput,
     chatCommandInput,
+    hasStartedChatWorkflow,
     planChatStep,
     planChatDraft,
     planChatInput,
@@ -2523,6 +2526,7 @@ export function BlueprintDashboard({
   isEditingRevise,
   reviseInput,
   chatCommandInput = "",
+  hasStartedChatWorkflow = false,
   planChatStep = "idle",
   planChatDraft = {},
   planChatInput = "",
@@ -2556,6 +2560,7 @@ export function BlueprintDashboard({
   isEditingRevise?: boolean;
   reviseInput?: string;
   chatCommandInput?: string;
+  hasStartedChatWorkflow?: boolean;
   planChatStep?: PlanChatStep;
   planChatDraft?: PlanChatDraft;
   planChatInput?: string;
@@ -2618,6 +2623,7 @@ export function BlueprintDashboard({
       isEditingRevise,
       reviseInput,
       chatCommandInput,
+      hasStartedChatWorkflow,
       planChatStep,
       planChatDraft,
       planChatInput,
@@ -2668,6 +2674,7 @@ function ActiveView({
   isEditingRevise,
   reviseInput,
   chatCommandInput,
+  hasStartedChatWorkflow,
   planChatStep,
   planChatDraft,
   planChatInput,
@@ -2702,6 +2709,7 @@ function ActiveView({
   isEditingRevise?: boolean;
   reviseInput?: string;
   chatCommandInput?: string;
+  hasStartedChatWorkflow?: boolean;
   planChatStep?: PlanChatStep;
   planChatDraft?: PlanChatDraft;
   planChatInput?: string;
@@ -2771,6 +2779,7 @@ function ActiveView({
       isEditingRevise,
       reviseInput,
       chatCommandInput,
+      hasStartedChatWorkflow,
       planChatStep,
       planChatDraft,
       planChatInput,
@@ -3500,6 +3509,7 @@ function ActionsView({
   isEditingRevise,
   reviseInput,
   chatCommandInput = "",
+  hasStartedChatWorkflow = false,
   planChatStep = "idle",
   planChatDraft = {},
   planChatInput = "",
@@ -3520,6 +3530,7 @@ function ActionsView({
   isEditingRevise?: boolean;
   reviseInput?: string;
   chatCommandInput?: string;
+  hasStartedChatWorkflow?: boolean;
   planChatStep?: PlanChatStep;
   planChatDraft?: PlanChatDraft;
   planChatInput?: string;
@@ -3534,11 +3545,10 @@ function ActionsView({
   slashCommandScrollOffset?: number;
 }): React.ReactElement {
   const landing = isLandingChatSurface({
-    dashboard,
     actionResult,
     runningAction,
+    hasStartedChatWorkflow,
     planChatStep,
-    planChatDraft,
   });
 
   if (landing) {
@@ -3754,25 +3764,22 @@ export function chatRuntimeStatus({
 }
 
 function isLandingChatSurface({
-  dashboard,
   actionResult,
   runningAction,
+  hasStartedChatWorkflow = false,
   planChatStep = "idle",
-  planChatDraft = {},
 }: {
-  dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
+  hasStartedChatWorkflow?: boolean;
   planChatStep?: PlanChatStep;
-  planChatDraft?: PlanChatDraft;
 }): boolean {
   return (
     actionResult?.actionId !== "plan"
     && actionResult?.actionId !== "agent-workflow"
     && runningAction !== "agent-workflow"
-    && !dashboard.agentState
     && planChatStep === "idle"
-    && Object.keys(planChatDraft).length === 0
+    && !hasStartedChatWorkflow
   );
 }
 
