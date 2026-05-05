@@ -46,7 +46,7 @@ export function LandingSurface({
 
   return h(
     Box,
-    { flexDirection: "column", minHeight, flexGrow: 1 },
+    { flexDirection: "column", flexGrow: 1 },
     h(
       Box,
       { alignItems: "center", flexDirection: "column", paddingTop: 2, paddingBottom: 1 },
@@ -110,9 +110,8 @@ export function LandingSurface({
       h(ActionResultPanel, { result: actionResult }),
       h(
         Box,
-        { paddingX: 1, paddingBottom: 1, justifyContent: "space-between" },
+        { paddingX: 1, paddingBottom: 1 },
         h(Text, null, h(Text, { color: "yellow" }, "* Tip "), h(Text, { color: "gray" }, "Use /providers, /models, /auth, or /registry before the first request.")),
-        h(Text, { color: "gray" }, "type / for commands"),
       ),
       h(OpenCodePathBar, { dashboard }),
     )

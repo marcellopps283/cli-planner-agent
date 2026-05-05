@@ -1251,6 +1251,30 @@ export function InteractiveDashboard({
         return;
       }
 
+      if (key.upArrow) {
+        const steps = adaptivePlanChatSteps(planChatDraft);
+        const index = steps.indexOf(planChatStep);
+        if (index > 0) {
+          const prevStep = steps[index - 1]!;
+          setPlanChatStep(prevStep);
+          const prevVal = planChatDraft[prevStep];
+          setPlanChatInput(Array.isArray(prevVal) ? prevVal.join(", ") : (prevVal?.toString() || ""));
+        }
+        return;
+      }
+
+      if (key.downArrow) {
+        const steps = adaptivePlanChatSteps(planChatDraft);
+        const index = steps.indexOf(planChatStep);
+        if (index !== -1 && index < steps.length - 1) {
+          const nextStep = steps[index + 1]!;
+          setPlanChatStep(nextStep);
+          const nextVal = planChatDraft[nextStep];
+          setPlanChatInput(Array.isArray(nextVal) ? nextVal.join(", ") : (nextVal?.toString() || ""));
+        }
+        return;
+      }
+
       if (key.backspace || key.delete) {
         setPlanChatInput((current) => current.slice(0, -1));
         return;
@@ -2109,7 +2133,7 @@ export function BlueprintDashboard({
 
   return h(
     Box,
-    { flexDirection: "column", gap: 1 },
+    { flexDirection: "column", minHeight: process.stdout.rows || 24 },
     ...(!chatSurface
       ? [
           h(
