@@ -18,6 +18,7 @@ import {
   parseTuiView,
   renderTuiDashboardToString,
   runTuiAction,
+  shouldDisplayTuiActionResult,
   TuiSessionRecordSchema,
 } from "../src/tui.js";
 
@@ -268,6 +269,25 @@ describe("blueprint tui", () => {
       argument: "unknown /unknown",
     });
     expect(getSlashCommandSuggestions("/mo").map((command) => command.command)).toEqual(["/model", "/models"]);
+  });
+
+  it("does not render a persistent success panel for chat model switches", () => {
+    expect(
+      shouldDisplayTuiActionResult({
+        actionId: "planner-model",
+        status: "ok",
+        summary: "Chat model switched.",
+        lines: [],
+      }),
+    ).toBe(false);
+    expect(
+      shouldDisplayTuiActionResult({
+        actionId: "planner-model",
+        status: "failed",
+        summary: "Missing planner model.",
+        lines: [],
+      }),
+    ).toBe(true);
   });
 
   it("renders slash autocomplete and focused overlays", async () => {

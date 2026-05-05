@@ -2045,7 +2045,7 @@ export function InteractiveDashboard({
         plannerModel: options.plannerModel,
         apply: options.apply,
       });
-      setActionResult(result);
+      setActionResult(shouldDisplayTuiActionResult(result) ? result : undefined);
 
       if (result.actionId === "revise" && result.change) {
         setLastReviseChange(result.change);
@@ -3779,6 +3779,10 @@ export function currentFocusOverlay({
   }
 
   return undefined;
+}
+
+export function shouldDisplayTuiActionResult(result: TuiActionResult): boolean {
+  return !(result.actionId === "planner-model" && result.status === "ok");
 }
 
 function mainMenuIndexForView(view: TuiView): number {

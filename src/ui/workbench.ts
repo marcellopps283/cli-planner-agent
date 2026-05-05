@@ -94,6 +94,7 @@ export function WorkbenchSurface({
         }),
         h(ActionResultPanel, { result: actionResult }),
         h(WorkbenchInputPanel, {
+          dashboard,
           chatCommandInput,
           planChatStep,
           planChatInput,
@@ -207,6 +208,7 @@ export function EmptyWorkbenchBlock(): React.ReactElement {
 }
 
 export function WorkbenchInputPanel({
+  dashboard,
   chatCommandInput,
   planChatStep,
   planChatInput,
@@ -215,6 +217,7 @@ export function WorkbenchInputPanel({
   isEditingModelPool,
   modelPoolInput,
 }: {
+  dashboard: TuiDashboard;
   chatCommandInput: string;
   planChatStep: PlanChatStep;
   planChatInput: string;
@@ -223,6 +226,8 @@ export function WorkbenchInputPanel({
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
 }): React.ReactElement {
+  const profile = dashboard.profile.profile;
+  const planner = profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing planner";
   const activeText = planChatStep !== "idle"
     ? planChatInput
     : isEditingRevise
@@ -234,6 +239,7 @@ export function WorkbenchInputPanel({
   return h(
     Box,
     { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
+    h(Text, null, h(Text, { color: "gray" }, "Planner "), h(Text, { bold: true }, planner)),
     h(Text, { color: "gray" }, planChatStep !== "idle" ? PLAN_STEP_PROMPTS[planChatStep] : "Type a request, or use /commands."),
     h(Text, null, h(Text, { color: "blue" }, "❯ "), activeText, h(Text, { inverse: true }, " ")),
   );
