@@ -23,7 +23,8 @@ O layout que interessa para Blueprint e:
 - entrada inicial centrada com logotipo, caixa de prompt, modo/modelo e dica;
 - transicao para uma tela de trabalho apos a primeira mensagem;
 - painel lateral persistente com contexto, providers, stack, todo e quota;
-- comandos slash com autocomplete;
+- comandos slash com autocomplete navegavel por setas;
+- seletor de modelo de conversa invocado por `tab`;
 - overlays para selecao, configuracao e confirmacao;
 - feed principal com cards de tarefas/background, plano, progresso e input
   inferior.
@@ -31,11 +32,15 @@ O layout que interessa para Blueprint e:
 ## Decisoes para o Blueprint
 
 - `blueprint` abre em `Plan / Actions`, nao no `Main Menu`.
+- Em TTY real, a TUI usa alternate screen para ocupar a janela do terminal em
+  vez de renderizar abaixo do prompt do shell.
 - `Main Menu` e uma camada sob demanda via `/menu` ou `--view main`.
 - Antes da primeira solicitacao, a tela mostra `blueprint`, `Ask anything...`,
   modo `Plan`, planner primario, dica e atalhos `tab`/`ctrl+p`.
 - Depois da primeira mensagem, a tela vira workbench com feed principal, input
   inferior e sidebar de `Context`, `MCP`, `LSP` e `Todo`.
+- `tab` abre os modelos disponiveis no provider/CLI conectado ao planner atual;
+  `/model [id]` troca o modelo usado no chat.
 - O feed usa cards textuais para intake, preview de tarefas e handoffs ja
   gerados.
 - Quota real ainda e `n/a`, mas o slot da sidebar fica reservado.

@@ -207,11 +207,13 @@ status local de auth quando o CLI expoe essa informacao sem chamada de modelo.
 
 Na tela `Plan / Actions`, a TUI funciona como um chat operacional. O usuario
 digita uma descricao livre para iniciar planejamento ou usa slash commands como
-`/plan`, `/providers`, `/models`, `/registry`, `/lint`, `/export`, `/revise`,
-`/auth` e `/help`. A status line mostra `ready`, `planning`, `running`,
+`/plan`, `/providers`, `/model`, `/models`, `/registry`, `/lint`, `/export`,
+`/revise`, `/auth` e `/help`. `Tab` abre o seletor do modelo de conversa quando
+o input nao esta em slash command; dentro de `/`, `Tab` completa a opcao
+selecionada e `↑↓` navega pelas opcoes. A status area mostra `ready`, `planning`, `running`,
 `needs-confirmation` ou `blocked`, junto do planner, tamanho do model pool e
 campo de quota na sidebar. O chat filtra slash commands enquanto o usuario
-digita `/`, completa o primeiro match com `Tab` e usa overlays para perguntas,
+digita `/` e usa overlays para perguntas,
 confirmacoes, model pool e revise. O feed mostra cards com checklist de
 perguntas, preview de tarefas ou handoffs ja gerados. O intake e adaptativo:
 briefs curtos abrem perguntas de aprofundamento, enquanto textos ricos pulam

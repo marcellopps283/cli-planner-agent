@@ -60,10 +60,14 @@ automacao, smoke e debugging.
   planejamento no feed com checklist/progresso das perguntas, preview ou
   handoffs gerados.
 - Texto livre ou `/plan [brief]` inicia o planejamento; `/providers`,
-  `/models`, `/registry`, `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`,
-  `/help` e `/menu` mantem o usuario em uma unica frente operacional.
-- O autocomplete visual filtra comandos enquanto o input comeca com `/`, e
-  `Tab` completa a primeira sugestao.
+  `/model`, `/models`, `/registry`, `/lint`, `/export`, `/revise`, `/auth`,
+  `/auth-live`, `/help` e `/menu` mantem o usuario em uma unica frente
+  operacional.
+- O autocomplete visual filtra comandos enquanto o input comeca com `/`; `↑↓`
+  navega pelas sugestoes e `Tab` completa a opcao selecionada.
+- `Tab` sem slash abre o seletor do modelo de conversa, listando os modelos do
+  provider/CLI conectado ao planner atual e persistindo a escolha em
+  `profile.yaml`.
 - Perguntas, confirmacoes e edicoes guiadas aparecem em overlays de foco em vez
   de competirem com o painel principal do chat.
 - O chat comeca por um brief livre e depois pede os campos estruturados minimos

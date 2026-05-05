@@ -28,6 +28,7 @@ import {
   loadPlannerProfile,
   parseModelIds,
   updatePlannerProfileModels,
+  updatePlannerProfilePlannerModel,
   type PlannerProfileValidationResult,
 } from "./profile.js";
 import { DEFAULT_PROVIDER_ADAPTERS, checkProvider, checkProviderAuth, type ProviderDoctorResult } from "./providers.js";
@@ -93,6 +94,7 @@ export const TUI_ACTION_IDS = [
   "setup",
   "plan",
   "model-pool",
+  "planner-model",
   "registry-refresh",
   "lint",
   "export",
@@ -148,6 +150,11 @@ export const TUI_SLASH_COMMANDS = [
     command: "/providers",
     usage: "/providers",
     description: "show active providers, planner, and model pool",
+  },
+  {
+    command: "/model",
+    usage: "/model [id]",
+    description: "switch the chat/planner model",
   },
   {
     command: "/models",
@@ -399,7 +406,7 @@ export async function runTuiDashboard(options: TuiDashboardOptions): Promise<voi
   const instance = render(element, {
     exitOnCtrlC: true,
     interactive: true,
-    alternateScreen: false,
+    alternateScreen: true,
   });
 
   await instance.waitUntilExit();
@@ -446,6 +453,15 @@ export function getTuiActions(dashboard: TuiDashboard): TuiAction[] {
       label: "Configure Model Pool",
       command: 'profile available_models "<ids|all>"',
       description: "Update profile.yaml with exact model ids for routing.",
+      enabled: profileReady,
+      requiresConfirmation: false,
+      requiresInput: true,
+    },
+    {
+      id: "planner-model",
+      label: "Switch Chat Model",
+      command: 'profile planner_model "<id>"',
+      description: "Change the model used by the interactive planning chat.",
       enabled: profileReady,
       requiresConfirmation: false,
       requiresInput: true,
@@ -573,6 +589,35 @@ async function executeTuiAction(options: RunTuiActionOptions): Promise<TuiAction
       lines: [
         `planner ${result.profile.planner_provider}/${result.profile.planner_model}`,
         `models ${result.profile.available_models.join(",")}`,
+        ...result.warnings.map((warning) => `warning ${warning}`),
+      ],
+    };
+  }
+
+  if (options.actionId === "planner-model") {
+    const plannerModel = options.plannerModel?.trim();
+
+    if (!plannerModel) {
+      return {
+        actionId: options.actionId,
+        status: "failed",
+        summary: "Missing planner model.",
+        lines: ["Choose a model from the selector, or run /model <id>."],
+      };
+    }
+
+    const result = await updatePlannerProfilePlannerModel({
+      root: options.root,
+      plannerModel,
+    });
+
+    return {
+      actionId: options.actionId,
+      status: "ok",
+      summary: `Chat model switched to ${result.profile.planner_model}.`,
+      lines: [
+        `planner ${result.profile.planner_provider}/${result.profile.planner_model}`,
+        `models ${result.profile.available_models.join(",") || "all provider defaults"}`,
         ...result.warnings.map((warning) => `warning ${warning}`),
       ],
     };
@@ -1060,6 +1105,9 @@ export function InteractiveDashboard({
   const [lastPlanContinuation, setLastPlanContinuation] = useState<PlanContinuation | undefined>();
   const [isEditingModelPool, setIsEditingModelPool] = useState(false);
   const [modelPoolInput, setModelPoolInput] = useState("");
+  const [isSelectingChatModel, setIsSelectingChatModel] = useState(false);
+  const [chatModelCursor, setChatModelCursor] = useState(0);
+  const [slashCommandCursor, setSlashCommandCursor] = useState(0);
   const [isEditingRoot, setIsEditingRoot] = useState(false);
   const [rootInputMode, setRootInputMode] = useState<"choose" | "create">("choose");
   const [rootInput, setRootInput] = useState(dashboard.root);
@@ -1125,6 +1173,39 @@ export function InteractiveDashboard({
 
       if (input.length > 0 && !key.ctrl && !key.meta) {
         setRootInput((current) => `${current}${input}`);
+      }
+
+      return;
+    }
+
+    if (view === "actions" && isSelectingChatModel) {
+      const models = chatModelsForConnectedProvider(dashboardState);
+      const maxCursor = Math.max(models.length - 1, 0);
+
+      if (key.escape) {
+        setIsSelectingChatModel(false);
+        return;
+      }
+
+      if (key.upArrow) {
+        setChatModelCursor((cursor) => Math.max(cursor - 1, 0));
+        return;
+      }
+
+      if (key.downArrow) {
+        setChatModelCursor((cursor) => Math.min(cursor + 1, maxCursor));
+        return;
+      }
+
+      if (key.return || input === " ") {
+        const model = models[Math.min(chatModelCursor, maxCursor)];
+
+        if (model) {
+          setIsSelectingChatModel(false);
+          void executeAction("planner-model", { plannerModel: model.id });
+        }
+
+        return;
       }
 
       return;
@@ -1249,9 +1330,14 @@ export function InteractiveDashboard({
     }
 
     if (dashboardState.setup.initialized && view === "actions") {
+      const slashSuggestions = getSlashCommandSuggestions(chatCommandInput);
+      const slashMenuOpen = chatCommandInput.trimStart().startsWith("/");
+      const maxSlashCursor = Math.max(slashSuggestions.length - 1, 0);
+
       if (key.escape) {
         if (chatCommandInput.length > 0) {
           setChatCommandInput("");
+          setSlashCommandCursor(0);
           return;
         }
 
@@ -1259,11 +1345,33 @@ export function InteractiveDashboard({
         return;
       }
 
+      if ((key.ctrl && input.toLowerCase() === "p") || input === "\u0010") {
+        setChatCommandInput("/");
+        setSlashCommandCursor(0);
+        return;
+      }
+
+      if (slashMenuOpen && key.upArrow) {
+        setSlashCommandCursor((cursor) => Math.max(cursor - 1, 0));
+        return;
+      }
+
+      if (slashMenuOpen && key.downArrow) {
+        setSlashCommandCursor((cursor) => Math.min(cursor + 1, maxSlashCursor));
+        return;
+      }
+
       if (input === "\t") {
-        const suggestion = getSlashCommandSuggestions(chatCommandInput)[0];
+        if (!slashMenuOpen) {
+          openChatModelSelector();
+          return;
+        }
+
+        const suggestion = slashSuggestions[Math.min(slashCommandCursor, maxSlashCursor)];
 
         if (suggestion) {
           setChatCommandInput(`${suggestion.command} `);
+          setSlashCommandCursor(0);
         }
 
         return;
@@ -1271,6 +1379,7 @@ export function InteractiveDashboard({
 
       if (key.backspace || key.delete) {
         setChatCommandInput((current) => current.slice(0, -1));
+        setSlashCommandCursor(0);
         return;
       }
 
@@ -1281,6 +1390,7 @@ export function InteractiveDashboard({
 
       if (input.length > 0 && !key.ctrl && !key.meta) {
         setChatCommandInput((current) => `${current}${input}`);
+        setSlashCommandCursor(0);
       }
 
       return;
@@ -1384,9 +1494,20 @@ export function InteractiveDashboard({
     setView("main");
   }
 
+  function openChatModelSelector(): void {
+    const models = chatModelsForConnectedProvider(dashboardState);
+    const currentModel = dashboardState.profile.profile?.planner_model;
+    const currentIndex = models.findIndex((model) => model.id === currentModel);
+
+    setChatModelCursor(Math.max(currentIndex, 0));
+    setIsSelectingChatModel(true);
+    setActionResult(undefined);
+  }
+
   function submitActionChatInput(): void {
     const value = chatCommandInput.trim();
     setChatCommandInput("");
+    setSlashCommandCursor(0);
 
     if (value.length === 0) {
       if (isLandingChatSurface({
@@ -1401,7 +1522,7 @@ export function InteractiveDashboard({
       return;
     }
 
-    const slash = parseTuiSlashCommandInput(value);
+    const slash = resolveTuiSlashCommandInput(value, slashCommandCursor);
 
     if (!slash) {
       beginPlanChat(value);
@@ -1430,6 +1551,16 @@ export function InteractiveDashboard({
 
       setModelPoolInput(dashboardState.profile.profile?.available_models.join(",") || "all");
       setIsEditingModelPool(true);
+      return;
+    }
+
+    if (command.command === "/model") {
+      if (command.argument.length > 0) {
+        void executeAction("planner-model", { plannerModel: command.argument });
+        return;
+      }
+
+      openChatModelSelector();
       return;
     }
 
@@ -1843,6 +1974,9 @@ export function InteractiveDashboard({
     planChatInput,
     isEditingModelPool,
     modelPoolInput,
+    isSelectingChatModel,
+    chatModelCursor,
+    slashCommandCursor,
     isEditingRoot,
     rootInputMode,
     rootInput,
@@ -1870,6 +2004,9 @@ export function BlueprintDashboard({
   planChatInput = "",
   isEditingModelPool,
   modelPoolInput,
+  isSelectingChatModel,
+  chatModelCursor = 0,
+  slashCommandCursor = 0,
   isEditingRoot,
   rootInputMode,
   rootInput,
@@ -1894,6 +2031,9 @@ export function BlueprintDashboard({
   planChatInput?: string;
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
+  isSelectingChatModel?: boolean;
+  chatModelCursor?: number;
+  slashCommandCursor?: number;
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
@@ -1947,6 +2087,9 @@ export function BlueprintDashboard({
       planChatInput,
       isEditingModelPool,
       modelPoolInput,
+      isSelectingChatModel,
+      chatModelCursor,
+      slashCommandCursor,
       isEditingRoot,
       rootInputMode,
       rootInput,
@@ -1964,6 +2107,7 @@ export function BlueprintDashboard({
       isEditingRevise,
       planChatStep,
       isEditingModelPool,
+      isSelectingChatModel,
       isEditingRoot,
       runningAction,
       setupStep,
@@ -1987,6 +2131,9 @@ function ActiveView({
   planChatInput,
   isEditingModelPool,
   modelPoolInput,
+  isSelectingChatModel,
+  chatModelCursor,
+  slashCommandCursor,
   isEditingRoot,
   rootInputMode,
   rootInput,
@@ -2012,6 +2159,9 @@ function ActiveView({
   planChatInput?: string;
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
+  isSelectingChatModel?: boolean;
+  chatModelCursor?: number;
+  slashCommandCursor?: number;
   isEditingRoot?: boolean;
   rootInputMode?: "choose" | "create";
   rootInput?: string;
@@ -2070,6 +2220,9 @@ function ActiveView({
       planChatInput,
       isEditingModelPool,
       modelPoolInput,
+      isSelectingChatModel,
+      chatModelCursor,
+      slashCommandCursor,
     });
   }
 
@@ -2752,6 +2905,9 @@ function ActionsView({
   planChatInput = "",
   isEditingModelPool,
   modelPoolInput,
+  isSelectingChatModel,
+  chatModelCursor = 0,
+  slashCommandCursor = 0,
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
@@ -2765,6 +2921,9 @@ function ActionsView({
   planChatInput?: string;
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
+  isSelectingChatModel?: boolean;
+  chatModelCursor?: number;
+  slashCommandCursor?: number;
 }): React.ReactElement {
   const landing = isLandingChatSurface({
     dashboard,
@@ -2782,6 +2941,9 @@ function ActionsView({
       reviseInput,
       isEditingModelPool,
       modelPoolInput,
+      isSelectingChatModel,
+      chatModelCursor,
+      slashCommandCursor,
       planChatStep,
       planChatInput,
     });
@@ -2802,6 +2964,9 @@ function ActionsView({
       planChatInput,
       isEditingModelPool,
       modelPoolInput,
+      isSelectingChatModel,
+      chatModelCursor,
+      slashCommandCursor,
       actionResult,
     }),
     h(FocusOverlay, {
@@ -2826,6 +2991,9 @@ function LandingSurface({
   reviseInput,
   isEditingModelPool,
   modelPoolInput,
+  isSelectingChatModel,
+  chatModelCursor = 0,
+  slashCommandCursor = 0,
   planChatStep,
   planChatInput,
 }: {
@@ -2837,6 +3005,9 @@ function LandingSurface({
   reviseInput?: string;
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
+  isSelectingChatModel?: boolean;
+  chatModelCursor?: number;
+  slashCommandCursor?: number;
   planChatStep?: PlanChatStep;
   planChatInput?: string;
 }): React.ReactElement {
@@ -2882,7 +3053,16 @@ function LandingSurface({
           h(
             Box,
             { key: "landing-slash", alignItems: "center", flexDirection: "column" },
-            h(Box, { width: 72 }, h(SlashCommandPanel, { chatCommandInput, landing: true })),
+            h(Box, { width: 72 }, h(SlashCommandPanel, { chatCommandInput, landing: true, selectedIndex: slashCommandCursor })),
+          ),
+        ]
+      : []),
+    ...(isSelectingChatModel
+      ? [
+          h(
+            Box,
+            { key: "landing-model-selector", alignItems: "center", flexDirection: "column" },
+            h(Box, { width: 72 }, h(ChatModelSelectorPanel, { dashboard, cursor: chatModelCursor })),
           ),
         ]
       : []),
@@ -2921,6 +3101,9 @@ function WorkbenchSurface({
   planChatInput,
   isEditingModelPool,
   modelPoolInput,
+  isSelectingChatModel,
+  chatModelCursor = 0,
+  slashCommandCursor = 0,
   actionResult,
 }: {
   dashboard: TuiDashboard;
@@ -2934,8 +3117,13 @@ function WorkbenchSurface({
   planChatInput: string;
   isEditingModelPool?: boolean;
   modelPoolInput?: string;
+  isSelectingChatModel?: boolean;
+  chatModelCursor?: number;
+  slashCommandCursor?: number;
   actionResult?: TuiActionResult;
 }): React.ReactElement {
+  const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
+
   return h(
     Box,
     { flexDirection: "column", gap: 1 },
@@ -2960,9 +3148,10 @@ function WorkbenchSurface({
       isEditingRevise,
       reviseInput,
       isEditingModelPool,
-      modelPoolInput,
-    }),
-    h(SlashCommandPanel, { chatCommandInput }),
+        modelPoolInput,
+      }),
+    ...(showSlashMenu ? [h(SlashCommandPanel, { key: "slash", chatCommandInput, selectedIndex: slashCommandCursor })] : []),
+    ...(isSelectingChatModel ? [h(ChatModelSelectorPanel, { key: "model-selector", dashboard, cursor: chatModelCursor })] : []),
     h(OpenCodePathBar, { dashboard }),
   );
 }
@@ -3047,6 +3236,48 @@ function EmptyWorkbenchBlock(): React.ReactElement {
     { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Blueprint Artifact"),
     h(Text, { color: "gray" }, "[ ] waiting for the first planning request"),
+  );
+}
+
+function ChatModelSelectorPanel({
+  dashboard,
+  cursor,
+}: {
+  dashboard: TuiDashboard;
+  cursor: number;
+}): React.ReactElement {
+  const profile = dashboard.profile.profile;
+  const models = chatModelsForConnectedProvider(dashboard);
+  const selectedIndex = Math.min(cursor, Math.max(models.length - 1, 0));
+  const provider = profile?.planner_provider ?? "missing";
+
+  if (!profile) {
+    return h(
+      Box,
+      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column" },
+      h(Text, { bold: true }, "Model Selector"),
+      h(Text, null, "Profile is missing. Run setup before selecting a chat model."),
+    );
+  }
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "Model Selector"),
+    h(Text, { color: "gray" }, `Connected CLI: ${provider}. Enter selects, Esc closes.`),
+    ...(models.length > 0
+      ? models.map((model, index) =>
+          h(
+            Text,
+            {
+              key: model.id,
+              color: index === selectedIndex ? "cyan" : model.id === profile.planner_model ? "green" : undefined,
+              bold: index === selectedIndex,
+            },
+            `${index === selectedIndex ? ">" : " "} ${model.id} ${model.id === profile.planner_model ? "(current)" : ""} ${model.tier}/${model.status}`,
+          ),
+        )
+      : [h(Text, { key: "empty", color: "yellow" }, `No models found for ${provider}. Refresh the registry or update the provider pool.`)]),
   );
 }
 
@@ -3191,6 +3422,30 @@ function providerStatusLabel(provider: ProviderDoctorResult): string {
   return "available";
 }
 
+function chatModelsForConnectedProvider(dashboard: TuiDashboard): TuiModelSummary[] {
+  const provider = dashboard.profile.profile?.planner_provider;
+
+  if (!provider) {
+    return [];
+  }
+
+  return dashboard.registryModels
+    .filter((model) => model.provider === provider)
+    .sort((left, right) => {
+      const currentModel = dashboard.profile.profile?.planner_model;
+
+      if (left.id === currentModel) {
+        return -1;
+      }
+
+      if (right.id === currentModel) {
+        return 1;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
+}
+
 function runtimeStatusColor(status: string): "green" | "yellow" | "red" | "gray" {
   if (status === "ready") {
     return "green";
@@ -3207,7 +3462,15 @@ function runtimeStatusColor(status: string): "green" | "yellow" | "red" | "gray"
   return "gray";
 }
 
-function SlashCommandPanel({ chatCommandInput, landing = false }: { chatCommandInput: string; landing?: boolean }): React.ReactElement {
+function SlashCommandPanel({
+  chatCommandInput,
+  landing = false,
+  selectedIndex = 0,
+}: {
+  chatCommandInput: string;
+  landing?: boolean;
+  selectedIndex?: number;
+}): React.ReactElement {
   const suggestions = getSlashCommandSuggestions(chatCommandInput);
   const isFiltering = chatCommandInput.trim().startsWith("/");
 
@@ -3226,14 +3489,19 @@ function SlashCommandPanel({ chatCommandInput, landing = false }: { chatCommandI
   }
 
   const commandsToRender = suggestions.length > 0 ? suggestions : TUI_SLASH_COMMANDS;
+  const activeIndex = Math.min(selectedIndex, Math.max(commandsToRender.length - 1, 0));
 
   return h(
     Box,
     { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, isFiltering ? "Slash Autocomplete" : "Slash Commands"),
-    ...(isFiltering ? [h(Text, { key: "tab-hint", color: "gray" }, "Tab completes the first match. Enter runs typed command.")] : []),
+    ...(isFiltering ? [h(Text, { key: "tab-hint", color: "gray" }, "Use \u2191\u2193 to choose. Tab completes. Enter runs selected command.")] : []),
     ...commandsToRender.map((command, index) =>
-      h(Text, { key: command.command, color: isFiltering && index === 0 ? "cyan" : undefined }, `${index === 0 && isFiltering ? "> " : "  "}${command.usage} | ${command.description}`),
+      h(
+        Text,
+        { key: command.command, color: isFiltering && index === activeIndex ? "cyan" : undefined },
+        `${index === activeIndex && isFiltering ? "> " : "  "}${command.usage} | ${command.description}`,
+      ),
     ),
   );
 }
@@ -3788,6 +4056,32 @@ export function parseTuiSlashCommandInput(input: string): ParsedTuiSlashCommand 
   };
 }
 
+function resolveTuiSlashCommandInput(input: string, selectedIndex: number): ParsedTuiSlashCommand | undefined {
+  const parsed = parseTuiSlashCommandInput(input);
+
+  if (!input.trimStart().startsWith("/")) {
+    return undefined;
+  }
+
+  if (parsed && parsed.command !== "/help") {
+    return parsed;
+  }
+
+  const suggestions = getSlashCommandSuggestions(input);
+  const selected = suggestions[Math.min(selectedIndex, Math.max(suggestions.length - 1, 0))];
+
+  if (!selected) {
+    return parsed;
+  }
+
+  const [, ...argumentParts] = input.trim().split(/\s+/u);
+
+  return {
+    command: selected.command,
+    argument: argumentParts.join(" ").trim(),
+  };
+}
+
 export function getSlashCommandSuggestions(input: string): typeof TUI_SLASH_COMMANDS[number][] {
   const trimmed = input.trimStart();
 
@@ -3909,6 +4203,10 @@ function commandForAction(actionId: TuiActionId): string {
 
   if (actionId === "model-pool") {
     return 'profile available_models "<ids|all>"';
+  }
+
+  if (actionId === "planner-model") {
+    return 'profile planner_model "<id>"';
   }
 
   if (actionId === "registry-refresh") {
@@ -4096,6 +4394,7 @@ function KeyHints({
   isEditingRevise,
   planChatStep = "idle",
   isEditingModelPool,
+  isSelectingChatModel,
   isEditingRoot,
   runningAction,
   setupStep = "idle",
@@ -4106,6 +4405,7 @@ function KeyHints({
   isEditingRevise?: boolean;
   planChatStep?: PlanChatStep;
   isEditingModelPool?: boolean;
+  isSelectingChatModel?: boolean;
   isEditingRoot?: boolean;
   runningAction?: TuiActionId;
   setupStep?: SetupStep;
@@ -4116,6 +4416,8 @@ function KeyHints({
     hints = "Enter \u2192 open dir  \u2502  Esc \u2192 cancel";
   } else if (!setupInitialized && setupStep !== "idle") {
     hints = "Space \u2192 toggle  \u2502  Enter \u2192 next  \u2502  b \u2192 back  \u2502  Esc \u2192 cancel";
+  } else if (isSelectingChatModel) {
+    hints = "\u2191\u2193 select model  \u2502  Enter use model  \u2502  Esc close";
   } else if (planChatStep !== "idle" || isEditingRevise || isEditingModelPool) {
     hints = "Enter \u2192 submit  \u2502  Esc \u2192 cancel";
   } else if (pendingConfirmation) {

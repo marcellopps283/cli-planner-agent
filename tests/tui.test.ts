@@ -192,7 +192,7 @@ describe("blueprint tui", () => {
     expect(actionsOutput).toContain("Background Task Completed");
     expect(actionsOutput).toContain("Context");
     expect(actionsOutput).toContain("Planner");
-    expect(actionsOutput).toContain("Type / for commands");
+    expect(actionsOutput).toContain("type / for commands");
     expect(actionsOutput).toContain("tab switch model");
     expect(actionsOutput).not.toContain("Quick action");
   });
@@ -225,12 +225,13 @@ describe("blueprint tui", () => {
     expect(output).toContain("Ask anything");
     expect(output).toContain("Plan openai/gpt-5.5");
     expect(output).toContain("ctrl+p commands");
-    expect(output).toContain("/providers");
-    expect(output).toContain("/models");
+    expect(output).not.toContain("Slash Autocomplete");
     expect(typedOutput).toContain("planejar tela inicial");
     expect(typedOutput).not.toContain("Slash Autocomplete");
     expect(slashOutput).toContain("Slash Autocomplete");
     expect(slashOutput).toContain("/plan [brief]");
+    expect(slashOutput).toContain("/providers");
+    expect(slashOutput).toContain("/model [id]");
     expect(output).not.toContain("Main Menu");
     expect(output).not.toContain("Quick action");
   });
@@ -245,6 +246,10 @@ describe("blueprint tui", () => {
       command: "/models",
       argument: "all",
     });
+    expect(parseTuiSlashCommandInput("/model gemini-3.1-pro-preview")).toEqual({
+      command: "/model",
+      argument: "gemini-3.1-pro-preview",
+    });
     expect(parseTuiSlashCommandInput("/registry")).toEqual({
       command: "/registry",
       argument: "",
@@ -253,7 +258,7 @@ describe("blueprint tui", () => {
       command: "/help",
       argument: "unknown /unknown",
     });
-    expect(getSlashCommandSuggestions("/mo").map((command) => command.command)).toEqual(["/models"]);
+    expect(getSlashCommandSuggestions("/mo").map((command) => command.command)).toEqual(["/model", "/models"]);
   });
 
   it("renders slash autocomplete and focused overlays", async () => {
@@ -266,6 +271,14 @@ describe("blueprint tui", () => {
         dashboard,
         view: "actions",
         chatCommandInput: "/mo",
+      }),
+    );
+    const selectedAutocompleteOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        chatCommandInput: "/mo",
+        slashCommandCursor: 1,
       }),
     );
     const overlayOutput = renderToString(
@@ -286,8 +299,9 @@ describe("blueprint tui", () => {
     );
 
     expect(autocompleteOutput).toContain("Slash Autocomplete");
-    expect(autocompleteOutput).toContain("> /models <ids|all>");
-    expect(autocompleteOutput).toContain("Tab completes the first match");
+    expect(autocompleteOutput).toContain("> /model [id]");
+    expect(autocompleteOutput).toContain("Use \u2191\u2193 to choose");
+    expect(selectedAutocompleteOutput).toContain("> /models <ids|all>");
     expect(overlayOutput).toContain("Model Pool Overlay");
     expect(overlayOutput).toContain("Enter saves the model pool");
     expect(adaptiveOutput).toContain("Planning Intake");
@@ -303,6 +317,7 @@ describe("blueprint tui", () => {
     expect(actions.map((action) => action.id)).toEqual([
       "plan",
       "model-pool",
+      "planner-model",
       "registry-refresh",
       "lint",
       "export",
@@ -311,6 +326,7 @@ describe("blueprint tui", () => {
       "auth-doctor-live",
     ]);
     expect(actions.find((action) => action.id === "model-pool")?.requiresInput).toBe(true);
+    expect(actions.find((action) => action.id === "planner-model")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "plan")?.requiresInput).toBe(true);
     expect(actions.find((action) => action.id === "registry-refresh")?.requiresConfirmation).toBe(true);
     expect(actions.find((action) => action.id === "export")?.enabled).toBe(true);
@@ -492,6 +508,34 @@ describe("blueprint tui", () => {
     expect(profile.profile?.available_models).toEqual(["gpt-5.5", "gemini-3.1-pro-preview"]);
     expect(providersOutput).toContain("Model Pool");
     expect(providersOutput).toContain("gpt-5.5");
+  });
+
+  it("switches the chat planner model through the model selector action", async () => {
+    const root = await makePlannedProject();
+    const dashboard = await loadTuiDashboard({ root });
+    const selectorOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        isSelectingChatModel: true,
+        chatModelCursor: 1,
+      }),
+    );
+    const result = await runTuiAction({
+      root,
+      actionId: "planner-model",
+      plannerModel: "gemini-3.1-pro-preview-customtools",
+    });
+    const profile = await loadPlannerProfile(root);
+
+    expect(selectorOutput).toContain("Model Selector");
+    expect(selectorOutput).toContain("Connected CLI: google");
+    expect(selectorOutput).toContain("gemini-3.1-pro-preview");
+    expect(result.status).toBe("ok");
+    expect(result.summary).toContain("Chat model switched");
+    expect(profile.profile?.planner_provider).toBe("google");
+    expect(profile.profile?.planner_model).toBe("gemini-3.1-pro-preview-customtools");
+    expect(profile.profile?.available_models).toContain("gemini-3.1-pro-preview-customtools");
   });
 
   it("refreshes the model registry through a TUI action", async () => {

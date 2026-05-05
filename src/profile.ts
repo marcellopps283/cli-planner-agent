@@ -44,6 +44,11 @@ export interface UpdatePlannerProfileModelsOptions {
   plannerModel?: string;
 }
 
+export interface UpdatePlannerProfilePlannerModelOptions {
+  root: string;
+  plannerModel: string;
+}
+
 export interface PlannerProfileValidationResult {
   path: string;
   profile?: PlannerProfile;
@@ -224,6 +229,60 @@ export async function updatePlannerProfileModels(
     available_models: selectedModelIds,
   });
   const validation = validatePlannerProfile(profile, getProfilePath(root), registry);
+
+  if (validation.errors.length > 0) {
+    throw new Error(validation.errors.join("\n"));
+  }
+
+  await writeFile(getProfilePath(root), serializePlannerProfile(profile), "utf8");
+
+  return {
+    path: getProfilePath(root),
+    profile,
+    written: true,
+    warnings: [...registryResult.warnings, ...validation.warnings],
+  };
+}
+
+export async function updatePlannerProfilePlannerModel(
+  options: UpdatePlannerProfilePlannerModelOptions,
+): Promise<PlannerProfileWriteResult> {
+  const root = path.resolve(options.root);
+  const profileResult = await loadPlannerProfile(root);
+
+  if (profileResult.errors.length > 0 || !profileResult.profile) {
+    throw new Error(`Profile is not ready.\n${profileResult.errors.join("\n")}`);
+  }
+
+  const registryResult = await loadModelRegistryForProfile(root, profileResult.profile);
+
+  if (registryResult.errors.length > 0 || !registryResult.registry) {
+    throw new Error(`Model registry is not ready.\n${registryResult.errors.join("\n")}`);
+  }
+
+  const plannerModel = registryResult.registry.models.find((model) => model.id === options.plannerModel);
+
+  if (!plannerModel) {
+    throw new Error(`Unknown model: ${options.plannerModel}. Run blueprint registry show to list known model ids.`);
+  }
+
+  if (!profileResult.profile.available_providers.includes(plannerModel.provider)) {
+    throw new Error(
+      `Model ${plannerModel.id} belongs to provider ${plannerModel.provider}, which is not in available_providers.`,
+    );
+  }
+
+  const availableModels =
+    profileResult.profile.available_models.length > 0
+      ? uniqueStrings([...profileResult.profile.available_models, plannerModel.id])
+      : profileResult.profile.available_models;
+  const profile = PlannerProfileSchema.parse({
+    ...profileResult.profile,
+    planner_provider: plannerModel.provider,
+    planner_model: plannerModel.id,
+    available_models: availableModels,
+  });
+  const validation = validatePlannerProfile(profile, getProfilePath(root), registryResult.registry.models);
 
   if (validation.errors.length > 0) {
     throw new Error(validation.errors.join("\n"));

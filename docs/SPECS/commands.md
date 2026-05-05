@@ -210,10 +210,14 @@ MVP atual:
   prompt `Ask anything...`, modo/modelo e atalhos;
 - o workbench exibe feed principal, sidebar contextual, input permanente e
   artefato de planejamento com checklist/progresso;
-- aceita slash commands locais: `/plan`, `/providers`, `/models`, `/registry`,
-  `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e `/menu`;
-- filtra slash commands quando o input comeca com `/` e completa a primeira
-  sugestao com `Tab`;
+- aceita slash commands locais: `/plan`, `/providers`, `/model`, `/models`,
+  `/registry`, `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e
+  `/menu`;
+- filtra slash commands quando o input comeca com `/`, navega sugestoes com
+  `↑↓` e completa a opcao selecionada com `Tab`;
+- `Tab` fora de slash command abre o seletor do modelo usado pelo chat/planner;
+- `/model [id]` troca `planner_model` para um modelo disponivel no CLI/provider
+  conectado; se o modelo nao estiver no pool ativo, ele e adicionado ao pool;
 - mostra overlays de foco para perguntas de planejamento, confirmacoes, model
   pool e revise;
 - texto livre no chat inicia planejamento; `/plan [brief]` faz o mesmo de forma
