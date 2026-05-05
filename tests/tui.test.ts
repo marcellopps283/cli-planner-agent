@@ -157,9 +157,7 @@ describe("blueprint tui", () => {
     const overviewOutput = renderTuiDashboardToString(dashboard, "overview");
 
     expect(output).toContain("blueprint");
-    expect(output).toContain("Background Task Completed");
-    expect(output).toContain("Context");
-    expect(output).toContain("[x] task-001-update-docs");
+    expect(output).not.toContain("Background Task Completed");
     expect(mainOutput).toContain("Operations");
     expect(mainOutput).toContain("status handoffs ready");
     expect(mainOutput).toContain("provider_pool openai,google");
@@ -189,9 +187,8 @@ describe("blueprint tui", () => {
     expect(providersOutput).toContain("Provider Pool");
     expect(providersOutput).toContain("available openai,google");
     expect(providersOutput).toContain("Model Catalog");
-    expect(actionsOutput).toContain("Background Task Completed");
-    expect(actionsOutput).toContain("Context");
-    expect(actionsOutput).toContain("Planner");
+    expect(actionsOutput).toContain("Ask anything...");
+    expect(actionsOutput).not.toContain("Background Task Completed");
     expect(actionsOutput).toContain("type / for commands");
     expect(actionsOutput).toContain("tab switch model");
     expect(actionsOutput).not.toContain("Quick action");
