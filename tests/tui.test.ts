@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -207,9 +207,20 @@ describe("blueprint tui", () => {
     const output = renderTuiDashboardToString(dashboard);
     const mainOutput = renderTuiDashboardToString(dashboard, "main");
     const overviewOutput = renderTuiDashboardToString(dashboard, "overview");
+    const workbenchOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        hasStartedChatWorkflow: true,
+      }),
+    );
 
     expect(output).toContain("blueprint");
     expect(output).not.toContain("Background Task Completed");
+    expect(workbenchOutput).toContain("Handoffs Ready");
+    expect(workbenchOutput).toContain("Artifacts");
+    expect(workbenchOutput).toContain("Plan ready");
+    expect(workbenchOutput).toContain(".blueprint/dependencies_graph.json");
     expect(mainOutput).toContain("Operations");
     expect(mainOutput).toContain("status handoffs ready");
     expect(mainOutput).toContain("provider_pool openai,google");
@@ -525,9 +536,9 @@ describe("blueprint tui", () => {
       recordHistory: false,
     });
 
-    expect(failed.status).toBe("failed");
+    expect(failed.status).toBe("needs-confirmation");
     expect(failed.canApply).toBe(true);
-    expect(failed.summary).toContain("Fallback available: google/gemini-3.1-pro-preview");
+    expect(failed.summary).toContain("Planner fallback ready: google/gemini-3.1-pro-preview");
     expect(failed.lines).toContain("press y to try this fallback or n to cancel");
     expect(failed.planContinuation).toMatchObject({
       type: "fallback",
@@ -536,6 +547,49 @@ describe("blueprint tui", () => {
       plannerModel: "gemini-3.1-pro-preview",
       attemptedModels: ["gpt-5.5"],
     });
+  });
+
+  it("keeps planner workflow prompts compact for noisy roots", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-compact-prompt-test-"));
+    await writeFile(path.join(root, "README.md"), "# Compact prompt\n", "utf8");
+    await writeFile(path.join(root, "package.json"), "{\"name\":\"compact\"}\n", "utf8");
+
+    for (let index = 0; index < 75; index += 1) {
+      const packageRoot = path.join(root, "packages", `pkg-${String(index).padStart(3, "0")}`);
+      await mkdir(packageRoot, { recursive: true });
+      await writeFile(path.join(packageRoot, "package.json"), `{"name":"pkg-${index}"}\n`, "utf8");
+    }
+
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+
+    let prompt = "";
+    const result = await runTuiAction({
+      root,
+      actionId: "agent-workflow",
+      agentRequest: "continue o planejamento agentico",
+      plannerPromptRunner: async (options) => {
+        prompt = options.prompt;
+
+        return {
+          provider: options.provider,
+          model: options.model,
+          response: JSON.stringify(makeAgentWorkflowState({ provider: options.provider, model: options.model ?? "gpt-5.5" })),
+          rawOutput: "",
+        };
+      },
+      recordHistory: false,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(prompt).toContain('"manifest_count": 76');
+    expect(prompt).toContain("pkg-000/package.json");
+    expect(prompt).not.toContain("pkg-074/package.json");
+    expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(80_000);
   });
 
   it("does not render a persistent success panel for chat model switches", () => {
@@ -603,6 +657,37 @@ describe("blueprint tui", () => {
     expect(adaptiveOutput).toContain("Planning Intake");
     expect(adaptiveOutput).toContain("[ ] Criterios de sucesso");
     expect(adaptiveOutput).not.toContain("Resumo do projeto em uma frase");
+  });
+
+  it("renders plan previews as structured workbench contracts", async () => {
+    const root = await makePlannedProject();
+    const dashboard = await loadTuiDashboard({ root });
+    const output = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        hasStartedChatWorkflow: true,
+        actionResult: {
+          actionId: "plan",
+          status: "ok",
+          summary: "Plan preview ready with 2 task(s).",
+          canApply: true,
+          lines: [
+            "engine llm",
+            "planner google/gemini-3.1-pro-preview",
+            "task-001-map-context model gemini-3.1-pro-preview risk 5 deps none paths read-only alternatives gpt-5.5 reason Read-only context mapping.",
+            "task-002-refactor-tui model gpt-5.5 risk 7 deps task-001-map-context paths src/tui.ts,src/ui/workbench.ts alternatives gemini-3.1-pro-preview reason Global TUI orchestration risk.",
+            "write pending confirmation",
+          ],
+        },
+      }),
+    );
+
+    expect(output).toContain("Preview Contract");
+    expect(output).toContain("task-002-refactor-tui");
+    expect(output).toContain("gpt-5.5");
+    expect(output).toContain("Confirm writes this exact preview");
+    expect(output).not.toContain("Plan Preview Ready");
   });
 
   it("builds executable TUI actions with quota confirmation metadata", async () => {
@@ -759,9 +844,9 @@ describe("blueprint tui", () => {
       recordHistory: false,
     });
 
-    expect(failed.status).toBe("failed");
+    expect(failed.status).toBe("needs-confirmation");
     expect(failed.canApply).toBe(true);
-    expect(failed.summary).toContain("Fallback available: google/gemini-3.1-pro-preview");
+    expect(failed.summary).toContain("Planner fallback ready: google/gemini-3.1-pro-preview");
     expect(failed.lines).toContain("failed_model gpt-5.5");
     expect(failed.planContinuation).toMatchObject({
       type: "fallback",
@@ -821,8 +906,8 @@ describe("blueprint tui", () => {
       recordHistory: false,
     });
 
-    expect(failed.status).toBe("failed");
-    expect(failed.summary).toContain("Deterministic fallback available");
+    expect(failed.status).toBe("needs-confirmation");
+    expect(failed.summary).toContain("Deterministic fallback ready");
     expect(failed.planContinuation).toMatchObject({
       type: "fallback",
       engine: "deterministic",

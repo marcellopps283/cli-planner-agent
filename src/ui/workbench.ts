@@ -90,6 +90,7 @@ export function WorkbenchSurface({
       h(
         Box,
         { flexDirection: "column", flexGrow: 1 },
+        h(WorkbenchTopBar, { dashboard, runningAction, pendingConfirmation }),
         h(WorkbenchFeed, { dashboard, actionResult, runningAction, planChatStep, planChatDraft }),
         h(FocusOverlay, {
           pendingConfirmation,
@@ -131,6 +132,38 @@ export function WorkbenchSurface({
       }),
     ),
     h(OpenCodePathBar, { dashboard }),
+  );
+}
+
+export function WorkbenchTopBar({
+  dashboard,
+  runningAction,
+  pendingConfirmation,
+}: {
+  dashboard: TuiDashboard;
+  runningAction?: TuiActionId;
+  pendingConfirmation?: TuiActionId;
+}): React.ReactElement {
+  const status = chatRuntimeStatus({
+    dashboard,
+    runningAction,
+    pendingConfirmation,
+    isEditingRevise: false,
+    isEditingModelPool: false,
+    planChatStep: "idle",
+  });
+  const artifacts = dashboard.tasks.length > 0 ? `${dashboard.tasks.length} handoff(s)` : "no handoffs";
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1 },
+    h(
+      Text,
+      null,
+      h(Text, { bold: true }, "Plan "),
+      h(Text, { color: runtimeStatusColor(status) }, status),
+      h(Text, { color: "gray" }, ` | ${artifacts}`),
+    ),
   );
 }
 
@@ -185,10 +218,19 @@ export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard })
 }
 
 export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowState }): React.ReactElement {
+  const confidence = `${Math.round(state.project_state.confidence * 100)}%`;
+
   return h(
     Box,
     { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, state.project_state.title),
+    h(
+      Text,
+      null,
+      h(Text, { bold: true }, state.project_state.title),
+      h(Text, { color: "gray" }, " | "),
+      h(Text, { color: agentStateColor(state) }, state.project_state.health),
+      h(Text, { color: "gray" }, ` | confidence ${confidence}`),
+    ),
     h(Text, { color: agentStateColor(state) }, state.project_state.current_phase),
     h(Text, { color: "gray" }, truncateLine(state.project_state.summary, 110)),
     ...state.messages.slice(0, 3).map((message, index) =>
@@ -214,7 +256,7 @@ export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowS
           ),
         ]
       : []),
-    h(Text, { color: "gray" }, `Next: ${state.next_action.label}`),
+    h(Text, { color: "cyan" }, `Next: ${state.next_action.label}`),
   );
 }
 
@@ -266,6 +308,42 @@ function agentStateColor(state: PlannerAgentWorkflowState): "green" | "yellow" |
   return "blue";
 }
 
+interface ParsedPreviewTaskLine {
+  id: string;
+  model: string;
+  risk: number;
+  deps: string;
+  paths: string;
+  reason: string;
+}
+
+function parsePreviewTaskLine(line: string): ParsedPreviewTaskLine {
+  const parsed =
+    /^(task-\d{3}-\S+)\s+model\s+(\S+)\s+risk\s+(\d+)\s+deps\s+(.+?)\s+paths\s+(.+?)\s+alternatives\s+(.+?)\s+reason\s+(.+)$/u.exec(
+      line,
+    );
+
+  if (!parsed) {
+    return {
+      id: line.split(/\s+/u)[0] ?? "task",
+      model: "unknown",
+      risk: 5,
+      deps: "unknown",
+      paths: "unknown",
+      reason: truncateLine(line, 94),
+    };
+  }
+
+  return {
+    id: parsed[1]!,
+    model: parsed[2]!,
+    risk: Number(parsed[3]),
+    deps: parsed[4]!,
+    paths: parsed[5]!,
+    reason: parsed[7]!,
+  };
+}
+
 export function PlanningProgressBlock({ planChatDraft }: { planChatDraft: PlanChatDraft }): React.ReactElement {
   return h(
     Box,
@@ -278,17 +356,35 @@ export function PlanningProgressBlock({ planChatDraft }: { planChatDraft: PlanCh
 }
 
 export function PlanPreviewBlock({ actionResult }: { actionResult: TuiActionResult }): React.ReactElement {
-  const taskLines = actionResult.lines.filter((line) => line.startsWith("task-")).slice(0, 6);
+  const tasks = actionResult.lines
+    .filter((line) => line.startsWith("task-"))
+    .map(parsePreviewTaskLine)
+    .slice(0, 6);
 
   return h(
     Box,
     { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Plan Preview Ready"),
-    h(Text, null, actionResult.summary),
-    ...(taskLines.length > 0
-      ? taskLines.map((line) => h(Text, { key: line }, `[ ] ${truncateLine(line, 110)}`))
+    h(Text, { bold: true }, "Preview Contract"),
+    h(Text, { color: "gray" }, actionResult.summary),
+    ...(tasks.length > 0
+      ? tasks.map((task) =>
+          h(
+            Box,
+            { key: task.id, flexDirection: "column" },
+            h(
+              Text,
+              null,
+              h(Text, { color: task.risk >= 7 ? "red" : task.risk >= 5 ? "yellow" : "green" }, riskIcon(task.risk)),
+              ` ${task.id} `,
+              h(Text, { bold: true }, task.model),
+              h(Text, { color: "gray" }, ` risk ${task.risk}`),
+            ),
+            h(Text, { color: "gray" }, `deps ${task.deps} | paths ${truncateLine(task.paths, 72)}`),
+            h(Text, { color: "gray" }, truncateLine(task.reason, 94)),
+          ),
+        )
       : [h(Text, { key: "pending" }, "[ ] waiting for preview tasks")]),
-    h(Text, { color: "gray" }, "Confirm to write .blueprint artifacts."),
+    h(Text, { color: "cyan" }, "Confirm writes this exact preview to .blueprint/."),
   );
 }
 
@@ -296,16 +392,17 @@ export function HandoffReadyBlock({ dashboard }: { dashboard: TuiDashboard }): R
   return h(
     Box,
     { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Background Task Completed"),
-    h(Text, null, `Generated ${dashboard.tasks.length} planner handoff(s).`),
+    h(Text, { bold: true }, "Handoffs Ready"),
+    h(Text, { color: "gray" }, `Planner artifacts generated ${dashboard.tasks.length} task handoff(s).`),
     ...dashboard.tasks.slice(0, 8).map((task) =>
       h(
         Text,
         { key: task.id },
-        `[x] ${task.id} | ${task.suggestedModel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"}`,
+        `[x] ${task.id} | ${task.suggestedModel} | risk ${task.riskLevel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"}`,
       ),
     ),
     ...(dashboard.tasks.length > 8 ? [h(Text, { key: "more", color: "gray" }, `+${dashboard.tasks.length - 8} more task(s)`)] : []),
+    h(Text, { color: "cyan" }, ".blueprint/tasks | .blueprint/dependencies_graph.json | .blueprint/integration_guide.md"),
   );
 }
 
@@ -402,7 +499,7 @@ export function WorkbenchSidebar({
     : profile?.available_providers.map((provider) => ({ id: provider, cli: provider, installed: true, authCheck: "not_checked" as const, detail: "profile" })) ?? [];
   const stacks = dashboard.doctor.stack.length > 0 ? dashboard.doctor.stack : ["unknown"];
   const taskLines = dashboard.tasks.length > 0
-    ? dashboard.tasks.slice(0, 5).map((task) => `[x] ${task.title}`)
+    ? dashboard.tasks.slice(0, 5).map((task) => `[x] ${task.title} r${task.riskLevel}`)
     : ["[ ] Generate first blueprint"];
   const effortModel = chatModelEffortCandidate
     ? DEFAULT_MODEL_REGISTRY.find((model) => model.id === chatModelEffortCandidate)
@@ -450,7 +547,7 @@ export function WorkbenchSidebar({
   return h(
     Box,
     { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column", width: WORKBENCH_SIDEBAR_WIDTH },
-    h(Text, { bold: true }, path.basename(dashboard.root) || TUI_APP_NAME),
+    h(Text, { bold: true }, truncateLine(path.basename(dashboard.root) || TUI_APP_NAME, 24)),
     h(Text, null, ""),
     h(Text, { bold: true }, "Context"),
     h(Text, { color: "gray" }, `${formatCompactNumber(contextTokens)} tokens`),
@@ -461,6 +558,11 @@ export function WorkbenchSidebar({
     h(Text, { color: runtimeStatusColor(chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })) }, chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })),
     h(Text, { color: sidebarStatusColor }, dashboard.tasks.length > 0 ? "handoffs-ready" : "waiting-for-plan"),
     h(Text, null, ""),
+    h(Text, { bold: true }, "Artifacts"),
+    h(Text, { color: dashboard.tasks.length > 0 ? "green" : "gray" }, `${dashboard.tasks.length} task file(s)`),
+    h(Text, { color: dashboard.graph ? "green" : "gray" }, dashboard.graph ? `${dashboard.graph.nodes.length} graph node(s)` : "graph missing"),
+    h(Text, { color: dashboard.exports.length > 0 ? "green" : "gray" }, `${dashboard.exports.length} export package(s)`),
+    h(Text, null, ""),
     h(Text, { bold: true }, "Providers"),
     ...providers.slice(0, 5).map((provider) =>
       h(Text, { key: `${provider.id}-${provider.cli}`, color: provider.installed ? "green" : "gray" }, `* ${provider.id} ${providerStatusLabel(provider)}`),
@@ -470,9 +572,9 @@ export function WorkbenchSidebar({
     ...stacks.slice(0, 5).map((stack) => h(Text, { key: stack, color: "gray" }, `* ${stack}`)),
     h(Text, null, ""),
     h(Text, { bold: true }, "Planner"),
-    h(Text, { color: "gray" }, profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing"),
+    h(Text, { color: "gray" }, truncateLine(profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing", 26)),
     h(Text, null, ""),
     h(Text, { bold: true }, "Todo"),
-    ...taskLines.map((line) => h(Text, { key: line, color: line.startsWith("[x]") ? "green" : "gray" }, truncateLine(line, 30))),
+    ...taskLines.map((line) => h(Text, { key: line, color: line.startsWith("[x]") ? "green" : "gray" }, truncateLine(line, 24))),
   );
 }

@@ -62,4 +62,17 @@ describe("project doctor", () => {
     );
     expect(report.markdownHeadings["README.md"]).toEqual(["Test", "Usage"]);
   });
+
+  it("ignores nested dependency directories when scanning broad roots", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-doctor-nested-deps-test-"));
+
+    await mkdir(path.join(root, "packages", "app", "node_modules", "dep"), { recursive: true });
+    await writeFile(path.join(root, "packages", "app", "package.json"), "{\"name\":\"app\"}\n", "utf8");
+    await writeFile(path.join(root, "packages", "app", "node_modules", "dep", "package.json"), "{\"name\":\"dep\"}\n", "utf8");
+
+    const report = await inspectProject(root);
+
+    expect(report.manifests).toContain("packages/app/package.json");
+    expect(report.manifests).not.toContain("packages/app/node_modules/dep/package.json");
+  });
 });

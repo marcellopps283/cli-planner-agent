@@ -21,7 +21,7 @@ export function ActionResultPanel({ result }: { result?: TuiActionResult }): Rea
     return null;
   }
 
-  const statusColor = result.status === "ok" ? "green" : "red";
+  const statusColor = result.status === "ok" ? "green" : result.status === "needs-confirmation" ? "yellow" : "red";
   const visibleLines = result.lines.slice(0, 8);
   const hiddenCount = result.lines.length - visibleLines.length;
 

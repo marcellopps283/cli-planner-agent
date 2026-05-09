@@ -347,7 +347,7 @@ export interface TuiAction {
 
 export interface TuiActionResult {
   actionId: TuiActionResultId;
-  status: "ok" | "failed";
+  status: "ok" | "failed" | "needs-confirmation";
   summary: string;
   lines: string[];
   agentState?: PlannerAgentWorkflowState;
@@ -403,7 +403,7 @@ export const TuiSessionRecordSchema = z.object({
     plan_answers: z.any().optional(),
   }),
   result: z.object({
-    status: z.enum(["ok", "failed"]),
+    status: z.enum(["ok", "failed", "needs-confirmation"]),
     summary: z.string().min(1),
     lines: z.array(z.string()),
     can_apply: z.boolean().optional(),
@@ -468,6 +468,9 @@ export const TUI_APP_VERSION = "0.0.0";
 export const TUI_SLASH_MENU_VISIBLE_ROWS = 6;
 export const TUI_MODEL_SELECTOR_VISIBLE_ROWS = 8;
 const TUI_AGENT_SESSION_FILE = "SESSION.json";
+const PLANNER_CONTEXT_MANIFEST_LIMIT = 40;
+const PLANNER_CONTEXT_INVENTORY_LIMIT = 60;
+const PLANNER_CONTEXT_LINT_LIMIT = 20;
 const TUI_AGENT_STATE_FILE = "AGENT_STATE.json";
 const TUI_PLAN_PREVIEW_FILE = "PLAN_PREVIEW.json";
 
@@ -997,8 +1000,8 @@ async function buildAgentWorkflowFallbackResult(
 
     return {
       actionId: "agent-workflow",
-      status: "failed",
-      summary: `Planner ${failedModel ?? "LLM"} failed. Fallback available: ${next.provider}/${next.model}.`,
+      status: "needs-confirmation",
+      summary: `Planner fallback ready: ${next.provider}/${next.model}.`,
       canApply: true,
       planContinuation: {
         type: "fallback",
@@ -1009,7 +1012,7 @@ async function buildAgentWorkflowFallbackResult(
       },
       lines: [
         `request ${request}`,
-        `error ${message}`,
+        `primary_error ${message}`,
         `failed_model ${failedModel ?? "unknown"}`,
         `fallback ${next.provider}/${next.model}`,
         `reason ${next.reason}`,
@@ -1240,8 +1243,8 @@ async function buildPlanTuiFallbackResult(
 
     return {
       actionId: "plan",
-      status: "failed",
-      summary: `Planner ${failedModel ?? "LLM"} failed. Fallback available: ${next.provider}/${next.model}.`,
+      status: "needs-confirmation",
+      summary: `Planner fallback ready: ${next.provider}/${next.model}.`,
       canApply: true,
       planContinuation: {
         type: "fallback",
@@ -1252,7 +1255,7 @@ async function buildPlanTuiFallbackResult(
         attemptedModels,
       },
       lines: [
-        `error ${message}`,
+        `primary_error ${message}`,
         `failed_model ${failedModel ?? "unknown"}`,
         `fallback ${next.provider}/${next.model}`,
         `reason ${next.reason}`,
@@ -1263,8 +1266,8 @@ async function buildPlanTuiFallbackResult(
 
   return {
     actionId: "plan",
-    status: "failed",
-    summary: `Planner ${failedModel ?? "LLM"} failed. Deterministic fallback available.`,
+    status: "needs-confirmation",
+    summary: `Deterministic fallback ready after planner ${failedModel ?? "LLM"} failed.`,
     canApply: true,
     planContinuation: {
       type: "fallback",
@@ -1273,7 +1276,7 @@ async function buildPlanTuiFallbackResult(
       attemptedModels,
     },
     lines: [
-      `error ${message}`,
+      `primary_error ${message}`,
       `failed_model ${failedModel ?? "unknown"}`,
       "fallback deterministic",
       "press y to preview deterministic handoffs or n to cancel",
@@ -3390,7 +3393,7 @@ function SetupView({
             {
               key: "result",
               borderStyle: "single",
-              borderColor: actionResult.status === "ok" ? "green" : "red",
+              borderColor: actionResult.status === "ok" ? "green" : actionResult.status === "needs-confirmation" ? "yellow" : "red",
               paddingX: 1,
               flexDirection: "column",
             },
@@ -4552,10 +4555,13 @@ function buildPlannerAgentWorkflowPrompt({
     project_context: {
       stack: dashboard.doctor.stack,
       canonical_files: dashboard.doctor.canonicalFiles,
-      manifests: dashboard.doctor.manifests,
+      file_count: dashboard.doctor.fileCount,
+      manifest_count: dashboard.doctor.manifests.length,
+      manifests: dashboard.doctor.manifests.slice(0, PLANNER_CONTEXT_MANIFEST_LIMIT),
       scripts: dashboard.doctor.scripts,
       top_level_dirs: dashboard.doctor.topLevelDirs,
-      inventory_files: dashboard.doctor.inventoryFiles,
+      inventory_count: dashboard.doctor.inventoryFiles.length,
+      inventory_files: dashboard.doctor.inventoryFiles.slice(0, PLANNER_CONTEXT_INVENTORY_LIMIT),
       warnings: dashboard.doctor.warnings,
       existing_tasks: dashboard.tasks.map((task) => ({
         id: task.id,
@@ -4563,8 +4569,10 @@ function buildPlannerAgentWorkflowPrompt({
         model: task.suggestedModel,
         risk: task.riskLevel,
       })),
-      lint_errors: dashboard.lint.errors,
-      lint_warnings: dashboard.lint.warnings,
+      lint_error_count: dashboard.lint.errors.length,
+      lint_warning_count: dashboard.lint.warnings.length,
+      lint_errors: dashboard.lint.errors.slice(0, PLANNER_CONTEXT_LINT_LIMIT),
+      lint_warnings: dashboard.lint.warnings.slice(0, PLANNER_CONTEXT_LINT_LIMIT),
     },
     previous_session: dashboard.agentSession
       ? {
@@ -4849,8 +4857,8 @@ export function currentFocusOverlay({
   if (pendingConfirmation) {
     if (pendingConfirmation === "agent-workflow") {
       return {
-        title: "Fallback Confirmation",
-        body: "The active planner failed. Try the suggested fallback model?",
+        title: "Fallback Ready",
+        body: "The primary planner failed, and the next available model is ready to run.",
         hint: "Press y to run the fallback planner, n or Esc to cancel.",
         color: "yellow",
       };

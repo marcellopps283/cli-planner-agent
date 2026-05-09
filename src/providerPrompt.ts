@@ -114,13 +114,13 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
       "--json",
       "-o",
       outputPath,
-      options.prompt,
+      "-",
     ],
     {
       cwd,
       env: { NO_COLOR: "1" },
       reject: false,
-      stdin: "ignore",
+      input: options.prompt,
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
@@ -143,17 +143,20 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
 }
 
 async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Promise<ProviderPromptResult> {
-  const errors: string[] = [];
+  const errors: Array<{ label: string; summary: string }> = [];
 
   for (const attempt of GEMINI_HEADLESS_ATTEMPTS) {
     try {
       return await runGeminiPromptAttempt(options, cwd, attempt);
     } catch (error) {
-      errors.push(`${attempt.approvalMode}/${attempt.outputFormat}: ${summarizeProviderFailure(error instanceof Error ? error.message : String(error))}`);
+      errors.push({
+        label: `${attempt.approvalMode}/${attempt.outputFormat}`,
+        summary: summarizeProviderFailure(error instanceof Error ? error.message : String(error)),
+      });
     }
   }
 
-  throw new Error(`gemini failed after ${GEMINI_HEADLESS_ATTEMPTS.length} headless attempt(s): ${errors.join(" | ")}`);
+  throw new Error(summarizeProviderAttemptFailures("gemini", errors));
 }
 
 async function runGeminiPromptAttempt(
@@ -166,7 +169,7 @@ async function runGeminiPromptAttempt(
     [
       ...providerPromptModelArgs("google", options.model),
       "-p",
-      promptWithReasoningEffort(options.prompt, options.reasoningEffort),
+      "Answer the complete Blueprint planner prompt supplied on stdin. Return only the requested final response.",
       "--skip-trust",
       "--approval-mode",
       attempt.approvalMode,
@@ -176,7 +179,7 @@ async function runGeminiPromptAttempt(
       cwd,
       env: { NO_COLOR: "1" },
       reject: false,
-      stdin: "ignore",
+      input: promptWithReasoningEffort(options.prompt, options.reasoningEffort),
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
@@ -208,7 +211,6 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
     "claude",
     [
       "-p",
-      options.prompt,
       ...providerPromptModelArgs("anthropic", options.model),
       ...providerPromptReasoningArgs("anthropic", options.reasoningEffort),
       "--output-format",
@@ -221,7 +223,7 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
       cwd,
       env: { NO_COLOR: "1" },
       reject: false,
-      stdin: "ignore",
+      input: options.prompt,
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
@@ -308,9 +310,15 @@ function providerProcessFailure(result: {
   signal?: string;
   signalDescription?: string;
   killed?: boolean;
+  failed?: boolean;
+  isCanceled?: boolean;
 }): string {
   if (result.timedOut) {
     return "process timed out without stdout/stderr";
+  }
+
+  if (result.isCanceled) {
+    return "process was canceled before stdout/stderr was reported";
   }
 
   if (result.signal) {
@@ -323,6 +331,10 @@ function providerProcessFailure(result: {
 
   if (result.killed) {
     return "process was killed without stdout/stderr";
+  }
+
+  if (result.failed) {
+    return "process failed without stdout/stderr, exit code, signal, or timeout details";
   }
 
   return "process ended without stdout/stderr and no exit code was reported";
@@ -368,4 +380,17 @@ function summarizeProviderFailure(rawOutput: string): string {
   }
 
   return summary.length > 500 ? `${summary.slice(0, 500)}...` : summary;
+}
+
+function summarizeProviderAttemptFailures(provider: string, errors: Array<{ label: string; summary: string }>): string {
+  const labels = errors.map((error) => error.label).join(", ");
+  const uniqueSummaries = [...new Set(errors.map((error) => error.summary))];
+
+  if (uniqueSummaries.length === 1) {
+    return `${provider} failed after ${errors.length} headless attempt(s) (${labels}): ${uniqueSummaries[0]}`;
+  }
+
+  return `${provider} failed after ${errors.length} headless attempt(s): ${errors
+    .map((error) => `${error.label}: ${error.summary}`)
+    .join(" | ")}`;
 }
