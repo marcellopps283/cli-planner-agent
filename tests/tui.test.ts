@@ -455,6 +455,7 @@ describe("blueprint tui", () => {
         view: "actions",
         hasStartedChatWorkflow: true,
         runningAction: "agent-workflow",
+        planChatDraft: { brief: "planeje um harness agentico com checkboxes validados pela IA" },
       }),
     );
     const fullTimelineOutput = renderToString(
@@ -495,6 +496,9 @@ describe("blueprint tui", () => {
     expect(clippedTimelineOutput).not.toContain("planeje um harness agentico");
     expect(clippedTimelineOutput).toContain("Artifact: Updated Plan");
     expect(runningOutput).toContain("Working");
+    expect(runningOutput).not.toContain("Artifact: Updated Plan");
+    expect(runningOutput).not.toContain("Entendi que o app renderiza o workflow");
+    expect(runningOutput).toContain("planeje um harness agentico com checkboxes");
     expect(runningOutput).not.toContain("Running agent-workflow");
     expect(output).toContain("Harness agentico");
     expect(output).toContain("Understanding project");

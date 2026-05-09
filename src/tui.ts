@@ -3969,6 +3969,7 @@ function ActionsView({
     slashCommandCursor,
     slashCommandScrollOffset,
     actionResult,
+    isolateCurrentRun: hasStartedChatWorkflow && runningAction === "agent-workflow",
   });
 }
 

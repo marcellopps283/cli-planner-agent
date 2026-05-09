@@ -63,6 +63,7 @@ export function WorkbenchSurface({
   slashCommandCursor = 0,
   slashCommandScrollOffset = 0,
   actionResult,
+  isolateCurrentRun = false,
 }: {
   dashboard: TuiDashboard;
   runningAction?: TuiActionId;
@@ -83,6 +84,7 @@ export function WorkbenchSurface({
   slashCommandCursor?: number;
   slashCommandScrollOffset?: number;
   actionResult?: TuiActionResult;
+  isolateCurrentRun?: boolean;
 }): React.ReactElement {
   const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
   const { columns, rows } = useWindowSize();
@@ -105,7 +107,16 @@ export function WorkbenchSurface({
       h(
         Box,
         { flexDirection: "column", flexGrow: 1, overflow: "hidden" as any },
-        h(WorkbenchFeed, { dashboard, actionResult, runningAction, planChatStep, planChatDraft, maxRows: feedMaxRows, timelineWidth }),
+        h(WorkbenchFeed, {
+          dashboard,
+          actionResult,
+          runningAction,
+          planChatStep,
+          planChatDraft,
+          maxRows: feedMaxRows,
+          timelineWidth,
+          isolateCurrentRun,
+        }),
         h(FocusOverlay, {
           pendingConfirmation,
           isEditingRevise,
@@ -172,6 +183,7 @@ export function WorkbenchFeed({
   planChatDraft,
   maxRows,
   timelineWidth = 92,
+  isolateCurrentRun = false,
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
@@ -180,8 +192,9 @@ export function WorkbenchFeed({
   planChatDraft: PlanChatDraft;
   maxRows?: number;
   timelineWidth?: number;
+  isolateCurrentRun?: boolean;
 }): React.ReactElement {
-  const entries = buildTimelineFeedItems({ dashboard, actionResult, runningAction, planChatStep, planChatDraft, timelineWidth });
+  const entries = buildTimelineFeedItems({ dashboard, actionResult, runningAction, planChatStep, planChatDraft, timelineWidth, isolateCurrentRun });
   const visibleEntries = selectVisibleTimelineEntries(entries, maxRows);
   const visibleRows = visibleEntries.reduce((total, item) => total + item.rows, 0);
   const topSpacerRows = maxRows ? Math.max(maxRows - visibleRows, 0) : 0;
@@ -207,6 +220,7 @@ function buildTimelineFeedItems({
   planChatStep,
   planChatDraft,
   timelineWidth,
+  isolateCurrentRun,
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
@@ -214,11 +228,14 @@ function buildTimelineFeedItems({
   planChatStep: PlanChatStep;
   planChatDraft: PlanChatDraft;
   timelineWidth: number;
+  isolateCurrentRun: boolean;
 }): TimelineFeedItem[] {
   const entries: TimelineFeedItem[] = [];
-  const transcript = chatTranscriptMessages(dashboard);
+  const transcript = isolateCurrentRun ? currentRunTranscript(planChatDraft) : chatTranscriptMessages(dashboard);
   const taskCount = dashboard.tasks.length;
   const hasActiveTimelineEvent = planChatStep !== "idle" || Boolean(actionResult);
+  const showPersistedArtifacts = !isolateCurrentRun;
+  const showPersistedAgentState = !isolateCurrentRun;
 
   transcript.forEach((message, index) => {
     entries.push({
@@ -233,11 +250,11 @@ function buildTimelineFeedItems({
     });
   });
 
-  if (taskCount > 0 && hasActiveTimelineEvent) {
+  if (showPersistedArtifacts && taskCount > 0 && hasActiveTimelineEvent) {
     entries.push(buildHandoffTimelineItem(dashboard, timelineWidth));
   }
 
-  if (dashboard.agentState) {
+  if (showPersistedAgentState && dashboard.agentState) {
     entries.push({
       key: "agent-state",
       rows: estimateTimelineRows(plannerAgentStateTimelineLines(dashboard.agentState).map((line) => line.text), timelineWidth),
@@ -270,7 +287,7 @@ function buildTimelineFeedItems({
     });
   }
 
-  if (taskCount > 0) {
+  if (showPersistedArtifacts && taskCount > 0) {
     if (!hasActiveTimelineEvent) {
       entries.push(buildHandoffTimelineItem(dashboard, timelineWidth));
     }
@@ -293,6 +310,22 @@ function buildTimelineFeedItems({
   }
 
   return entries;
+}
+
+function currentRunTranscript(planChatDraft: PlanChatDraft): ChatTranscriptMessage[] {
+  const brief = planChatDraft.brief?.trim();
+
+  if (!brief) {
+    return [];
+  }
+
+  return [
+    {
+      role: "user",
+      content: brief,
+      created_at: "current-run",
+    },
+  ];
 }
 
 function buildHandoffTimelineItem(dashboard: TuiDashboard, timelineWidth: number): TimelineFeedItem {
