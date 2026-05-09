@@ -33,7 +33,8 @@ import {
 const h = createElement;
 const WORKBENCH_SIDEBAR_WIDTH = 44;
 const WORKBENCH_BORDER_COLOR = "gray";
-type ArtifactLineColor = "green" | "yellow" | "red" | "gray";
+type TimelineColor = "cyan" | "green" | "yellow" | "red" | "gray" | "blue";
+type TimelineLine = { key: string; text: string; color?: TimelineColor };
 type ChatTranscriptMessage = NonNullable<TuiDashboard["agentSession"]>["messages"][number];
 
 export function WorkbenchSurface({
@@ -353,48 +354,53 @@ export function PlanPreviewBlock({ actionResult }: { actionResult: TuiActionResu
     .map(parsePreviewTaskLine)
     .slice(0, 6);
 
-  return h(
-    Box,
-    { flexDirection: "column", marginBottom: 1 },
-    h(Text, { bold: true }, "Created Artifact: Preview Contract"),
-    h(Text, { color: "gray" }, actionResult.summary),
-    ...(tasks.length > 0
-      ? tasks.map((task) =>
-          h(
-            Box,
-            { key: task.id, flexDirection: "column" },
-            h(
-              Text,
-              null,
-              h(Text, { color: task.risk >= 7 ? "red" : task.risk >= 5 ? "yellow" : "green" }, riskIcon(task.risk)),
-              ` ${task.id} `,
-              h(Text, { bold: true }, task.model),
-              h(Text, { color: "gray" }, ` risk ${task.risk}`),
-            ),
-            h(Text, { color: "gray" }, `deps ${task.deps} | paths ${truncateLine(task.paths, 72)}`),
-            h(Text, { color: "gray" }, truncateLine(task.reason, 94)),
-          ),
-        )
-      : [h(Text, { key: "pending" }, "[ ] waiting for preview tasks")]),
-    h(Text, { color: "cyan" }, "Confirm to write this preview to .blueprint/."),
-  );
+  return h(TimelineEntryBlock, {
+    marker: "◇",
+    title: "Created Artifact: Preview Contract",
+    meta: actionResult.summary,
+    color: "cyan",
+    lines: [
+      ...(tasks.length > 0
+        ? tasks.flatMap((task): TimelineLine[] => [
+            {
+              key: `${task.id}-title`,
+              color: task.risk >= 7 ? "red" : task.risk >= 5 ? "yellow" : "green",
+              text: `${riskIcon(task.risk)} ${task.id} | ${task.model} | risk ${task.risk}`,
+            },
+            {
+              key: `${task.id}-deps`,
+              color: "gray",
+              text: `deps ${task.deps} | paths ${truncateLine(task.paths, 72)}`,
+            },
+            {
+              key: `${task.id}-reason`,
+              color: "gray",
+              text: truncateLine(task.reason, 94),
+            },
+          ])
+        : [{ key: "pending", text: "[ ] waiting for preview tasks" }]),
+      { key: "confirm", color: "cyan", text: "Confirm to write this preview to .blueprint/." },
+    ],
+  });
 }
 
 export function HandoffReadyBlock({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
-  return h(
-    Box,
-    { flexDirection: "column", marginBottom: 1 },
-    h(Text, { bold: true }, "Created Artifacts: Handoffs Ready"),
-    h(Text, { color: "gray" }, `Plan ready. Generated ${dashboard.tasks.length} worker handoff(s).`),
-    ...dashboard.tasks.slice(0, 8).map((task) =>
-      h(
-        Text,
-        { key: task.id },
-        `[x] ${task.id} | ${task.suggestedModel} | risk ${task.riskLevel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"}`,
-      ),
-    ),
-    ...(dashboard.tasks.length > 8 ? [h(Text, { key: "more", color: "gray" }, `+${dashboard.tasks.length - 8} more task(s)`)] : []),
-  );
+  return h(TimelineEntryBlock, {
+    marker: "◇",
+    title: "Created Artifacts: Handoffs Ready",
+    meta: `Plan ready. Generated ${dashboard.tasks.length} worker handoff(s).`,
+    color: "green",
+    lines: [
+      ...dashboard.tasks.slice(0, 8).map((task): TimelineLine => ({
+        key: task.id,
+        color: "green",
+        text: `[x] ${task.id} | ${task.suggestedModel} | risk ${task.riskLevel} | deps ${task.dependencies.length ? task.dependencies.join(",") : "none"}`,
+      })),
+      ...(dashboard.tasks.length > 8
+        ? [{ key: "more", color: "gray" as const, text: `+${dashboard.tasks.length - 8} more task(s)` }]
+        : []),
+    ],
+  });
 }
 
 export function EmptyWorkbenchBlock(): React.ReactElement {
@@ -557,20 +563,19 @@ function ChatMessageBlock({
   muted?: string;
   title?: string;
   lines: string[];
-  color?: "cyan" | "green" | "yellow" | "red" | "blue";
+  color?: TimelineColor;
 }): React.ReactElement {
-  return h(
-    Box,
-    { flexDirection: "column", marginBottom: 1 },
-    h(
-      Text,
-      null,
-      h(Text, { bold: true, color }, speaker),
-      ...(muted ? [h(Text, { color: "gray", key: "muted" }, ` ${muted}`)] : []),
-    ),
-    ...(title ? [h(Text, { key: "title", bold: true }, title)] : []),
-    ...lines.map((line, index) => h(Text, { key: `${speaker}-${index}`, color: index === 0 ? undefined : "gray" }, line)),
-  );
+  return h(TimelineEntryBlock, {
+    marker: "●",
+    title: title ? `${speaker} · ${title}` : speaker,
+    meta: muted,
+    color,
+    lines: lines.map((line, index) => ({
+      key: `${speaker}-${index}`,
+      color: index === 0 ? undefined : "gray" as const,
+      text: line,
+    })),
+  });
 }
 
 function InlineArtifactBlock({
@@ -580,23 +585,61 @@ function InlineArtifactBlock({
 }: {
   title: string;
   subtitle?: string;
-  lines: Array<{ key: string; text: string; color?: ArtifactLineColor }>;
+  lines: TimelineLine[];
+}): React.ReactElement {
+  return h(TimelineEntryBlock, {
+    marker: "◇",
+    title: `Artifact: ${title}`,
+    meta: subtitle,
+    color: "cyan",
+    lines,
+  });
+}
+
+function TimelineEntryBlock({
+  marker,
+  title,
+  meta,
+  lines,
+  color = "cyan",
+}: {
+  marker: string;
+  title: string;
+  meta?: string;
+  lines: TimelineLine[];
+  color?: TimelineColor;
 }): React.ReactElement {
   return h(
     Box,
     { flexDirection: "column", marginBottom: 1 },
     h(
-      Text,
-      null,
-      h(Text, { bold: true }, `Artifact: ${title}`),
-      ...(subtitle ? [h(Text, { key: "subtitle", color: "gray" }, ` | ${subtitle}`)] : []),
+      Box,
+      { flexDirection: "row" },
+      h(Box, { width: 2, flexShrink: 0 }, h(Text, { color }, marker)),
+      h(
+        Box,
+        { flexGrow: 1 },
+        h(
+          Text,
+          null,
+          h(Text, { bold: true, color }, title),
+          ...(meta ? [h(Text, { key: "meta", color: "gray" }, ` | ${meta}`)] : []),
+        ),
+      ),
     ),
-    ...lines.map((line) => h(Text, { key: line.key, color: line.color }, line.text)),
+    ...lines.map((line) =>
+      h(
+        Box,
+        { key: line.key, flexDirection: "row" },
+        h(Box, { width: 2, flexShrink: 0 }, h(Text, { color: "gray" }, "│")),
+        h(Box, { flexGrow: 1 }, h(Text, { color: line.color }, line.text)),
+      ),
+    ),
   );
 }
 
 function ActionResultArtifactBlock({ actionResult }: { actionResult: TuiActionResult }): React.ReactElement {
-  const color = actionResult.status === "ok" ? "green" : actionResult.status === "needs-confirmation" ? "yellow" : "red";
+  const color: TimelineColor = actionResult.status === "ok" ? "green" : actionResult.status === "needs-confirmation" ? "yellow" : "red";
 
   return h(InlineArtifactBlock, {
     title: "Action Result",

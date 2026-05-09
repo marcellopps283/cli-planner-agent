@@ -454,6 +454,9 @@ describe("blueprint tui", () => {
     expect(dashboard.agentSession?.agent_state?.project_state.title).toBe("Harness agentico");
     expect(dashboard.agentSession?.messages.map((message) => message.role)).toEqual(["user", "planner"]);
     expect(firstScreenOutput).not.toContain("Harness agentico");
+    expect(output).toContain("● You");
+    expect(output).toContain("● Planner");
+    expect(output).toContain("◇ Artifact: Updated Plan");
     expect(output.indexOf("You")).toBeLessThan(output.indexOf("Planner"));
     expect(output.indexOf("Planner")).toBeLessThan(output.indexOf("Artifact: Updated Plan"));
     expect(output).toContain("planeje um harness agentico com checkboxes");
