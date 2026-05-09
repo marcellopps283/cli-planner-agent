@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, useWindowSize } from "ink";
 import path from "node:path";
 import React, { createElement } from "react";
 
@@ -36,6 +36,11 @@ const WORKBENCH_BORDER_COLOR = "gray";
 type TimelineColor = "cyan" | "green" | "yellow" | "red" | "gray" | "blue";
 type TimelineLine = { key: string; text: string; color?: TimelineColor };
 type ChatTranscriptMessage = NonNullable<TuiDashboard["agentSession"]>["messages"][number];
+interface TimelineFeedItem {
+  key: string;
+  rows: number;
+  element: React.ReactElement;
+}
 
 export function WorkbenchSurface({
   dashboard,
@@ -79,6 +84,16 @@ export function WorkbenchSurface({
   actionResult?: TuiActionResult;
 }): React.ReactElement {
   const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
+  const { columns, rows } = useWindowSize();
+  const terminalRows = rows > 0 ? rows : process.stdout.rows || 24;
+  const terminalColumns = columns > 0 ? columns : process.stdout.columns || 100;
+  const feedMaxRows = Math.max(6, terminalRows - workbenchChromeRows({
+    pendingConfirmation,
+    isEditingRevise,
+    isEditingModelPool,
+    planChatStep,
+  }));
+  const timelineWidth = Math.max(32, terminalColumns - WORKBENCH_SIDEBAR_WIDTH - 6);
 
   return h(
     Box,
@@ -88,8 +103,8 @@ export function WorkbenchSurface({
       { flexDirection: "row", flexGrow: 1 },
       h(
         Box,
-        { flexDirection: "column", flexGrow: 1 },
-        h(WorkbenchFeed, { dashboard, actionResult, runningAction, planChatStep, planChatDraft }),
+        { flexDirection: "column", flexGrow: 1, overflow: "hidden" as any },
+        h(WorkbenchFeed, { dashboard, actionResult, runningAction, planChatStep, planChatDraft, maxRows: feedMaxRows, timelineWidth }),
         h(FocusOverlay, {
           pendingConfirmation,
           isEditingRevise,
@@ -132,54 +147,194 @@ export function WorkbenchSurface({
   );
 }
 
+function workbenchChromeRows({
+  pendingConfirmation,
+  isEditingRevise,
+  isEditingModelPool,
+  planChatStep,
+}: {
+  pendingConfirmation?: TuiActionId;
+  isEditingRevise?: boolean;
+  isEditingModelPool?: boolean;
+  planChatStep: PlanChatStep;
+}): number {
+  const focusRows = pendingConfirmation || isEditingRevise || isEditingModelPool || planChatStep !== "idle" ? 4 : 0;
+
+  return 1 + 4 + focusRows + 1;
+}
+
 export function WorkbenchFeed({
   dashboard,
   actionResult,
   runningAction,
   planChatStep,
   planChatDraft,
+  maxRows,
+  timelineWidth = 92,
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
   planChatStep: PlanChatStep;
   planChatDraft: PlanChatDraft;
+  maxRows?: number;
+  timelineWidth?: number;
 }): React.ReactElement {
-  const taskCount = dashboard.tasks.length;
-  const transcript = chatTranscriptMessages(dashboard);
+  const entries = buildTimelineFeedItems({ dashboard, actionResult, runningAction, planChatStep, planChatDraft, timelineWidth });
+  const visibleEntries = selectVisibleTimelineEntries(entries, maxRows);
+  const visibleRows = visibleEntries.reduce((total, item) => total + item.rows, 0);
+  const topSpacerRows = maxRows ? Math.max(maxRows - visibleRows, 0) : 0;
 
   return h(
     Box,
-    { flexDirection: "column", flexGrow: 1, paddingX: 1 },
-    ...transcript.map((message, index) =>
-      h(ChatMessageBlock, {
+    {
+      flexDirection: "column",
+      flexGrow: 1,
+      justifyContent: "flex-end",
+      overflow: "hidden" as any,
+      paddingX: 1,
+    },
+    ...(topSpacerRows > 0 ? [h(Box, { key: "timeline-spacer", height: topSpacerRows, flexShrink: 0 })] : []),
+    ...visibleEntries.map((item) => item.element),
+  );
+}
+
+function buildTimelineFeedItems({
+  dashboard,
+  actionResult,
+  runningAction,
+  planChatStep,
+  planChatDraft,
+  timelineWidth,
+}: {
+  dashboard: TuiDashboard;
+  actionResult?: TuiActionResult;
+  runningAction?: TuiActionId;
+  planChatStep: PlanChatStep;
+  planChatDraft: PlanChatDraft;
+  timelineWidth: number;
+}): TimelineFeedItem[] {
+  const entries: TimelineFeedItem[] = [];
+  const transcript = chatTranscriptMessages(dashboard);
+  const taskCount = dashboard.tasks.length;
+  const hasActiveTimelineEvent = planChatStep !== "idle" || Boolean(actionResult);
+
+  transcript.forEach((message, index) => {
+    entries.push({
+      key: `chat-${index}-${message.created_at}`,
+      rows: estimateTimelineRows([message.content], timelineWidth),
+      element: h(ChatMessageBlock, {
         key: `chat-${index}-${message.created_at}`,
         speaker: message.role === "user" ? "You" : "Planner",
         lines: [message.content],
         color: message.role === "user" ? "green" : "cyan",
       }),
-    ),
-    ...(runningAction === "agent-workflow" && !dashboard.agentState
-      ? [h(PlannerThinkingBlock, { key: "thinking", dashboard })]
-      : []),
-    ...(dashboard.agentState
-      ? [h(PlannerAgentStateBlock, { key: "agent-state", state: dashboard.agentState })]
-      : []),
-    ...(planChatStep !== "idle"
-      ? [h(PlanningProgressBlock, { key: "planning", planChatDraft })]
-      : []),
-    ...(actionResult?.actionId === "plan" && actionResult.canApply
-      ? [h(PlanPreviewBlock, { key: "preview", actionResult })]
-      : []),
-    ...(actionResult && actionResult.actionId !== "plan"
-      ? [h(ActionResultArtifactBlock, { key: "action-result", actionResult })]
-      : []),
-    ...(taskCount > 0
-      ? [h(HandoffReadyBlock, { key: "handoffs", dashboard })]
-      : !dashboard.agentState && actionResult?.actionId !== "plan"
-        ? [h(EmptyWorkbenchBlock, { key: "empty" })]
-        : []),
-  );
+    });
+  });
+
+  if (taskCount > 0 && hasActiveTimelineEvent) {
+    entries.push(buildHandoffTimelineItem(dashboard, timelineWidth));
+  }
+
+  if (runningAction === "agent-workflow" && !dashboard.agentState) {
+    const lines = ["Building project understanding, validation checklist, questions, and next action..."];
+    entries.push({
+      key: "thinking",
+      rows: estimateTimelineRows(lines, timelineWidth),
+      element: h(PlannerThinkingBlock, { key: "thinking", dashboard }),
+    });
+  }
+
+  if (dashboard.agentState) {
+    entries.push({
+      key: "agent-state",
+      rows: estimateTimelineRows(plannerAgentStateTimelineLines(dashboard.agentState).map((line) => line.text), timelineWidth),
+      element: h(PlannerAgentStateBlock, { key: "agent-state", state: dashboard.agentState }),
+    });
+  }
+
+  if (planChatStep !== "idle") {
+    const lines = adaptivePlanChatSteps(planChatDraft).map((step) => PLAN_STEP_PROMPTS[step]);
+    entries.push({
+      key: "planning",
+      rows: estimateTimelineRows(lines, timelineWidth),
+      element: h(PlanningProgressBlock, { key: "planning", planChatDraft }),
+    });
+  }
+
+  if (actionResult?.actionId === "plan" && actionResult.canApply) {
+    entries.push({
+      key: "preview",
+      rows: estimateTimelineRows(actionResult.lines.slice(0, 8), timelineWidth),
+      element: h(PlanPreviewBlock, { key: "preview", actionResult }),
+    });
+  }
+
+  if (actionResult && actionResult.actionId !== "plan") {
+    entries.push({
+      key: "action-result",
+      rows: estimateTimelineRows([actionResult.summary, ...actionResult.lines.slice(0, 6)], timelineWidth),
+      element: h(ActionResultArtifactBlock, { key: "action-result", actionResult }),
+    });
+  }
+
+  if (taskCount > 0) {
+    if (!hasActiveTimelineEvent) {
+      entries.push(buildHandoffTimelineItem(dashboard, timelineWidth));
+    }
+  } else if (!dashboard.agentState && actionResult?.actionId !== "plan") {
+    const lines = ["Send a planning request. Artifacts and todos will appear here as the model progresses."];
+    entries.push({
+      key: "empty",
+      rows: estimateTimelineRows(lines, timelineWidth),
+      element: h(EmptyWorkbenchBlock, { key: "empty" }),
+    });
+  }
+
+  return entries;
+}
+
+function buildHandoffTimelineItem(dashboard: TuiDashboard, timelineWidth: number): TimelineFeedItem {
+  return {
+    key: "handoffs",
+    rows: estimateTimelineRows([
+      `Plan ready. Generated ${dashboard.tasks.length} worker handoff(s).`,
+      ...dashboard.tasks.slice(0, 8).map((task) => `${task.id} ${task.suggestedModel}`),
+    ], timelineWidth),
+    element: h(HandoffReadyBlock, { key: "handoffs", dashboard }),
+  };
+}
+
+function selectVisibleTimelineEntries(entries: TimelineFeedItem[], maxRows?: number): TimelineFeedItem[] {
+  if (!maxRows || entries.length === 0) {
+    return entries;
+  }
+
+  const selected: TimelineFeedItem[] = [];
+  let usedRows = 0;
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+
+    if (selected.length > 0 && usedRows + entry.rows > maxRows) {
+      break;
+    }
+
+    selected.unshift(entry);
+    usedRows += entry.rows;
+  }
+
+  return selected;
+}
+
+function estimateTimelineRows(lines: string[], width: number): number {
+  const contentWidth = Math.max(width - 4, 24);
+  const contentRows = lines.reduce((total, line) => {
+    const visualLength = Math.max(line.length, 1);
+    return total + Math.max(1, Math.ceil(visualLength / contentWidth));
+  }, 0);
+
+  return 1 + contentRows + 1;
 }
 
 export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
@@ -213,34 +368,7 @@ function chatTranscriptMessages(dashboard: TuiDashboard): ChatTranscriptMessage[
 }
 
 export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowState }): React.ReactElement {
-  const confidence = `${Math.round(state.project_state.confidence * 100)}%`;
-  const checklistLines = [
-    {
-      key: "title",
-      color: "gray" as const,
-      text: state.project_state.title,
-    },
-    {
-      key: "phase",
-      color: "gray" as const,
-      text: `${state.project_state.current_phase} / ${state.project_state.health} / confidence ${confidence}`,
-    },
-    {
-      key: "summary",
-      color: "gray" as const,
-      text: state.project_state.summary,
-    },
-    {
-      key: "next",
-      color: state.project_state.health === "ready_to_preview" ? "green" as const : "yellow" as const,
-      text: `Next: ${state.next_action.label}`,
-    },
-    ...state.checklist.slice(0, 10).map((item) => ({
-      key: item.id,
-      color: agentChecklistColor(item.status),
-      text: `${agentCheckbox(item.status)} ${item.label}${item.evidence ? ` - ${item.evidence}` : ""}`,
-    })),
-  ];
+  const checklistLines = plannerAgentStateTimelineLines(state);
 
   return h(
     Box,
@@ -266,6 +394,38 @@ export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowS
         ]
       : []),
   );
+}
+
+function plannerAgentStateTimelineLines(state: PlannerAgentWorkflowState): TimelineLine[] {
+  const confidence = `${Math.round(state.project_state.confidence * 100)}%`;
+
+  return [
+    {
+      key: "title",
+      color: "gray",
+      text: state.project_state.title,
+    },
+    {
+      key: "phase",
+      color: "gray",
+      text: `${state.project_state.current_phase} / ${state.project_state.health} / confidence ${confidence}`,
+    },
+    {
+      key: "summary",
+      color: "gray",
+      text: state.project_state.summary,
+    },
+    {
+      key: "next",
+      color: state.project_state.health === "ready_to_preview" ? "green" : "yellow",
+      text: `Next: ${state.next_action.label}`,
+    },
+    ...state.checklist.slice(0, 10).map((item): TimelineLine => ({
+      key: item.id,
+      color: agentChecklistColor(item.status),
+      text: `${agentCheckbox(item.status)} ${item.label}${item.evidence ? ` - ${item.evidence}` : ""}`,
+    })),
+  ];
 }
 
 function agentCheckbox(status: PlannerAgentWorkflowState["checklist"][number]["status"]): string {

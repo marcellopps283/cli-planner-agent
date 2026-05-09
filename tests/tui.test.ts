@@ -22,6 +22,7 @@ import {
   shouldDisplayTuiActionResult,
   TuiSessionRecordSchema,
 } from "../src/tui.js";
+import { WorkbenchFeed } from "../src/ui/workbench.js";
 
 describe("blueprint tui", () => {
   it("renders onboarding when the current directory has no blueprint", async () => {
@@ -445,6 +446,24 @@ describe("blueprint tui", () => {
         hasStartedChatWorkflow: true,
       }),
     );
+    const fullTimelineOutput = renderToString(
+      createElement(WorkbenchFeed, {
+        dashboard,
+        planChatStep: "idle",
+        planChatDraft: {},
+        maxRows: 80,
+        timelineWidth: 80,
+      }),
+    );
+    const clippedTimelineOutput = renderToString(
+      createElement(WorkbenchFeed, {
+        dashboard,
+        planChatStep: "idle",
+        planChatDraft: {},
+        maxRows: 8,
+        timelineWidth: 80,
+      }),
+    );
 
     expect(result.status).toBe("ok");
     expect(result.summary).toContain("Understanding project");
@@ -454,14 +473,16 @@ describe("blueprint tui", () => {
     expect(dashboard.agentSession?.agent_state?.project_state.title).toBe("Harness agentico");
     expect(dashboard.agentSession?.messages.map((message) => message.role)).toEqual(["user", "planner"]);
     expect(firstScreenOutput).not.toContain("Harness agentico");
-    expect(output).toContain("● You");
-    expect(output).toContain("● Planner");
-    expect(output).toContain("◇ Artifact: Updated Plan");
-    expect(output.indexOf("You")).toBeLessThan(output.indexOf("Planner"));
-    expect(output.indexOf("Planner")).toBeLessThan(output.indexOf("Artifact: Updated Plan"));
-    expect(output).toContain("planeje um harness agentico com checkboxes");
-    expect(output).toContain("validados pela IA");
-    expect(output).toContain("Entendi que o app renderiza o workflow");
+    expect(fullTimelineOutput).toContain("● You");
+    expect(fullTimelineOutput).toContain("● Planner");
+    expect(fullTimelineOutput).toContain("◇ Artifact: Updated Plan");
+    expect(fullTimelineOutput.indexOf("You")).toBeLessThan(fullTimelineOutput.indexOf("Planner"));
+    expect(fullTimelineOutput.indexOf("Planner")).toBeLessThan(fullTimelineOutput.indexOf("Artifact: Updated Plan"));
+    expect(fullTimelineOutput).toContain("planeje um harness agentico com checkboxes");
+    expect(fullTimelineOutput).toContain("validados pela IA");
+    expect(fullTimelineOutput).toContain("Entendi que o app renderiza o workflow");
+    expect(clippedTimelineOutput).not.toContain("planeje um harness agentico");
+    expect(clippedTimelineOutput).toContain("Artifact: Updated Plan");
     expect(output).toContain("Harness agentico");
     expect(output).toContain("Understanding project");
     expect(output).toContain("[x] Entender pedido inicial");
