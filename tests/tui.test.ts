@@ -133,6 +133,8 @@ describe("blueprint tui", () => {
     expect(providersOutput).not.toContain("gpt-5.5");
     expect(modelsOutput).toContain("GOOGLE");
     expect(modelsOutput).toContain("gemini-3.1-pro-preview");
+    expect(modelsOutput).not.toContain("Select all");
+    expect(modelsOutput).not.toContain("gemini-3.1-pro-preview-customtools");
     expect(reasoningOutput).toContain("Reasoning Effort");
     expect(reasoningOutput).toContain("gpt-5.5");
     expect(reasoningOutput).toContain("> [x] xhigh");
@@ -452,6 +454,11 @@ describe("blueprint tui", () => {
     expect(dashboard.agentSession?.agent_state?.project_state.title).toBe("Harness agentico");
     expect(dashboard.agentSession?.messages.map((message) => message.role)).toEqual(["user", "planner"]);
     expect(firstScreenOutput).not.toContain("Harness agentico");
+    expect(output.indexOf("You")).toBeLessThan(output.indexOf("Planner"));
+    expect(output.indexOf("Planner")).toBeLessThan(output.indexOf("Artifact: Updated Plan"));
+    expect(output).toContain("planeje um harness agentico com checkboxes");
+    expect(output).toContain("validados pela IA");
+    expect(output).toContain("Entendi que o app renderiza o workflow");
     expect(output).toContain("Harness agentico");
     expect(output).toContain("Understanding project");
     expect(output).toContain("[x] Entender pedido inicial");
@@ -953,7 +960,7 @@ describe("blueprint tui", () => {
         dashboard,
         view: "actions",
         isSelectingChatModel: true,
-        chatModelCursor: 1,
+        chatModelCursor: 0,
       }),
     );
     const result = await runTuiAction({
@@ -966,6 +973,8 @@ describe("blueprint tui", () => {
     expect(selectorOutput).toContain("Model Selector");
     expect(selectorOutput).toContain("Connected CLI: google");
     expect(selectorOutput).toContain("gemini-3.1-pro-preview");
+    expect(selectorOutput).not.toContain("gemini-2.5-flash");
+    expect(selectorOutput).not.toContain("gemini-3-flash-preview");
     expect(result.status).toBe("ok");
     expect(result.summary).toContain("Chat model switched");
     expect(profile.profile?.planner_provider).toBe("google");

@@ -119,8 +119,6 @@ export function EmptyPanel({ title, message }: { title: string; message: string 
 export function ChatModelSelectorPanel({
   dashboard,
   cursor,
-  scrollOffset = 0,
-  maxVisible = 8,
   maxLineWidth = 96,
   width,
 }: {
@@ -134,9 +132,8 @@ export function ChatModelSelectorPanel({
   const profile = dashboard.profile.profile;
   const models = chatModelsForConnectedProvider(dashboard);
   const selectedIndex = Math.min(cursor, Math.max(models.length - 1, 0));
-  const safeOffset = clampScrollOffset(scrollOffset, models.length, maxVisible);
-  const visibleModels = models.slice(safeOffset, safeOffset + maxVisible);
   const provider = profile?.planner_provider ?? "missing";
+  const selectedModel = models[selectedIndex];
 
   if (!profile) {
     return h(
@@ -151,36 +148,25 @@ export function ChatModelSelectorPanel({
     Box,
     { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column", width },
     h(Text, { bold: true }, "Model Selector"),
-    h(Text, { color: "gray" }, `Connected CLI: ${provider}. Enter selects, Esc closes.`),
-    ...(models.length > 0
-      ? visibleModels.map((model, index) => {
-          const absoluteIndex = safeOffset + index;
-          const line = `${absoluteIndex === selectedIndex ? ">" : " "} ${model.id} ${model.id === profile.planner_model ? "(current)" : ""} ${model.tier}/${model.status}`;
-
-          return h(
-            Text,
-            {
-              key: model.id,
-              color: absoluteIndex === selectedIndex ? "cyan" : model.id === profile.planner_model ? "green" : undefined,
-              bold: absoluteIndex === selectedIndex,
-              wrap: "truncate",
-            },
-            truncatePanelLine(line, maxLineWidth),
-          );
-        })
-      : [h(Text, { key: "empty", color: "yellow" }, `No models found for ${provider}. Refresh the registry or update the provider pool.`)]),
-    ...(models.length > maxVisible
+    h(Text, { color: "gray" }, `Connected CLI: ${provider}. Step 1/2 chooses the chat model.`),
+    ...(selectedModel
       ? [
+          h(Text, { key: "position", color: "gray" }, `Model ${selectedIndex + 1}/${models.length}`),
           h(
             Text,
             {
-              key: "scroll",
-              color: "gray",
+              key: selectedModel.id,
+              color: selectedModel.id === profile.planner_model ? "green" : "cyan",
+              bold: true,
+              wrap: "truncate",
             },
-            `↑↓ scroll ${safeOffset + 1}-${safeOffset + visibleModels.length}/${models.length}`,
+            truncatePanelLine(`> ${selectedModel.id}${selectedModel.id === profile.planner_model ? " (current)" : ""}`, maxLineWidth),
           ),
+          h(Text, { key: "meta" }, `${selectedModel.tier}/${selectedModel.status}`),
+          h(Text, { key: "effort" }, `Default effort: ${selectedModel.defaultReasoningEffort ?? "auto"}`),
+          h(Text, { key: "hint", color: "gray" }, "Up/down changes model. Enter opens effort. Esc closes."),
         ]
-      : []),
+      : [h(Text, { key: "empty", color: "yellow" }, `No models found for ${provider}. Refresh the registry or update the provider pool.`)]),
   );
 }
 
@@ -272,24 +258,27 @@ export function ReasoningEffortSelectorPanel({
   width?: number;
 }): React.ReactElement {
   const selectedIndex = Math.min(cursor, Math.max(efforts.length - 1, 0));
+  const selectedEffort = efforts[selectedIndex];
 
   return h(
     Box,
     { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column", width },
     h(Text, { bold: true }, "Reasoning Effort"),
-    h(Text, { color: "gray" }, `${provider.toUpperCase()}/${modelId}`),
-    ...(efforts.length > 0
-      ? efforts.map((effort, index) =>
+    h(Text, { color: "gray" }, `Step 2/2: ${provider.toUpperCase()}/${modelId}`),
+    ...(selectedEffort
+      ? [
+          h(Text, { key: "position", color: "gray" }, `Effort ${selectedIndex + 1}/${efforts.length}`),
           h(
             Text,
             {
-              key: effort,
-              color: index === selectedIndex ? "cyan" : effort === currentEffort ? "green" : undefined,
-              bold: index === selectedIndex,
+              key: selectedEffort,
+              color: selectedEffort === currentEffort ? "green" : "cyan",
+              bold: true,
             },
-            `${index === selectedIndex ? ">" : " "} ${effort}${effort === currentEffort ? " current" : ""}`,
+            `> ${selectedEffort}${selectedEffort === currentEffort ? " current" : ""}`,
           ),
-        )
+          h(Text, { key: "current" }, `Current: ${currentEffort ?? "default"}`),
+        ]
       : [h(Text, { key: "empty", color: "yellow" }, "This model does not expose effort levels.")]),
     h(Text, { color: "gray" }, "Up/down selects, Enter confirms, b returns, Esc closes."),
   );

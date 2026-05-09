@@ -34,6 +34,7 @@ const h = createElement;
 const WORKBENCH_SIDEBAR_WIDTH = 44;
 const WORKBENCH_BORDER_COLOR = "gray";
 type ArtifactLineColor = "green" | "yellow" | "red" | "gray";
+type ChatTranscriptMessage = NonNullable<TuiDashboard["agentSession"]>["messages"][number];
 
 export function WorkbenchSurface({
   dashboard,
@@ -144,10 +145,19 @@ export function WorkbenchFeed({
   planChatDraft: PlanChatDraft;
 }): React.ReactElement {
   const taskCount = dashboard.tasks.length;
+  const transcript = chatTranscriptMessages(dashboard);
 
   return h(
     Box,
     { flexDirection: "column", flexGrow: 1, paddingX: 1 },
+    ...transcript.map((message, index) =>
+      h(ChatMessageBlock, {
+        key: `chat-${index}-${message.created_at}`,
+        speaker: message.role === "user" ? "You" : "Planner",
+        lines: [message.content],
+        color: message.role === "user" ? "green" : "cyan",
+      }),
+    ),
     ...(runningAction === "agent-workflow" && !dashboard.agentState
       ? [h(PlannerThinkingBlock, { key: "thinking", dashboard })]
       : []),
@@ -185,46 +195,61 @@ export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard })
   );
 }
 
+function chatTranscriptMessages(dashboard: TuiDashboard): ChatTranscriptMessage[] {
+  const sessionMessages = dashboard.agentSession?.messages ?? [];
+
+  if (sessionMessages.length > 0) {
+    return sessionMessages.slice(-12);
+  }
+
+  const stateMessages = dashboard.agentState?.messages ?? [];
+
+  return stateMessages.map((message, index) => ({
+    role: "planner" as const,
+    content: message.content,
+    created_at: `legacy-${index}`,
+  }));
+}
+
 export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowState }): React.ReactElement {
   const confidence = `${Math.round(state.project_state.confidence * 100)}%`;
-  const summaryLines = [
-    state.project_state.summary,
-    `Phase: ${state.project_state.current_phase}`,
-    `Next: ${state.next_action.label}`,
+  const checklistLines = [
+    {
+      key: "title",
+      color: "gray" as const,
+      text: state.project_state.title,
+    },
+    {
+      key: "phase",
+      color: "gray" as const,
+      text: `${state.project_state.current_phase} / ${state.project_state.health} / confidence ${confidence}`,
+    },
+    {
+      key: "summary",
+      color: "gray" as const,
+      text: state.project_state.summary,
+    },
+    {
+      key: "next",
+      color: state.project_state.health === "ready_to_preview" ? "green" as const : "yellow" as const,
+      text: `Next: ${state.next_action.label}`,
+    },
+    ...state.checklist.slice(0, 10).map((item) => ({
+      key: item.id,
+      color: agentChecklistColor(item.status),
+      text: `${agentCheckbox(item.status)} ${item.label}${item.evidence ? ` - ${item.evidence}` : ""}`,
+    })),
   ];
-  const checklistLines = state.checklist.slice(0, 10).map((item) => ({
-    key: item.id,
-    color: agentChecklistColor(item.status),
-    text: `${agentCheckbox(item.status)} ${item.label}${item.evidence ? ` - ${item.evidence}` : ""}`,
-  }));
 
   return h(
     Box,
     { flexDirection: "column", marginBottom: 1 },
-    h(ChatMessageBlock, {
-      speaker: "Planner",
-      muted: `${state.project_state.health} / confidence ${confidence}`,
-      title: state.project_state.title,
-      lines: summaryLines,
-      color: agentStateColor(state),
+    h(InlineArtifactBlock, {
+      key: "todo-artifact",
+      title: "Updated Plan",
+      subtitle: "agent maintained todo",
+      lines: checklistLines,
     }),
-    ...state.messages.slice(0, 3).map((message, index) =>
-      h(ChatMessageBlock, {
-        key: `message-${index}`,
-        speaker: "Planner",
-        lines: [message.content],
-      }),
-    ),
-    ...(state.checklist.length > 0
-      ? [
-          h(InlineArtifactBlock, {
-            key: "todo-artifact",
-            title: "Updated Plan",
-            subtitle: "agent maintained todo",
-            lines: checklistLines,
-          }),
-        ]
-      : []),
     ...(state.questions.length > 0
       ? [
           h(InlineArtifactBlock, {
@@ -272,22 +297,6 @@ function agentChecklistColor(status: PlannerAgentWorkflowState["checklist"][numb
   }
 
   return "gray";
-}
-
-function agentStateColor(state: PlannerAgentWorkflowState): "green" | "yellow" | "red" | "blue" {
-  if (state.project_state.health === "ready_to_preview") {
-    return "green";
-  }
-
-  if (state.project_state.health === "blocked") {
-    return "red";
-  }
-
-  if (state.project_state.health === "needs_input") {
-    return "yellow";
-  }
-
-  return "blue";
 }
 
 interface ParsedPreviewTaskLine {

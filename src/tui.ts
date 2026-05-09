@@ -1545,6 +1545,22 @@ function formatScore(score: number | undefined): string {
   return typeof score === "number" ? score.toFixed(2) : "n/a";
 }
 
+function formatContextWindow(tokens: number | undefined): string {
+  if (!tokens) {
+    return "unknown";
+  }
+
+  return formatCompactNumber(tokens);
+}
+
+function summarizeStrengths(strengths: string[]): string {
+  if (strengths.length === 0) {
+    return "No registry strengths listed.";
+  }
+
+  return strengths.slice(0, 2).join(" | ");
+}
+
 function formatReasoningEfforts(efforts: Record<string, string> | undefined): string {
   const entries = Object.entries(efforts ?? {});
 
@@ -2506,7 +2522,7 @@ export function InteractiveDashboard({
     if (setupStep === "models") {
       const provider = setupDraft.providers[setupModelProviderCursor];
       const models = provider ? setupModelsForProvider(provider) : [];
-      const maxCursor = models.length;
+      const maxCursor = Math.max(models.length - 1, 0);
 
       if (input.toLowerCase() === "b") {
         if (setupModelProviderCursor > 0) {
@@ -2532,13 +2548,13 @@ export function InteractiveDashboard({
         const providerModelIds = models.map((model) => model.id);
         const selectedForProvider = providerModelIds.filter((modelId) => setupDraft.models.includes(modelId));
 
-        if (setupModelCursor === 0 || input.toLowerCase() === "a") {
+        if (input.toLowerCase() === "a") {
           const allSelected = selectedForProvider.length === providerModelIds.length;
           setSetupDraft(updateSetupModelsForProvider(setupDraft, provider, allSelected ? [] : providerModelIds));
           return;
         }
 
-        const model = models[setupModelCursor - 1];
+        const model = models[Math.min(setupModelCursor, maxCursor)];
 
         if (model) {
           const nextSelected = setupDraft.models.includes(model.id)
@@ -2998,6 +3014,7 @@ export function BlueprintDashboard({
       planChatStep,
       isEditingModelPool,
       isSelectingChatModel,
+      chatModelEffortCandidate,
       isEditingRoot,
       runningAction,
       setupStep,
@@ -3467,6 +3484,8 @@ function SetupStepPanel({
     const models = provider ? setupModelsForProvider(provider) : [];
     const selectedCount = models.filter((model) => setupDraft.models.includes(model.id)).length;
     const allSelected = models.length > 0 && selectedCount === models.length;
+    const selectedIndex = Math.min(setupModelCursor, Math.max(models.length - 1, 0));
+    const model = models[selectedIndex];
 
     return h(
       Box,
@@ -3476,27 +3495,26 @@ function SetupStepPanel({
         { bold: true },
         `2. Model Pool ${provider ? `(${setupModelProviderCursor + 1}/${setupDraft.providers.length} ${PROVIDER_DISPLAY_NAMES[provider]})` : ""}`,
       ),
-      h(Text, null, "Choose exact models available for routing."),
-      h(
-        Text,
-        { color: setupModelCursor === 0 ? "cyan" : undefined, bold: setupModelCursor === 0 },
-        `${setupModelCursor === 0 ? ">" : " "} [${allSelected ? "x" : " "}] Select all ${provider ?? ""} models`,
-      ),
-      ...models.map((model, index) => {
-        const cursor = index + 1;
-        const selected = setupDraft.models.includes(model.id);
-
-        return h(
-          Text,
-          {
-            key: model.id,
-            color: setupModelCursor === cursor ? "cyan" : undefined,
-            bold: setupModelCursor === cursor,
-          },
-          `${setupModelCursor === cursor ? ">" : " "} [${selected ? "x" : " "}] ${model.id} ${model.tier}/${model.status}`,
-        );
-      }),
-      h(Text, { color: "gray" }, "Space toggles, a selects all for this provider, b goes back, Enter continues."),
+      h(Text, null, "Choose exact models available for routing, one card at a time."),
+      h(Text, { color: "gray" }, `Selected ${selectedCount}/${models.length}${allSelected ? " (all)" : ""}`),
+      ...(model
+        ? [
+            h(Text, { key: "position", color: "gray" }, `Model ${selectedIndex + 1}/${models.length}`),
+            h(
+              Text,
+              {
+                key: model.id,
+                color: "cyan",
+                bold: true,
+              },
+              `> [${setupDraft.models.includes(model.id) ? "x" : " "}] ${model.id}`,
+            ),
+            h(Text, { key: "meta" }, `${model.tier}/${model.status} | context ${formatContextWindow(model.context_window)}`),
+            h(Text, { key: "fit" }, `planning ${formatScore(model.task_fit.planning)} | coding ${formatScore(model.task_fit.coding)}`),
+            h(Text, { key: "strength", color: "gray" }, summarizeStrengths(model.strengths)),
+          ]
+        : [h(Text, { key: "empty", color: "yellow" }, "No models available for this provider.")]),
+      h(Text, { color: "gray" }, "Up/down changes model, Space toggles, a selects all for provider, Enter continues, b goes back."),
     );
   }
 
@@ -3504,6 +3522,8 @@ function SetupStepPanel({
     const models = setupReasoningModels(setupDraft.models);
     const model = models[setupReasoningModelCursor];
     const efforts = model?.reasoning_efforts ?? [];
+    const selectedIndex = Math.min(setupReasoningEffortCursor, Math.max(efforts.length - 1, 0));
+    const effort = efforts[selectedIndex];
 
     return h(
       Box,
@@ -3514,41 +3534,51 @@ function SetupStepPanel({
         `3. Reasoning Effort ${model ? `(${setupReasoningModelCursor + 1}/${models.length})` : ""}`,
       ),
       h(Text, null, model ? `${model.id} | ${PROVIDER_DISPLAY_NAMES[model.provider]}` : "No selected model exposes effort options."),
-      ...efforts.map((effort, index) =>
-        h(
-          Text,
-          {
-            key: effort,
-            color: setupReasoningEffortCursor === index ? "cyan" : undefined,
-            bold: setupReasoningEffortCursor === index,
-          },
-          `${setupReasoningEffortCursor === index ? ">" : " "} [${setupDraft.reasoningEfforts[model!.id] === effort ? "x" : " "}] ${effort}${model?.default_reasoning_effort === effort ? " default" : ""}`,
-        ),
-      ),
-      h(Text, { color: "gray" }, "Up/down selects effort, Enter confirms this model, b goes back."),
+      ...(effort && model
+        ? [
+            h(Text, { key: "position", color: "gray" }, `Effort ${selectedIndex + 1}/${efforts.length}`),
+            h(
+              Text,
+              {
+                key: effort,
+                color: "cyan",
+                bold: true,
+              },
+              `> [${setupDraft.reasoningEfforts[model.id] === effort ? "x" : " "}] ${effort}${model.default_reasoning_effort === effort ? " default" : ""}`,
+            ),
+          ]
+        : [h(Text, { key: "empty", color: "yellow" }, "No effort options for this model.")]),
+      h(Text, { color: "gray" }, "Up/down changes effort, Enter confirms this model, b goes back."),
     );
   }
 
   if (setupStep === "planner") {
     const models = setupPlannerModels(setupDraft.models);
+    const selectedIndex = Math.min(setupPlannerCursor, Math.max(models.length - 1, 0));
+    const model = models[selectedIndex];
 
     return h(
       Box,
       { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
       h(Text, { bold: true }, "4. Planner Model"),
       h(Text, null, "Choose the model that will run the planning conversation."),
-      ...models.map((model, index) =>
-        h(
-          Text,
-          {
-            key: model.id,
-            color: setupPlannerCursor === index ? "cyan" : undefined,
-            bold: setupPlannerCursor === index,
-          },
-          `${setupPlannerCursor === index ? ">" : " "} ${model.id} | ${PROVIDER_DISPLAY_NAMES[model.provider]} | effort ${setupDraft.reasoningEfforts[model.id] ?? "default"} | planning ${formatScore(model.task_fit.planning)}`,
-        ),
-      ),
-      h(Text, { color: "gray" }, "Up/down selects, b goes back, Enter confirms."),
+      ...(model
+        ? [
+            h(Text, { key: "position", color: "gray" }, `Candidate ${selectedIndex + 1}/${models.length}`),
+            h(
+              Text,
+              {
+                key: model.id,
+                color: "cyan",
+                bold: true,
+              },
+              `> ${model.id}`,
+            ),
+            h(Text, { key: "provider" }, `${PROVIDER_DISPLAY_NAMES[model.provider]} | effort ${setupDraft.reasoningEfforts[model.id] ?? "default"}`),
+            h(Text, { key: "planning" }, `planning ${formatScore(model.task_fit.planning)} | ${model.tier}/${model.status}`),
+          ]
+        : [h(Text, { key: "empty", color: "yellow" }, "No selected models can be used as planner.")]),
+      h(Text, { color: "gray" }, "Up/down changes planner, b goes back, Enter confirms."),
     );
   }
 
@@ -5178,6 +5208,7 @@ function KeyHints({
   planChatStep = "idle",
   isEditingModelPool,
   isSelectingChatModel,
+  chatModelEffortCandidate,
   isEditingRoot,
   runningAction,
   setupStep = "idle",
@@ -5189,6 +5220,7 @@ function KeyHints({
   planChatStep?: PlanChatStep;
   isEditingModelPool?: boolean;
   isSelectingChatModel?: boolean;
+  chatModelEffortCandidate?: string;
   isEditingRoot?: boolean;
   runningAction?: TuiActionId;
   setupStep?: SetupStep;
@@ -5199,8 +5231,10 @@ function KeyHints({
     hints = "Enter \u2192 open dir  \u2502  Esc \u2192 cancel";
   } else if (!setupInitialized && setupStep !== "idle") {
     hints = "Space \u2192 toggle  \u2502  Enter \u2192 next  \u2502  b \u2192 back  \u2502  Esc \u2192 cancel";
+  } else if (chatModelEffortCandidate) {
+    hints = "\u2191\u2193 effort  \u2502  Enter confirm  \u2502  b model  \u2502  Esc close";
   } else if (isSelectingChatModel) {
-    hints = "\u2191\u2193 select model  \u2502  Enter use model  \u2502  Esc close";
+    hints = "\u2191\u2193 model  \u2502  Enter next  \u2502  Esc close";
   } else if (planChatStep !== "idle" || isEditingRevise || isEditingModelPool) {
     hints = "Enter \u2192 submit  \u2502  Esc \u2192 cancel";
   } else if (pendingConfirmation) {
