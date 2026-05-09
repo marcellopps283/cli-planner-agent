@@ -1649,7 +1649,7 @@ export function InteractiveDashboard({
           .then((nextDashboard) => {
             setDashboardState(nextDashboard);
             setRootInput(nextDashboard.root);
-            setView(nextDashboard.setup.initialized ? "main" : "actions");
+            setView("actions");
             setSelectedMainMenuIndex(0);
             setSetupStep(nextDashboard.setup.initialized ? "idle" : "providers");
             setPendingConfirmation(undefined);
@@ -2794,8 +2794,8 @@ export function InteractiveDashboard({
       setDashboardState(nextDashboard);
 
       if (actionId === "setup" && result.status === "ok" && nextDashboard.setup.initialized) {
-        setView("main");
-        setSelectedMainMenuIndex(0);
+        setView("actions");
+        setSelectedMainMenuIndex(mainMenuIndexForView("actions"));
       }
     } catch (error) {
       setActionResult({

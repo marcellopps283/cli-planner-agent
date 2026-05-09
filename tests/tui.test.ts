@@ -220,7 +220,7 @@ describe("blueprint tui", () => {
     expect(workbenchOutput).toContain("Handoffs Ready");
     expect(workbenchOutput).toContain("Artifacts");
     expect(workbenchOutput).toContain("Plan ready");
-    expect(workbenchOutput).toContain(".blueprint/dependencies_graph.json");
+    expect(workbenchOutput).not.toContain(".blueprint/dependencies_graph.json");
     expect(mainOutput).toContain("Operations");
     expect(mainOutput).toContain("status handoffs ready");
     expect(mainOutput).toContain("provider_pool openai,google");
@@ -292,7 +292,7 @@ describe("blueprint tui", () => {
     );
 
     expect(output).toContain("Ask anything");
-    expect(output).toContain("openai/gpt-5.5");
+    expect(output).toContain("OpenAI/gpt-5.5-xhigh");
     expect(output).toContain("ctrl+p commands");
     expect(output).not.toContain("Slash Autocomplete");
     expect(typedOutput).toContain("planejar tela inicial");
@@ -686,7 +686,7 @@ describe("blueprint tui", () => {
     expect(output).toContain("Preview Contract");
     expect(output).toContain("task-002-refactor-tui");
     expect(output).toContain("gpt-5.5");
-    expect(output).toContain("Confirm writes this exact preview");
+    expect(output).toContain("Confirm to write this preview");
     expect(output).not.toContain("Plan Preview Ready");
   });
 

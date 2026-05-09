@@ -60,8 +60,6 @@ export function LandingSurface({
   planChatInput?: string;
 }): React.ReactElement {
   const profile = dashboard.profile.profile;
-  const planner = profile ? `${profile.planner_provider}/${profile.planner_model}` : "missing planner";
-  const providerLabel = profile ? `${profile.available_models.length || "default"} model(s) active` : "run setup";
   const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
   const promptText = chatCommandInput.length > 0 ? chatCommandInput : 'Ask anything... "Plan the next project slice"';
   const effortModel = chatModelEffortCandidate
@@ -86,12 +84,6 @@ export function LandingSurface({
           Text,
           null,
           h(Text, { color: chatCommandInput.length > 0 ? "white" : "gray" }, promptText),
-        ),
-        h(
-          Text,
-          null,
-          h(Text, { bold: true }, `${planner} `),
-          h(Text, { color: "gray" }, `(Primary) ${providerLabel}`),
         ),
       ),
       h(

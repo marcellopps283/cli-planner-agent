@@ -37,12 +37,65 @@ export function ActionResultPanel({ result }: { result?: TuiActionResult }): Rea
 }
 
 export function OpenCodePathBar({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
+  const modelLabel = plannerRuntimeLabel(dashboard);
+  const folder = folderLabel(dashboard.root);
+
   return h(
     Box,
-    { justifyContent: "space-between" },
-    h(Text, { color: "gray" }, dashboard.root),
-    h(Text, { color: "gray" }, `${TUI_APP_NAME} ${TUI_APP_VERSION}`),
+    null,
+    h(
+      Text,
+      { color: "gray" },
+      `${truncateText(folder, 22)} | `,
+      h(Text, { color: modelLabel === "planner missing" ? "yellow" : "cyan" }, truncateText(modelLabel, 36)),
+      ` | tab model | / | v${TUI_APP_VERSION}`,
+    ),
   );
+}
+
+function plannerRuntimeLabel(dashboard: TuiDashboard): string {
+  const profile = dashboard.profile.profile;
+
+  if (!profile) {
+    return "planner missing";
+  }
+
+  const model = profile.planner_model;
+  const effort =
+    profile.planner_reasoning_effort
+    ?? profile.model_reasoning_efforts[model]
+    ?? dashboard.registryModels.find((candidate) => candidate.id === model)?.defaultReasoningEffort;
+  const provider = providerDisplayName(profile.planner_provider);
+
+  return `${provider}/${model}${effort ? `-${effort}` : ""}`;
+}
+
+function providerDisplayName(provider: string): string {
+  if (provider === "openai") {
+    return "OpenAI";
+  }
+
+  if (provider === "google") {
+    return "Gemini";
+  }
+
+  if (provider === "anthropic") {
+    return "Claude";
+  }
+
+  return provider;
+}
+
+function truncateText(text: string, maxWidth: number): string {
+  if (text.length <= maxWidth) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(maxWidth - 1, 0))}…`;
+}
+
+function folderLabel(root: string): string {
+  return root.split(/[\\/]/u).filter(Boolean).at(-1) ?? root;
 }
 
 export function MessageList({ title, messages }: { title: string; messages: string[] }): React.ReactElement {
