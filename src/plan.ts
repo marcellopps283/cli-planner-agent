@@ -48,7 +48,40 @@ const PlanAnswersSchema = z.object({
 export type PlanAnswers = z.infer<typeof PlanAnswersSchema>;
 
 export function parsePlanAnswers(value: unknown): PlanAnswers {
-  return PlanAnswersSchema.parse(value);
+  const answers = PlanAnswersSchema.parse(value);
+
+  return {
+    ...answers,
+    validationCommands: normalizeValidationCommands(answers.validationCommands),
+  };
+}
+
+export function normalizeValidationCommands(commands: string[]): string[] {
+  const normalized = commands
+    .map((command) => normalizeValidationCommand(command))
+    .filter((command) => command.length > 0);
+
+  return uniqueStrings(normalized);
+}
+
+function normalizeValidationCommand(command: string): string {
+  const collapsed = command.trim().replace(/\s+/gu, " ");
+
+  if (collapsed.length === 0) {
+    return "";
+  }
+
+  const pnpmTestRun = /^(?:corepack\s+)?pnpm\s+test\s+run(?:\s+(.+))?$/u.exec(collapsed);
+
+  if (pnpmTestRun) {
+    return `corepack pnpm test${pnpmTestRun[1] ? ` ${pnpmTestRun[1]}` : ""}`;
+  }
+
+  if (/^pnpm\s+/u.test(collapsed)) {
+    return `corepack ${collapsed}`;
+  }
+
+  return collapsed;
 }
 
 const PlanEngineSchema = z.enum(["deterministic", "llm"]);
@@ -144,6 +177,7 @@ export interface PlanPreviewResult {
   plannerFallback: boolean;
   overview: string;
   tasks: PlanPreviewTask[];
+  draft?: PlannerDraft;
 }
 
 export interface PlanContext {
@@ -189,6 +223,7 @@ interface PlanBuild {
   plannerModel: string;
   plannerFallback: boolean;
   plannerAttempts: number;
+  draft?: PlannerDraft;
   overview: string;
   assumptions: string[];
   decisions: string[];
@@ -361,13 +396,14 @@ export async function previewBlueprintPlan(options: GeneratePlanOptions): Promis
     plannerFallback: prepared.plan.plannerFallback,
     overview: prepared.plan.overview,
     tasks: prepared.plan.tasks.map(toPreviewTask),
+    draft: prepared.plan.draft,
   };
 }
 
 async function prepareBlueprintPlan(options: GeneratePlanOptions): Promise<PreparedPlan> {
   const root = path.resolve(options.root);
   const context = await loadPlanContext(root);
-  const answers = PlanAnswersSchema.parse(options.answers);
+  const answers = parsePlanAnswers(options.answers);
   const blueprintRoot = path.join(root, BLUEPRINT_DIR);
 
   if (!options.force) {
@@ -523,7 +559,7 @@ async function collectPlanAnswers(context: PlanContext): Promise<PlanAnswers> {
 
   const notes = await promptList("Alguma observacao adicional para os workers?", { optional: true });
 
-  return PlanAnswersSchema.parse({
+  return parsePlanAnswers({
     projectSummary,
     objective,
     successCriteria,
@@ -591,7 +627,7 @@ async function confirmPlanAssignments(prepared: PreparedPlan): Promise<boolean> 
 
 async function readAnswersFile(answersPath: string): Promise<PlanAnswers> {
   const raw = await readFile(path.resolve(answersPath), "utf8");
-  return PlanAnswersSchema.parse(JSON.parse(raw));
+  return parsePlanAnswers(JSON.parse(raw));
 }
 
 async function assertPlanCanBeWritten(blueprintRoot: string): Promise<void> {
@@ -660,6 +696,7 @@ function buildDeterministicPlan(context: PlanContext, answers: PlanAnswers): Pla
     plannerModel: context.profile.planner_model,
     plannerFallback: false,
     plannerAttempts: 0,
+    draft: undefined,
     overview: "Deterministic MVP planning flow.",
     assumptions: [],
     decisions: ["Generate three sequential task handoffs for the MVP planner flow."],
@@ -691,14 +728,22 @@ function buildPlanFromDraft(
   });
 
   const tasks = draft.tasks.map((task) => {
-    const suggestedModel = resolveDraftModel(context, task.suggested_model, task.fit, task.risk_level);
+    const riskAdjustment = adjustDraftTaskRisk(task);
+    const riskLevel = riskAdjustment.riskLevel;
+    const suggestedModel = resolveDraftModel(context, task.suggested_model, task.fit, riskLevel);
     const acceptableAlternatives = resolveDraftAlternatives(
       context,
       task.acceptable_alternatives,
       suggestedModel,
       task.fit,
-      task.risk_level,
+      riskLevel,
     );
+    const modelRationale =
+      task.model_rationale ?? defaultModelRationale(suggestedModel, task.fit, riskLevel);
+    const contextRules =
+      riskAdjustment.reason
+        ? [...task.context_rules, `Risk floor: ${riskAdjustment.reason}`]
+        : task.context_rules;
 
     return {
       id: task.id,
@@ -706,15 +751,19 @@ function buildPlanFromDraft(
       filename: `${task.id.replace(/^task-/u, "")}.md`,
       suggestedModel,
       modelRationale:
-        task.model_rationale ?? defaultModelRationale(suggestedModel, task.fit, task.risk_level),
+        riskAdjustment.reason && task.model_rationale
+          ? `${modelRationale} Risk floor raised from ${task.risk_level} to ${riskLevel}: ${riskAdjustment.reason}`
+          : modelRationale,
       acceptableAlternatives,
       dependencies: task.dependencies,
       allowedPaths: task.allowed_paths,
       forbiddenPaths: task.forbidden_paths.length > 0 ? task.forbidden_paths : defaultForbiddenPaths(),
-      riskLevel: task.risk_level,
-      testCommands: task.test_commands.length > 0 ? task.test_commands : answers.validationCommands,
+      riskLevel,
+      testCommands: normalizeValidationCommands(
+        task.test_commands.length > 0 ? task.test_commands : answers.validationCommands,
+      ),
       objective: task.objective,
-      contextRules: task.context_rules,
+      contextRules,
       executionPrompt: task.execution_prompt,
       acceptanceContract: task.acceptance_contract,
     } satisfies PlannedTask;
@@ -726,6 +775,7 @@ function buildPlanFromDraft(
     plannerModel: plannerModel.id,
     plannerFallback: plannerRun?.plannerFallback ?? plannerModel.id !== context.profile.planner_model,
     plannerAttempts: plannerRun?.plannerAttempts ?? 0,
+    draft,
     overview: draft.overview,
     assumptions: draft.assumptions,
     decisions: draft.decisions,
@@ -838,6 +888,45 @@ function defaultModelAlternatives(
     .filter((model) => model.id !== selectedModel.id && model.status !== "restricted")
     .slice(0, 2)
     .map((model) => model.id);
+}
+
+function adjustDraftTaskRisk(task: PlannerDraft["tasks"][number]): { riskLevel: number; reason?: string } {
+  const signals = [
+    task.title,
+    task.objective,
+    task.execution_prompt,
+    task.allowed_paths.join(" "),
+    task.context_rules.join(" "),
+  ]
+    .join(" ")
+    .toLowerCase();
+  const allowedPaths = task.allowed_paths.join(" ");
+  const floors: Array<{ value: number; reason: string }> = [];
+
+  if (/\bsrc\/tui\.ts\b|\bsrc\/cli\.ts\b/u.test(allowedPaths)) {
+    floors.push({ value: 5, reason: "touches global CLI or TUI orchestration files" });
+  }
+
+  if (/\bsrc\/providers\.ts\b|\bsrc\/plannerEngine\.ts\b|\bsrc\/models\.ts\b/u.test(allowedPaths)) {
+    floors.push({ value: 4, reason: "touches provider, model routing, or planner engine contracts" });
+  }
+
+  if (
+    /fallback|auth|provider|plannerengine|semantic checkbox|unified chat|agentic|orchestrator|global state/u.test(signals)
+  ) {
+    floors.push({ value: 5, reason: "contains agentic workflow, fallback, provider, or global-state risk signals" });
+  }
+
+  if (task.allowed_paths.length >= 4 || task.allowed_paths.some((allowedPath) => allowedPath.includes("**/*"))) {
+    floors.push({ value: 4, reason: "has a broad or multi-file write surface" });
+  }
+
+  const floor = floors.sort((left, right) => right.value - left.value)[0];
+  const riskLevel = clampRisk(Math.max(task.risk_level, floor?.value ?? task.risk_level));
+
+  return riskLevel > task.risk_level
+    ? { riskLevel, reason: floor?.reason ?? "risk floor applied" }
+    : { riskLevel };
 }
 
 function resolvePlannerExecutionModel(context: PlanContext, options: GeneratePlanOptions): ModelRegistryEntry {
@@ -1006,6 +1095,8 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     "- Treat selected_reasoning_effort as the configured execution effort for that exact model.",
     "- If a task is read-only, set allowed_paths to [] and say read-only in context_rules.",
     "- If a task edits files, allowed_paths must be the narrowest relative paths or globs needed.",
+    "- Prefer existing paths from project_inventory.inventory_files and existing top-level directories.",
+    "- Do not invent new source or test directories unless the requested change clearly requires them; if a new directory is required, state that explicitly in context_rules.",
     "- Prefer small, isolated handoffs with explicit allowed_paths and acceptance_contract.",
     "- Do not plan worker execution; this product only writes handoff artifacts in MVP 1.0.",
     "- Do not include secrets, token values, or ignored file contents.",

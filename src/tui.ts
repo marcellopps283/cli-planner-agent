@@ -27,6 +27,7 @@ import {
   generateBlueprintPlan,
   getPlannerFallbackCandidatesForRoot,
   parsePlanAnswers,
+  PlannerDraftSchema,
   previewBlueprintPlan,
   type PlanAnswers,
   type PlanEngine,
@@ -411,6 +412,19 @@ export const TuiSessionRecordSchema = z.object({
 
 export type TuiSessionRecord = z.infer<typeof TuiSessionRecordSchema>;
 
+const TuiPlanPreviewCacheSchema = z.object({
+  schema_version: z.literal("1.0"),
+  created_at: z.iso.datetime(),
+  engine: z.enum(["deterministic", "llm"]),
+  planner_provider: ProviderIdSchema,
+  planner_model: z.string().min(1),
+  force: z.boolean().default(false),
+  plan_answers: z.any(),
+  draft: PlannerDraftSchema.optional(),
+});
+
+type TuiPlanPreviewCache = z.infer<typeof TuiPlanPreviewCacheSchema>;
+
 export const TUI_SECTION_VIEWS = ["overview", "tasks", "graph", "providers", "actions"] as const;
 export const TUI_VIEWS = ["main", ...TUI_SECTION_VIEWS] as const;
 const TUI_MAIN_MENU_ITEMS = [
@@ -455,6 +469,7 @@ export const TUI_SLASH_MENU_VISIBLE_ROWS = 6;
 export const TUI_MODEL_SELECTOR_VISIBLE_ROWS = 8;
 const TUI_AGENT_SESSION_FILE = "SESSION.json";
 const TUI_AGENT_STATE_FILE = "AGENT_STATE.json";
+const TUI_PLAN_PREVIEW_FILE = "PLAN_PREVIEW.json";
 
 export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<TuiDashboard> {
   const root = path.resolve(options.root);
@@ -1053,6 +1068,13 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
       preview.plannerModel,
     ]);
 
+    await writePlanPreviewCache({
+      root: options.root,
+      preview,
+      planAnswers: options.planAnswers,
+      force,
+    });
+
     return {
       actionId: "plan",
       status: "ok",
@@ -1082,16 +1104,29 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
     };
   }
 
+  const previewCache = await readMatchingPlanPreviewCache({
+    root: options.root,
+    planAnswers: options.planAnswers,
+    engine,
+    plannerProvider: options.plannerProvider,
+    plannerModel: options.plannerModel,
+    force,
+  });
   const result = await generateBlueprintPlan({
     root: options.root,
     answers: options.planAnswers,
     engine,
-    plannerProvider: options.plannerProvider,
-    plannerModel: options.plannerModel,
+    plannerProvider: options.plannerProvider ?? previewCache?.planner_provider,
+    plannerModel: options.plannerModel ?? previewCache?.planner_model,
+    draft: previewCache?.draft,
     plannerPromptRunner: options.plannerPromptRunner,
     force,
   });
   const lint = await lintBlueprint(options.root);
+
+  if (lint.errors.length === 0) {
+    await clearPlanPreviewCache(options.root);
+  }
 
   return {
     actionId: "plan",
@@ -1112,6 +1147,73 @@ async function runPlanTuiAction(options: RunTuiActionOptions): Promise<TuiAction
       ...lint.warnings.map((warning) => `warning ${warning}`),
     ],
   };
+}
+
+async function writePlanPreviewCache(options: {
+  root: string;
+  preview: Awaited<ReturnType<typeof previewBlueprintPlan>>;
+  planAnswers: PlanAnswers;
+  force: boolean;
+}): Promise<void> {
+  if (!options.preview.draft) {
+    return;
+  }
+
+  const sessionsRoot = path.join(path.resolve(options.root), BLUEPRINT_DIR, "tui_sessions");
+  const cache = TuiPlanPreviewCacheSchema.parse({
+    schema_version: "1.0",
+    created_at: new Date().toISOString(),
+    engine: options.preview.engine,
+    planner_provider: options.preview.plannerProvider,
+    planner_model: options.preview.plannerModel,
+    force: options.force,
+    plan_answers: options.planAnswers,
+    draft: options.preview.draft,
+  });
+
+  await mkdir(sessionsRoot, { recursive: true });
+  await writeFile(path.join(sessionsRoot, TUI_PLAN_PREVIEW_FILE), `${JSON.stringify(cache, null, 2)}\n`, "utf8");
+}
+
+async function readMatchingPlanPreviewCache(options: {
+  root: string;
+  planAnswers: PlanAnswers;
+  engine: PlanEngine;
+  plannerProvider?: ProviderId;
+  plannerModel?: string;
+  force: boolean;
+}): Promise<TuiPlanPreviewCache | undefined> {
+  const cachePath = path.join(path.resolve(options.root), BLUEPRINT_DIR, "tui_sessions", TUI_PLAN_PREVIEW_FILE);
+
+  try {
+    const raw = await readFile(cachePath, "utf8");
+    const cache = TuiPlanPreviewCacheSchema.parse(JSON.parse(raw));
+    const cachedAnswers = parsePlanAnswers(cache.plan_answers);
+
+    if (cache.engine !== options.engine || cache.force !== options.force) {
+      return undefined;
+    }
+
+    if (options.plannerProvider && cache.planner_provider !== options.plannerProvider) {
+      return undefined;
+    }
+
+    if (options.plannerModel && cache.planner_model !== options.plannerModel) {
+      return undefined;
+    }
+
+    if (JSON.stringify(cachedAnswers) !== JSON.stringify(options.planAnswers)) {
+      return undefined;
+    }
+
+    return cache;
+  } catch {
+    return undefined;
+  }
+}
+
+async function clearPlanPreviewCache(rootInput: string): Promise<void> {
+  await rm(path.join(path.resolve(rootInput), BLUEPRINT_DIR, "tui_sessions", TUI_PLAN_PREVIEW_FILE), { force: true });
 }
 
 async function buildPlanTuiFallbackResult(
@@ -4388,7 +4490,17 @@ export function buildPlanAnswersFromFreeformRequest(brief: string, dashboard: Tu
 }
 
 export function parsePlannerAgentWorkflowState(response: string): PlannerAgentWorkflowState {
-  return PlannerAgentWorkflowStateSchema.parse(JSON.parse(extractJsonObject(response)));
+  const state = PlannerAgentWorkflowStateSchema.parse(JSON.parse(extractJsonObject(response)));
+
+  if (state.next_action.type === "preview_plan") {
+    if (!state.plan_answers) {
+      throw new Error("Agent workflow states with next_action.type=preview_plan must include plan_answers.");
+    }
+
+    state.plan_answers = parsePlanAnswers(state.plan_answers);
+  }
+
+  return state;
 }
 
 function parseWorkflowPlanAnswers(state: PlannerAgentWorkflowState): PlanAnswers | undefined {
@@ -4443,6 +4555,7 @@ function buildPlannerAgentWorkflowPrompt({
       manifests: dashboard.doctor.manifests,
       scripts: dashboard.doctor.scripts,
       top_level_dirs: dashboard.doctor.topLevelDirs,
+      inventory_files: dashboard.doctor.inventoryFiles,
       warnings: dashboard.doctor.warnings,
       existing_tasks: dashboard.tasks.map((task) => ({
         id: task.id,
@@ -4472,7 +4585,10 @@ function buildPlannerAgentWorkflowPrompt({
     "Reiterate the project in your own words, identify what is already known, what still needs validation, and what the next user-facing action should be.",
     "Ask questions only when the workflow is blocked or a decision would be unsafe to infer.",
     "If the user is answering a prior question, update the same session state instead of restarting the workflow.",
+    "When setting plan_answers.targetPaths, prefer concrete files and directories from project_context.inventory_files.",
+    "Do not invent new source or test directories unless the user explicitly asked for that structure; if a new directory is required, call it out in notes.",
     "When you have enough information to preview the handoffs, set next_action.type to preview_plan and include a valid plan_answers object.",
+    "If you cannot include valid plan_answers, do not use preview_plan; use ask_user or continue_planning instead.",
     "Do not generate or write files directly. The app will ask the user for confirmation before previewing or writing artifacts.",
     "Return strict JSON only. No markdown, no prose outside JSON.",
     "JSON schema:",
@@ -4505,7 +4621,17 @@ function buildPlannerAgentWorkflowPrompt({
         ],
         questions: [{ id: "q1", question: "question if blocked", why: "why it matters", required: true }],
         next_action: { type: "ask_user|continue_planning|preview_plan", label: "short action", prompt: "optional user prompt" },
-        plan_answers: "optional PlanAnswers object only when ready to preview handoffs",
+        plan_answers: {
+          projectSummary: "one-sentence project summary",
+          objective: "the concrete delivery to plan",
+          successCriteria: ["observable acceptance criterion"],
+          constraints: ["technical or business constraint"],
+          outOfScope: ["explicitly excluded work"],
+          targetPaths: ["relative/path/or/glob"],
+          validationCommands: ["command to validate the work"],
+          riskLevel: 1,
+          notes: ["worker-facing note"],
+        },
       },
       null,
       2,

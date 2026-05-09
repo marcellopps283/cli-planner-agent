@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import fg from "fast-glob";
@@ -123,6 +123,7 @@ async function readAndValidateTasks(
     try {
       const metadata = BlueprintTaskMetadataSchema.parse(parsed.data);
       tasks.set(metadata.id, metadata);
+      await validateTaskMetadata(path.dirname(blueprintRoot), taskFile, metadata, warnings);
     } catch (error) {
       errors.push(formatValidationError(taskFile, error));
     }
@@ -135,6 +136,69 @@ async function readAndValidateTasks(
   }
 
   return tasks;
+}
+
+async function validateTaskMetadata(
+  projectRoot: string,
+  taskFile: string,
+  metadata: BlueprintTaskMetadata,
+  warnings: string[],
+): Promise<void> {
+  for (const allowedPath of metadata.allowed_paths) {
+    const existingBase = allowedPathExistingBase(allowedPath);
+
+    if (!existingBase) {
+      continue;
+    }
+
+    const absolutePath = path.resolve(projectRoot, existingBase);
+    const relativePath = path.relative(projectRoot, absolutePath);
+
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      warnings.push(`${taskFile}: allowed_path ${allowedPath} escapes the project root.`);
+      continue;
+    }
+
+    try {
+      await stat(absolutePath);
+    } catch (error) {
+      if (isNodeError(error, "ENOENT")) {
+        warnings.push(
+          `${taskFile}: allowed_path ${allowedPath} does not exist yet; mention new files or directories explicitly in <context_rules> if intentional.`,
+        );
+      } else {
+        warnings.push(`${taskFile}: could not inspect allowed_path ${allowedPath}: ${String(error)}`);
+      }
+    }
+  }
+
+  for (const command of metadata.test_commands) {
+    if (/^pnpm\s+/u.test(command)) {
+      warnings.push(`${taskFile}: test_command "${command}" should use "corepack pnpm ..." for reproducible local runs.`);
+    }
+
+    if (/^(?:corepack\s+)?pnpm\s+test\s+run(?:\s|$)/u.test(command)) {
+      warnings.push(`${taskFile}: test_command "${command}" should be "corepack pnpm test <file>" or "corepack pnpm vitest run <file>".`);
+    }
+  }
+}
+
+function allowedPathExistingBase(allowedPath: string): string | undefined {
+  const trimmed = allowedPath.trim();
+
+  if (!trimmed || trimmed.startsWith("!")) {
+    return undefined;
+  }
+
+  const wildcardIndex = trimmed.search(/[*{[]/u);
+  const base = wildcardIndex >= 0 ? trimmed.slice(0, wildcardIndex) : trimmed;
+  const normalized = base.replace(/\/+$/u, "");
+
+  if (!normalized || normalized === ".") {
+    return undefined;
+  }
+
+  return normalized;
 }
 
 function validateGraphReferences(

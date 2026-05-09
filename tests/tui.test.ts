@@ -14,6 +14,7 @@ import {
   getSlashCommandSuggestions,
   getTuiActions,
   loadTuiDashboard,
+  parsePlannerAgentWorkflowState,
   parseTuiSlashCommandInput,
   parseTuiView,
   renderTuiDashboardToString,
@@ -490,6 +491,20 @@ describe("blueprint tui", () => {
     expect(dashboard.agentSession?.agent_state?.next_action.type).toBe("preview_plan");
   });
 
+  it("rejects preview workflow states without plan answers", () => {
+    expect(() =>
+      parsePlannerAgentWorkflowState(
+        JSON.stringify(
+          makeAgentWorkflowState({
+            provider: "openai",
+            model: "gpt-5.5",
+            nextActionType: "preview_plan",
+          }),
+        ),
+      ),
+    ).toThrow(/preview_plan must include plan_answers/u);
+  });
+
   it("offers a confirmed fallback model when the agent workflow planner fails", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-agent-fallback-test-"));
     await writeFile(path.join(root, "README.md"), "# Agent fallback\n", "utf8");
@@ -669,6 +684,58 @@ describe("blueprint tui", () => {
     expect(applied.lines).toContain("file .blueprint/dependencies_graph.json");
     expect(dashboard.tasks).toHaveLength(3);
     expect(dashboard.lint.errors).toEqual([]);
+  });
+
+  it("applies the cached LLM preview instead of rerunning planner assignments", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-plan-cache-test-"));
+    await writeFile(path.join(root, "README.md"), "# Plan cache\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "google",
+      plannerModel: "gemini-3.1-pro-preview",
+    });
+    let calls = 0;
+    const runner = async (options: { provider: "openai" | "anthropic" | "google"; model?: string }) => {
+      calls += 1;
+
+      if (calls > 1) {
+        throw new Error("planner should not be called during cached apply");
+      }
+
+      return {
+        provider: options.provider,
+        model: options.model,
+        response: JSON.stringify(makeDraft()),
+        rawOutput: "",
+      };
+    };
+
+    const preview = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      planEngine: "llm",
+      plannerPromptRunner: runner,
+      recordHistory: false,
+    });
+    const applied = await runTuiAction({
+      root,
+      actionId: "plan",
+      planAnswers: makeAnswers(),
+      planEngine: "llm",
+      plannerProvider: preview.planContinuation?.plannerProvider,
+      plannerModel: preview.planContinuation?.plannerModel,
+      apply: true,
+      plannerPromptRunner: runner,
+      recordHistory: false,
+    });
+    const dashboard = await loadTuiDashboard({ root });
+
+    expect(preview.status).toBe("ok");
+    expect(applied.status).toBe("ok");
+    expect(calls).toBe(1);
+    expect(dashboard.tasks.map((task) => task.id)).toEqual(["task-001-update-docs", "task-002-implement-api"]);
   });
 
   it("offers an LLM planner fallback inside the TUI action flow", async () => {

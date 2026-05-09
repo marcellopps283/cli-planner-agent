@@ -77,8 +77,25 @@ ou schema sao expostas com os attempts para auditoria e fallback.
 - Dependencias so podem apontar para tasks anteriores.
 - IDs de task devem seguir `task-NNN-kebab-case`.
 - Tasks geradas precisam passar em `blueprint lint`.
+- `validationCommands` e `test_commands` sao normalizados para comandos
+  reprodutiveis quando possivel. Exemplo: `pnpm typecheck` vira
+  `corepack pnpm typecheck`; `pnpm test run tests/tui.test.ts` vira
+  `corepack pnpm test tests/tui.test.ts`.
+- O harness pode elevar `risk_level` quando detectar sinais de risco que o
+  modelo subestimou: `src/tui.ts`, `src/cli.ts`, providers, planner engine,
+  fallback, auth, chat unificado, checkboxes semanticas ou estado global.
+- `allowed_paths` deve preferir arquivos/diretorios existentes do inventario.
+  Novos paths sao permitidos, mas devem ser explicitamente justificados em
+  `context_rules`; o lint avisa quando eles ainda nao existem.
 - `blueprint plan --engine llm --fallback` deve tentar outro modelo ativo do
   pool antes do fallback deterministico, pedindo confirmacao no modo interativo.
+
+## Preview e Apply
+
+O preview aprovado pelo usuario e o contrato de escrita. Quando o planner LLM
+gera um draft para preview, a TUI salva esse draft em `.blueprint/tui_sessions/`
+e o apply usa o mesmo conteudo, sem chamar o planner novamente. Isso evita que
+o usuario aprove uma decomposicao e receba outra nos arquivos finais.
 
 ## Fixtures
 

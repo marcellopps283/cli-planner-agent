@@ -92,6 +92,22 @@ describe("blueprint lifecycle", () => {
       "parallel group same_batch has write conflict on src/shared.ts: task-001 and task-002.",
     );
   });
+
+  it("warns about missing allowed paths and weak pnpm commands", async () => {
+    const root = await makeTempProject();
+    await initBlueprint({ root, force: true });
+    await mkdir(path.join(root, ".blueprint", "tasks"), { recursive: true });
+    await writeTask(root, "task-001", "tasks/001-one.md");
+
+    const result = await lintBlueprint(root);
+
+    expect(result.warnings).toContain(
+      'tasks/001-one.md: allowed_path src/shared.ts does not exist yet; mention new files or directories explicitly in <context_rules> if intentional.',
+    );
+    expect(result.warnings).toContain(
+      'tasks/001-one.md: test_command "pnpm test" should use "corepack pnpm ..." for reproducible local runs.',
+    );
+  });
 });
 
 async function makeTempProject(): Promise<string> {

@@ -18,6 +18,20 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
 
 ## Padroes relevantes
 
+- Claude Code recomenda separar exploracao, planejamento e implementacao; plan
+  mode faz sentido quando ha incerteza, varios arquivos ou codigo desconhecido.
+  O Blueprint deve manter essa separacao e transformar o preview aprovado em
+  contrato, nao em uma sugestao que pode mudar no apply.
+- Docs de Claude tambem enfatizam prompts com contexto especifico: arquivos,
+  restricoes e padroes existentes. O workflow agentico deve alimentar o planner
+  com inventario real de arquivos e preferir paths concretos nos handoffs.
+- Codex exec e Gemini headless sao pensados para automacao e saidas
+  estruturadas. O Blueprint deve tratar JSON/schema, ultima mensagem, retries e
+  exit codes como parte do adapter, e nao como detalhe de UI.
+- OpenCode modela ferramentas e subagentes com permissoes explicitas e usa
+  todo lists para tarefas complexas. Para o Blueprint 1.0, isso vira metadata:
+  allowed_paths, forbidden_paths, task graph, fallback com confirmacao e
+  checkboxes semanticas do planner.
 - Sessao e thread sao contratos de primeira classe. Codex propaga `thread_id`
   em eventos, respostas e erros para permitir retomada, migracao e tooling
   externo. Blueprint deve preservar `session_id`, `updated_at`, mensagens e
@@ -53,6 +67,17 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
 - Tratar checkboxes como estado semantico do planner, nao como layout editavel.
 - Gerar handoffs completos com modelo exato, alternativas, allowed paths,
   acceptance contract e comandos de validacao.
+- Cachear o draft aprovado no preview e usar esse mesmo draft no apply. O
+  usuario deve aprovar exatamente o plano que sera escrito.
+- Normalizar comandos comuns de validacao para execucao reprodutivel, por
+  exemplo `pnpm test run tests/foo.test.ts` deve virar
+  `corepack pnpm test tests/foo.test.ts`.
+- Aplicar piso de risco quando a task tocar `src/tui.ts`, `src/cli.ts`,
+  providers, planner engine, fallback, auth, chat unificado ou estado global.
+  O modelo ainda escolhe o plano, mas o harness impede subestimativas obvias.
+- `blueprint lint` deve alertar quando allowed paths nao existem ou quando
+  comandos de teste nao sao reprodutiveis, sem bloquear novos arquivos
+  intencionais que estejam declarados nas regras de contexto.
 - Evoluir depois para `planner task background` e supervisor 2.0, inspirado em
   `/goal` e `ultraplan`, sem executar workers no MVP.
 - Manter contrato de execucao em `provider_headless_execution.md`, incluindo

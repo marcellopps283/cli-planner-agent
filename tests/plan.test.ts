@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,6 +10,8 @@ import {
   buildPlannerPromptForContext,
   generateBlueprintPlan,
   getPlannerFallbackCandidates,
+  normalizeValidationCommands,
+  parsePlanAnswers,
   parsePlannerDraft,
   previewBlueprintPlan,
   type PlanAnswers,
@@ -201,6 +203,56 @@ describe("blueprint plan generation", () => {
       "task-003-verify-golden-fixtures",
     ]);
     expect(lint.errors).toEqual([]);
+  });
+
+  it("normalizes pnpm validation commands from planner answers", () => {
+    const parsed = parsePlanAnswers({
+      ...makeAnswers(),
+      validationCommands: [
+        "pnpm typecheck",
+        "pnpm test run tests/tui.test.ts",
+        "corepack pnpm test run tests/providers.test.ts",
+        "corepack pnpm build",
+      ],
+    });
+
+    expect(parsed.validationCommands).toEqual([
+      "corepack pnpm typecheck",
+      "corepack pnpm test tests/tui.test.ts",
+      "corepack pnpm test tests/providers.test.ts",
+      "corepack pnpm build",
+    ]);
+    expect(normalizeValidationCommands(["pnpm test run tests/tui.test.ts"])).toEqual([
+      "corepack pnpm test tests/tui.test.ts",
+    ]);
+  });
+
+  it("raises risk for global TUI and fallback planner tasks", async () => {
+    const root = await makeTempProject();
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await mkdir(path.join(root, "tests"), { recursive: true });
+    await writeFile(path.join(root, "src", "tui.ts"), "export const tui = true;\n", "utf8");
+    await writeFile(path.join(root, "tests", "plan.test.ts"), "export {};\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "google",
+    });
+    const draft = makeDraft();
+    draft.tasks[1]!.risk_level = 2;
+    draft.tasks[1]!.objective = "Refactor the global TUI orchestrator and fallback flow.";
+    draft.tasks[1]!.allowed_paths = ["src/tui.ts", "tests/plan.test.ts"];
+
+    await generateBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft,
+    });
+    const task = await readFile(path.join(root, ".blueprint", "tasks", "002-custom-build.md"), "utf8");
+
+    expect(task).toContain("risk_level: 5");
+    expect(task).toContain("Risk floor raised from 2 to 5");
+    expect(task).toContain("Risk floor: touches global CLI or TUI orchestration files");
   });
 
   it("rejects planner drafts that suggest models outside the active pool", async () => {
