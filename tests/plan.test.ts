@@ -292,6 +292,166 @@ describe("blueprint plan generation", () => {
     ).rejects.toThrow("Planner draft suggested unavailable alternative model claude-opus-4-7");
   });
 
+  it("upgrades underfit planner model suggestions for high-risk tasks", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "google",
+    });
+    const draft = makeDraft();
+    draft.tasks = [
+      {
+        id: "task-001-hard-routing",
+        title: "Hard routing refactor",
+        objective: "Redesign model routing for complex agentic planning decisions.",
+        suggested_model: "gemini-3.1-flash-lite-preview",
+        model_rationale: "Cheap utility model should save quota.",
+        acceptable_alternatives: ["gpt-5.4-nano", "gemini-3.1-flash-lite-preview"],
+        fit: "architecture",
+        dependencies: [],
+        allowed_paths: ["src/plannerEngine.ts", "src/models.ts", "src/tui.ts"],
+        forbidden_paths: [".env"],
+        risk_level: 8,
+        test_commands: ["corepack pnpm test"],
+        context_rules: ["Preserve provider contracts."],
+        execution_prompt: "Plan and implement a high-risk architecture refactor for model routing.",
+        acceptance_contract: ["Complex tasks are not routed to utility models."],
+      },
+    ];
+
+    const preview = await previewBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft,
+    });
+
+    expect(preview.tasks[0]!.suggestedModel).toBe("gpt-5.5");
+    expect(preview.tasks[0]!.modelRationale).toContain(
+      "Routing guard changed suggested_model from gemini-3.1-flash-lite-preview to gpt-5.5",
+    );
+    expect(preview.tasks[0]!.acceptableAlternatives).not.toContain("gpt-5.4-nano");
+    expect(preview.tasks[0]!.acceptableAlternatives).not.toContain("gemini-3.1-flash-lite-preview");
+  });
+
+  it("keeps utility models for low-risk tiny edits", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+    const draft = makeDraft();
+    draft.tasks = [
+      {
+        id: "task-001-copy-edit",
+        title: "Copy edit",
+        objective: "Rename a README heading without changing behavior.",
+        suggested_model: "gpt-5.4-nano",
+        model_rationale: "Best cheap model for tiny edit work.",
+        acceptable_alternatives: ["gemini-3.1-flash-lite-preview"],
+        fit: "tiny_edit",
+        dependencies: [],
+        allowed_paths: ["README.md"],
+        forbidden_paths: [".env"],
+        risk_level: 2,
+        test_commands: [],
+        context_rules: ["Only edit the requested heading."],
+        execution_prompt: "Update one README heading.",
+        acceptance_contract: ["No source files change."],
+      },
+    ];
+
+    const preview = await previewBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft,
+    });
+
+    expect(preview.tasks[0]!.suggestedModel).toBe("gpt-5.4-nano");
+    expect(preview.tasks[0]!.modelRationale).not.toContain("Routing guard changed");
+  });
+
+  it("downgrades overfit frontier choices for low-risk tiny edits", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+    const draft = makeDraft();
+    draft.tasks = [
+      {
+        id: "task-001-fixture-edit",
+        title: "Fixture edit",
+        objective: "Update one JSON fixture value.",
+        suggested_model: "gpt-5.5",
+        model_rationale: "Use the strongest model for safety.",
+        acceptable_alternatives: ["gpt-5.4-nano"],
+        fit: "tiny_edit",
+        dependencies: [],
+        allowed_paths: ["tests/fixtures/example.json"],
+        forbidden_paths: [".env"],
+        risk_level: 2,
+        test_commands: [],
+        context_rules: ["Change only the requested fixture value."],
+        execution_prompt: "Update one fixture value.",
+        acceptance_contract: ["Only one fixture changes."],
+      },
+    ];
+
+    const preview = await previewBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft,
+    });
+
+    expect(preview.tasks[0]!.suggestedModel).toBe("gpt-5.4-nano");
+    expect(preview.tasks[0]!.modelRationale).toContain(
+      "Routing guard changed suggested_model from gpt-5.5 to gpt-5.4-nano",
+    );
+  });
+
+  it("uses risk floors before judging model fit", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+    const draft = makeDraft();
+    draft.tasks = [
+      {
+        id: "task-001-tui-workflow",
+        title: "TUI workflow polish",
+        objective: "Refactor the unified chat workflow and semantic checkbox behavior.",
+        suggested_model: "gpt-5.4-nano",
+        model_rationale: "Low stated risk means a small worker is enough.",
+        acceptable_alternatives: ["gemini-3.1-flash-lite-preview"],
+        fit: "refactor",
+        dependencies: [],
+        allowed_paths: ["src/tui.ts", "src/cli.ts"],
+        forbidden_paths: [".env"],
+        risk_level: 2,
+        test_commands: ["corepack pnpm test tests/tui.test.ts"],
+        context_rules: ["Keep the workbench stable."],
+        execution_prompt: "Adjust the interactive flow in the global TUI surface.",
+        acceptance_contract: ["TUI tests pass."],
+      },
+    ];
+
+    const preview = await previewBlueprintPlan({
+      root,
+      answers: makeAnswers(),
+      draft,
+    });
+
+    expect(preview.tasks[0]!.riskLevel).toBe(5);
+    expect(preview.tasks[0]!.suggestedModel).not.toBe("gpt-5.4-nano");
+    expect(preview.tasks[0]!.modelRationale).toContain("Risk floor raised from 2 to 5");
+    expect(preview.tasks[0]!.modelRationale).toContain("Routing guard changed");
+  });
+
   it("rejects planner drafts with unsupported fit values", async () => {
     const raw = await readFixture("invalid-fit.json");
 
@@ -310,6 +470,8 @@ describe("blueprint plan generation", () => {
     expect(prompt).toContain("routing_scorecards");
     expect(prompt).toContain("low_risk_order");
     expect(prompt).toContain("high_risk_order");
+    expect(prompt).toContain("declared_dependencies");
+    expect(prompt).toContain("Do not recommend a framework, package, library, build tool, database, or test framework because it is installed globally");
     expect(prompt).toContain("gpt-5.5");
     expect(prompt).toContain("gemini-3.1-pro-preview");
     expect(prompt).not.toContain("claude-opus-4-7");
@@ -451,6 +613,15 @@ function makePlanContext(): PlanContext {
         test: "vitest run",
         typecheck: "tsc --noEmit",
       },
+      dependencyManifests: [
+        {
+          path: "package.json",
+          dependencies: ["commander", "zod"],
+          devDependencies: ["vitest"],
+          peerDependencies: [],
+          optionalDependencies: [],
+        },
+      ],
       topLevelDirs: ["src", "tests"],
       inventoryFiles: [
         {

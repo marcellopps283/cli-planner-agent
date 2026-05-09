@@ -122,9 +122,17 @@ low risk  = fit*0.45 + cost*0.25 + speed*0.15 + stability*0.10 + context*0.05
 high risk = fit*0.55 + tier*0.20 + context*0.15 + stability*0.05 + speed*0.05
 ```
 
-O scorecard e uma recomendacao, nao uma trava: o LLM pode escolher diferente
-quando justificar com benchmark, contexto, quota ou requisito da tarefa. O CLI
-continua validando que o modelo escolhido esta no pool ativo.
+O scorecard e uma recomendacao com guarda deterministica. O LLM pode escolher
+diferente quando justificar com benchmark, contexto, quota ou requisito da
+tarefa, mas o CLI valida duas coisas antes de aceitar:
+
+- o modelo escolhido precisa existir no pool ativo;
+- a escolha nao pode ficar muito abaixo do melhor score ativo para o fit/risco.
+
+Quando o planner subestima uma tarefa complexa ou superestima uma tarefa
+`tiny_edit` simples, o CLI troca para o melhor modelo do scorecard e registra a
+correcao no `model_rationale`. Alternativas tambem passam pelo mesmo filtro para
+evitar fallback fraco em tarefas de alto risco.
 
 O registry bundled pode ser exportado para `.blueprint/model_registry.yaml` com
 `blueprint registry export`. O usuario pode editar esse arquivo para ajustar

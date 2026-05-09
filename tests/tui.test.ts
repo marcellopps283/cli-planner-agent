@@ -636,6 +636,8 @@ describe("blueprint tui", () => {
     expect(result.status).toBe("ok");
     expect(prompt).toContain('"manifest_count": 76');
     expect(prompt).toContain("pkg-000/package.json");
+    expect(prompt).toContain("declared_dependencies");
+    expect(prompt).toContain("Do not suggest a framework, package, library, build tool, database, or test framework because it is installed globally");
     expect(prompt).not.toContain("pkg-074/package.json");
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(80_000);
   });

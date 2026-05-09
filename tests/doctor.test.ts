@@ -37,6 +37,12 @@ describe("project doctor", () => {
       path.join(root, "package.json"),
       JSON.stringify(
         {
+          dependencies: {
+            react: "^19.0.0",
+          },
+          devDependencies: {
+            vitest: "^4.0.0",
+          },
           scripts: {
             test: "vitest run",
             typecheck: "tsc --noEmit",
@@ -56,6 +62,15 @@ describe("project doctor", () => {
       test: "vitest run",
       typecheck: "tsc --noEmit",
     });
+    expect(report.dependencyManifests).toEqual([
+      {
+        path: "package.json",
+        dependencies: ["react"],
+        devDependencies: ["vitest"],
+        peerDependencies: [],
+        optionalDependencies: [],
+      },
+    ]);
     expect(report.topLevelDirs).toEqual(["src", "tests"]);
     expect(report.inventoryFiles.some((file) => file.path === "src/index.ts" && file.markers.includes("source"))).toBe(
       true,

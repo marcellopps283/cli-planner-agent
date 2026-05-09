@@ -37,6 +37,9 @@ automacao, smoke e debugging.
 - Providers sao fronteira de autenticacao; modelos sao unidade de roteamento.
 - O banco comparativo de modelos e quase interno, mas IDs e selecao precisam ser
   visiveis durante onboarding.
+- O ambiente local nao define stack de produto. Frameworks e bibliotecas devem
+  vir de manifests/configs do repo ou de pedido explicito do usuario; sugestao
+  nova precisa virar decisao pendente de confirmacao.
 - Handoffs devem ser completos o suficiente para outro agente executar sem
   depender da memoria da conversa.
 - MVP 1.0 planeja e gera handoffs; nao executa workers.
@@ -110,6 +113,8 @@ automacao, smoke e debugging.
   resposta JSON invalida antes de acionar fallback.
 - O preview de planejamento inclui justificativa de modelo e alternativas
   aceitaveis por task.
+- O harness valida as sugestoes do LLM contra o scorecard ativo e corrige
+  underfitting/overfitting obvio antes de gerar os handoffs.
 - Falhas do planner no `agent-workflow` viram um proximo passo confirmavel:
   outro modelo do pool ativo. O fallback so roda depois de confirmacao do
   usuario.

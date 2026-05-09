@@ -25,6 +25,9 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
 - Docs de Claude tambem enfatizam prompts com contexto especifico: arquivos,
   restricoes e padroes existentes. O workflow agentico deve alimentar o planner
   com inventario real de arquivos e preferir paths concretos nos handoffs.
+- O inventario real e o repo, nao a maquina do usuario. CLIs, frameworks ou
+  libs instalados globalmente nao devem virar recomendacao automatica de stack;
+  dependencia nova precisa ser confirmada pelo usuario.
 - Codex exec e Gemini headless sao pensados para automacao e saidas
   estruturadas. O Blueprint deve tratar JSON/schema, ultima mensagem, retries e
   exit codes como parte do adapter, e nao como detalhe de UI.
@@ -74,7 +77,11 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
   `corepack pnpm test tests/foo.test.ts`.
 - Aplicar piso de risco quando a task tocar `src/tui.ts`, `src/cli.ts`,
   providers, planner engine, fallback, auth, chat unificado ou estado global.
-  O modelo ainda escolhe o plano, mas o harness impede subestimativas obvias.
+  O modelo ainda escolhe o plano, mas o harness corrige subestimativas obvias
+  quando o `suggested_model` fica abaixo do score minimo para o fit/risco.
+- Filtrar alternativas por fit/risco. Fallback de modelo deve continuar
+  confirmavel pelo usuario, mas o handoff nao deve listar modelo fraco como
+  alternativa aceitavel para tarefa complicada.
 - `blueprint lint` deve alertar quando allowed paths nao existem ou quando
   comandos de teste nao sao reprodutiveis, sem bloquear novos arquivos
   intencionais que estejam declarados nas regras de contexto.

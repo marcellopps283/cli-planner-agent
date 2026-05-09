@@ -217,6 +217,12 @@ interface PlannedTask {
   acceptanceContract: string[];
 }
 
+interface DraftModelSelection {
+  model: ModelRegistryEntry;
+  adjustedFrom?: string;
+  adjustmentReason?: string;
+}
+
 interface PlanBuild {
   engine: PlanEngine;
   plannerProvider: ProviderId;
@@ -730,7 +736,8 @@ function buildPlanFromDraft(
   const tasks = draft.tasks.map((task) => {
     const riskAdjustment = adjustDraftTaskRisk(task);
     const riskLevel = riskAdjustment.riskLevel;
-    const suggestedModel = resolveDraftModel(context, task.suggested_model, task.fit, riskLevel);
+    const modelSelection = resolveDraftModelSelection(context, task.suggested_model, task.fit, riskLevel);
+    const suggestedModel = modelSelection.model;
     const acceptableAlternatives = resolveDraftAlternatives(
       context,
       task.acceptable_alternatives,
@@ -740,20 +747,27 @@ function buildPlanFromDraft(
     );
     const modelRationale =
       task.model_rationale ?? defaultModelRationale(suggestedModel, task.fit, riskLevel);
-    const contextRules =
+    const contextRules = withDependencyPolicyRule(
+      context,
       riskAdjustment.reason
         ? [...task.context_rules, `Risk floor: ${riskAdjustment.reason}`]
-        : task.context_rules;
+        : task.context_rules,
+    );
+    const rationaleNotes = [
+      modelSelection.adjustmentReason
+        ? `Routing guard changed suggested_model from ${modelSelection.adjustedFrom} to ${suggestedModel.id}: ${modelSelection.adjustmentReason}`
+        : undefined,
+      riskAdjustment.reason && task.model_rationale
+        ? `Risk floor raised from ${task.risk_level} to ${riskLevel}: ${riskAdjustment.reason}`
+        : undefined,
+    ].filter((note): note is string => Boolean(note));
 
     return {
       id: task.id,
       title: task.title,
       filename: `${task.id.replace(/^task-/u, "")}.md`,
       suggestedModel,
-      modelRationale:
-        riskAdjustment.reason && task.model_rationale
-          ? `${modelRationale} Risk floor raised from ${task.risk_level} to ${riskLevel}: ${riskAdjustment.reason}`
-          : modelRationale,
+      modelRationale: [modelRationale, ...rationaleNotes].join(" "),
       acceptableAlternatives,
       dependencies: task.dependencies,
       allowedPaths: task.allowed_paths,
@@ -810,19 +824,37 @@ function validatePlannerDraftGraph(draft: PlannerDraft): void {
   }
 }
 
-function resolveDraftModel(
+function resolveDraftModelSelection(
   context: PlanContext,
   suggestedModel: string | undefined,
   fit: string,
   riskLevel: number,
-): ModelRegistryEntry {
+): DraftModelSelection {
   const activeModels = activeModelsForProfile(context.profile, context.registry);
+  const rankedModels = rankModelsForFit(activeModels, fit, riskLevel);
 
   if (suggestedModel) {
     const model = activeModels.find((candidate) => candidate.id === suggestedModel);
 
     if (model) {
-      return model;
+      const selectedEntry = rankedModels.find((entry) => entry.model.id === model.id);
+
+      if (!selectedEntry) {
+        throw new Error(`Planner draft suggested unroutable model ${suggestedModel}.`);
+      }
+
+      const adjustmentReason = getRoutingAdjustmentReason(selectedEntry, rankedModels, fit, riskLevel);
+      const bestModel = rankedModels[0]?.model;
+
+      if (adjustmentReason && bestModel) {
+        return {
+          model: bestModel,
+          adjustedFrom: model.id,
+          adjustmentReason,
+        };
+      }
+
+      return { model };
     }
 
     throw new Error(
@@ -832,7 +864,7 @@ function resolveDraftModel(
     );
   }
 
-  return selectModel(context, fit, riskLevel);
+  return { model: rankedModels[0]?.model ?? selectModel(context, fit, riskLevel) };
 }
 
 function resolveDraftAlternatives(
@@ -846,7 +878,9 @@ function resolveDraftAlternatives(
     return defaultModelAlternatives(context, selectedModel, fit, riskLevel);
   }
 
-  const activeModelIds = new Set(activeModelsForProfile(context.profile, context.registry).map((model) => model.id));
+  const activeModels = activeModelsForProfile(context.profile, context.registry);
+  const activeModelIds = new Set(activeModels.map((model) => model.id));
+  const rankedModels = rankModelsForFit(activeModels, fit, riskLevel);
   const resolved: string[] = [];
 
   for (const alternative of alternatives) {
@@ -858,12 +892,22 @@ function resolveDraftAlternatives(
       );
     }
 
-    if (alternative !== selectedModel.id) {
+    const alternativeEntry = rankedModels.find((entry) => entry.model.id === alternative);
+
+    if (
+      alternative !== selectedModel.id
+      && alternativeEntry
+      && isAcceptableRoutingAlternative(alternativeEntry, rankedModels, fit, riskLevel)
+    ) {
       resolved.push(alternative);
     }
   }
 
-  return uniqueStrings(resolved).slice(0, 3);
+  const uniqueResolved = uniqueStrings(resolved).slice(0, 3);
+
+  return uniqueResolved.length > 0
+    ? uniqueResolved
+    : defaultModelAlternatives(context, selectedModel, fit, riskLevel);
 }
 
 function defaultModelRationale(model: ModelRegistryEntry, fit: string, riskLevel: number): string {
@@ -883,11 +927,120 @@ function defaultModelAlternatives(
   fit: string,
   riskLevel = 5,
 ): string[] {
-  return rankModelsForFit(activeModelsForProfile(context.profile, context.registry), fit, riskLevel)
+  const rankedModels = rankModelsForFit(activeModelsForProfile(context.profile, context.registry), fit, riskLevel);
+
+  return rankedModels
+    .filter((entry) => isAcceptableRoutingAlternative(entry, rankedModels, fit, riskLevel))
     .map((entry) => entry.model)
     .filter((model) => model.id !== selectedModel.id && model.status !== "restricted")
     .slice(0, 2)
     .map((model) => model.id);
+}
+
+function withDependencyPolicyRule(context: PlanContext, rules: string[]): string[] {
+  const rule = declaredDependencyContextRule(context);
+
+  return rules.some((existingRule) => existingRule === rule) ? rules : [...rules, rule];
+}
+
+function declaredDependencyContextRule(context: PlanContext): string {
+  const dependencies = summarizeDeclaredDependencies(context.doctor.dependencyManifests ?? []);
+
+  return dependencies.length > 0
+    ? `Use only declared project dependencies unless the user explicitly approves a new framework/library: ${dependencies.join(", ")}.`
+    : "Do not introduce new frameworks or libraries based on local/global installation; ask for user approval before adding project dependencies.";
+}
+
+function summarizeDeclaredDependencies(
+  manifests: NonNullable<ProjectDoctorReport["dependencyManifests"]>,
+): string[] {
+  return uniqueStrings(
+    manifests.flatMap((manifest) => [
+      ...manifest.dependencies,
+      ...manifest.devDependencies,
+      ...manifest.peerDependencies,
+      ...manifest.optionalDependencies,
+    ]),
+  ).slice(0, 24);
+}
+
+function getRoutingAdjustmentReason(
+  selectedEntry: { model: ModelRegistryEntry; score: number; fitScore: number },
+  rankedModels: Array<{ model: ModelRegistryEntry; score: number; fitScore: number }>,
+  fit: string,
+  riskLevel: number,
+): string | undefined {
+  const bestEntry = rankedModels[0];
+
+  if (!bestEntry || bestEntry.model.id === selectedEntry.model.id) {
+    return undefined;
+  }
+
+  const scoreGap = bestEntry.score - selectedEntry.score;
+  const fitGap = bestEntry.fitScore - selectedEntry.fitScore;
+  const selectedTier = modelTierWeight(selectedEntry.model.tier);
+  const bestTier = modelTierWeight(bestEntry.model.tier);
+  const complexFit = fit !== "tiny_edit";
+  const formattedDelta =
+    `${selectedEntry.model.id} score=${formatScore(selectedEntry.score)} fit=${formatScore(selectedEntry.fitScore)}; `
+    + `${bestEntry.model.id} score=${formatScore(bestEntry.score)} fit=${formatScore(bestEntry.fitScore)}`;
+
+  if (
+    riskLevel >= 7
+    && (scoreGap > 0.08 || fitGap > 0.1 || (selectedTier <= 2 && bestTier >= 3))
+  ) {
+    return `high-risk ${fit} task is underfit (${formattedDelta})`;
+  }
+
+  if (
+    riskLevel >= 5
+    && (scoreGap > 0.14 || fitGap > 0.18 || (complexFit && selectedTier <= 2 && bestEntry.fitScore >= 0.85))
+  ) {
+    return `risk ${riskLevel} ${fit} task is underfit (${formattedDelta})`;
+  }
+
+  if (riskLevel <= 3 && fit === "tiny_edit" && selectedTier >= 4 && scoreGap > 0.12) {
+    return `low-risk tiny_edit should use the cheaper capable model (${formattedDelta})`;
+  }
+
+  if (riskLevel <= 4 && complexFit && fitGap > 0.28 && scoreGap > 0.1) {
+    return `low-risk ${fit} suggestion still trails the active pool too far (${formattedDelta})`;
+  }
+
+  return undefined;
+}
+
+function isAcceptableRoutingAlternative(
+  alternativeEntry: { model: ModelRegistryEntry; score: number; fitScore: number },
+  rankedModels: Array<{ model: ModelRegistryEntry; score: number; fitScore: number }>,
+  fit: string,
+  riskLevel: number,
+): boolean {
+  const bestEntry = rankedModels[0];
+
+  if (!bestEntry || alternativeEntry.model.id === bestEntry.model.id) {
+    return true;
+  }
+
+  const scoreGap = bestEntry.score - alternativeEntry.score;
+  const fitGap = bestEntry.fitScore - alternativeEntry.fitScore;
+  const alternativeTier = modelTierWeight(alternativeEntry.model.tier);
+  const bestTier = modelTierWeight(bestEntry.model.tier);
+  const complexFit = fit !== "tiny_edit";
+
+  if (riskLevel >= 7) {
+    return scoreGap <= 0.14 && fitGap <= 0.16 && !(alternativeTier <= 2 && bestTier >= 3);
+  }
+
+  if (riskLevel >= 5) {
+    return scoreGap <= 0.22 && fitGap <= 0.25 && !(complexFit && alternativeTier <= 2 && bestTier >= 4);
+  }
+
+  if (complexFit) {
+    return fitGap <= 0.35 || alternativeEntry.fitScore >= 0.68;
+  }
+
+  return true;
 }
 
 function adjustDraftTaskRisk(task: PlannerDraft["tasks"][number]): { riskLevel: number; reason?: string } {
@@ -1038,6 +1191,7 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
       canonical_files: context.doctor.canonicalFiles,
       manifests: context.doctor.manifests,
       scripts: context.doctor.scripts,
+      declared_dependencies: context.doctor.dependencyManifests ?? [],
       top_level_dirs: context.doctor.topLevelDirs,
       inventory_files: context.doctor.inventoryFiles,
       markdown_headings: context.doctor.markdownHeadings,
@@ -1097,6 +1251,10 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     "- If a task edits files, allowed_paths must be the narrowest relative paths or globs needed.",
     "- Prefer existing paths from project_inventory.inventory_files and existing top-level directories.",
     "- Do not invent new source or test directories unless the requested change clearly requires them; if a new directory is required, state that explicitly in context_rules.",
+    "- Treat project_inventory.stack as repo evidence only, not permission to add frameworks or libraries.",
+    "- Do not recommend a framework, package, library, build tool, database, or test framework because it is installed globally or available on the user's machine.",
+    "- Prefer libraries already declared in project_inventory.declared_dependencies or already visible in manifests/config files.",
+    "- If a new dependency or framework is needed and the user did not explicitly request it, put it in assumptions/risks/context_rules as requiring user confirmation; do not treat it as a settled architecture decision.",
     "- Prefer small, isolated handoffs with explicit allowed_paths and acceptance_contract.",
     "- Do not plan worker execution; this product only writes handoff artifacts in MVP 1.0.",
     "- Do not include secrets, token values, or ignored file contents.",
@@ -1218,6 +1376,7 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
         "This is a read-only task. Do not edit files.",
         `Use only visible project context under ${context.root}.`,
         `Detected stack: ${context.doctor.stack.join(", ") || "unknown"}.`,
+        declaredDependencyContextRule(context),
         `Canonical docs detected: ${context.doctor.canonicalFiles.join(", ") || "none"}.`,
         `Top-level dirs detected: ${context.doctor.topLevelDirs.join(", ") || "none"}.`,
         `Respect blocked patterns: ${context.doctor.blockedPatterns.join(", ")}.`,
@@ -1252,6 +1411,7 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
         `Forbidden paths: ${forbiddenPaths.join(", ")}.`,
         `Must satisfy: ${answers.successCriteria.join("; ")}.`,
         `Out of scope: ${answers.outOfScope.join("; ") || "none declared"}.`,
+        declaredDependencyContextRule(context),
       ],
       executionPrompt: [
         `Implement this objective: ${answers.objective}`,
@@ -1284,6 +1444,7 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
         `Validation commands: ${answers.validationCommands.join(" && ") || "manual verification required"}.`,
         `Allowed write paths for fixes/docs: ${validationPaths.join(", ")}.`,
         "Do not expand implementation scope. Only fix issues needed to satisfy acceptance.",
+        declaredDependencyContextRule(context),
       ],
       executionPrompt: [
         "Review the implementation against the original objective and success criteria.",
@@ -1361,6 +1522,7 @@ ${answers.objective}
 - Detected stack: ${context.doctor.stack.join(", ") || "unknown"}
 - Canonical files: ${context.doctor.canonicalFiles.join(", ") || "none"}
 - Manifests: ${context.doctor.manifests.join(", ") || "none"}
+- Declared dependencies: ${summarizeDeclaredDependencies(context.doctor.dependencyManifests ?? []).join(", ") || "none"}
 - Scripts: ${Object.keys(context.doctor.scripts).join(", ") || "none"}
 - Top-level dirs: ${context.doctor.topLevelDirs.join(", ") || "none"}
 - Blocked patterns: ${context.doctor.blockedPatterns.join(", ")}
@@ -1372,6 +1534,10 @@ ${plan.tasks.map((task) => `- ${task.id}: ${task.title} (${task.suggestedModel.i
 ## Constraints
 
 ${formatMarkdownList(answers.constraints)}
+
+## Dependency Policy
+
+- ${declaredDependencyContextRule(context)}
 
 ## Out Of Scope
 

@@ -69,6 +69,7 @@ export interface ProjectDoctorReport {
   manifests: string[];
   stack: string[];
   scripts: Record<string, string>;
+  dependencyManifests?: ProjectDependencyManifest[];
   topLevelDirs: string[];
   inventoryFiles: ProjectInventoryFile[];
   markdownHeadings: Record<string, string[]>;
@@ -82,6 +83,14 @@ export interface ProjectInventoryFile {
   extension: string;
   sizeBytes: number;
   markers: string[];
+}
+
+export interface ProjectDependencyManifest {
+  path: string;
+  dependencies: string[];
+  devDependencies: string[];
+  peerDependencies: string[];
+  optionalDependencies: string[];
 }
 
 export async function inspectProject(rootInput: string): Promise<ProjectDoctorReport> {
@@ -107,6 +116,7 @@ export async function inspectProject(rootInput: string): Promise<ProjectDoctorRe
   );
   const stack = inferStack(visibleFiles, manifests);
   const scripts = await readPackageScripts(root, visibleFiles);
+  const dependencyManifests = await readDependencyManifests(root, manifests);
   const topLevelDirs = inferTopLevelDirs(visibleFiles);
   const inventoryFiles = await summarizeInventoryFiles(root, visibleFiles, canonicalFiles, manifests);
   const markdownHeadings = await readMarkdownHeadings(root, canonicalFiles);
@@ -139,6 +149,7 @@ export async function inspectProject(rootInput: string): Promise<ProjectDoctorRe
     manifests,
     stack,
     scripts,
+    dependencyManifests,
     topLevelDirs,
     inventoryFiles,
     markdownHeadings,
@@ -146,6 +157,43 @@ export async function inspectProject(rootInput: string): Promise<ProjectDoctorRe
     blockedPatterns: [...DEFAULT_IGNORES, ...SECRET_PATTERNS],
     warnings,
   };
+}
+
+async function readDependencyManifests(root: string, manifests: string[]): Promise<ProjectDependencyManifest[]> {
+  const packageManifests = manifests.filter((manifest) => path.basename(manifest) === "package.json").slice(0, 40);
+  const dependencyManifests = await Promise.all(
+    packageManifests.map(async (manifestPath) => {
+      try {
+        const parsed = JSON.parse(await readFile(path.join(root, manifestPath), "utf8")) as unknown;
+
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return undefined;
+        }
+
+        const manifest = parsed as Record<string, unknown>;
+
+        return {
+          path: manifestPath,
+          dependencies: readDependencyNames(manifest.dependencies),
+          devDependencies: readDependencyNames(manifest.devDependencies),
+          peerDependencies: readDependencyNames(manifest.peerDependencies),
+          optionalDependencies: readDependencyNames(manifest.optionalDependencies),
+        } satisfies ProjectDependencyManifest;
+      } catch {
+        return undefined;
+      }
+    }),
+  );
+
+  return dependencyManifests.filter((manifest): manifest is ProjectDependencyManifest => Boolean(manifest));
+}
+
+function readDependencyNames(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+
+  return Object.keys(value).sort().slice(0, 80);
 }
 
 function inferStack(visibleFiles: string[], manifests: string[]): string[] {
