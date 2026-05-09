@@ -36,6 +36,7 @@ import {
 
 const h = createElement;
 const WORKBENCH_SIDEBAR_WIDTH = 44;
+const WORKBENCH_BORDER_COLOR = "gray";
 
 export function WorkbenchSurface({
   dashboard,
@@ -85,10 +86,10 @@ export function WorkbenchSurface({
     { flexDirection: "column", flexGrow: 1 },
     h(
       Box,
-      { flexDirection: "row", gap: 2, flexGrow: 1 },
+      { flexDirection: "row", flexGrow: 1 },
       h(
         Box,
-        { flexDirection: "column", flexGrow: 1, gap: 1, paddingBottom: 1 },
+        { flexDirection: "column", flexGrow: 1 },
         h(WorkbenchFeed, { dashboard, actionResult, runningAction, planChatStep, planChatDraft }),
         h(FocusOverlay, {
           pendingConfirmation,
@@ -150,7 +151,7 @@ export function WorkbenchFeed({
 
   return h(
     Box,
-    { flexDirection: "column", gap: 1, flexGrow: 1 },
+    { flexDirection: "column", flexGrow: 1 },
     ...(runningAction === "agent-workflow" && !dashboard.agentState
       ? [h(PlannerThinkingBlock, { key: "thinking", dashboard })]
       : []),
@@ -176,7 +177,7 @@ export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard })
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Planner is thinking"),
     h(Text, { color: "gray" }, profile ? `${profile.planner_provider}/${profile.planner_model}` : "planner model"),
     h(Text, null, "Building project understanding, validation checklist, questions, and next action..."),
@@ -186,9 +187,9 @@ export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard })
 export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowState }): React.ReactElement {
   return h(
     Box,
-    { borderStyle: "single", borderColor: agentStateColor(state), paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, state.project_state.title),
-    h(Text, { color: "gray" }, state.project_state.current_phase),
+    h(Text, { color: agentStateColor(state) }, state.project_state.current_phase),
     h(Text, { color: "gray" }, truncateLine(state.project_state.summary, 110)),
     ...state.messages.slice(0, 3).map((message, index) =>
       h(Text, { key: `message-${index}` }, truncateLine(message.content, 110)),
@@ -268,7 +269,7 @@ function agentStateColor(state: PlannerAgentWorkflowState): "green" | "yellow" |
 export function PlanningProgressBlock({ planChatDraft }: { planChatDraft: PlanChatDraft }): React.ReactElement {
   return h(
     Box,
-    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Planning Intake"),
     ...adaptivePlanChatSteps(planChatDraft).map((step) =>
       h(Text, { key: step }, `${planStepComplete(planChatDraft, step) ? "[x]" : "[ ]"} ${PLAN_STEP_PROMPTS[step]}`),
@@ -281,7 +282,7 @@ export function PlanPreviewBlock({ actionResult }: { actionResult: TuiActionResu
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Plan Preview Ready"),
     h(Text, null, actionResult.summary),
     ...(taskLines.length > 0
@@ -294,7 +295,7 @@ export function PlanPreviewBlock({ actionResult }: { actionResult: TuiActionResu
 export function HandoffReadyBlock({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
   return h(
     Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Background Task Completed"),
     h(Text, null, `Generated ${dashboard.tasks.length} planner handoff(s).`),
     ...dashboard.tasks.slice(0, 8).map((task) =>
@@ -311,7 +312,7 @@ export function HandoffReadyBlock({ dashboard }: { dashboard: TuiDashboard }): R
 export function EmptyWorkbenchBlock(): React.ReactElement {
   return h(
     Box,
-    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
     h(Text, { bold: true }, "Blueprint Artifact"),
     h(Text, { color: "gray" }, "[ ] waiting for the first planning request"),
   );
@@ -353,7 +354,7 @@ export function WorkbenchInputPanel({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
     h(Text, null, h(Text, { color: "gray" }, "Planner "), h(Text, { bold: true }, planner)),
     h(Text, { color: "gray" }, hint),
     h(Text, null, h(Text, { color: "blue" }, "❯ "), activeText, h(Text, { inverse: true }, " ")),
@@ -440,7 +441,7 @@ export function WorkbenchSidebar({
     });
   }
 
-  const sidebarColor = dashboard.lint.errors.length > 0
+  const sidebarStatusColor = dashboard.lint.errors.length > 0
     ? "red"
     : dashboard.doctor.warnings.length > 0
       ? "yellow"
@@ -448,7 +449,7 @@ export function WorkbenchSidebar({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: sidebarColor, paddingX: 1, flexDirection: "column", width: WORKBENCH_SIDEBAR_WIDTH },
+    { borderStyle: "single", borderColor: WORKBENCH_BORDER_COLOR, paddingX: 1, flexDirection: "column", width: WORKBENCH_SIDEBAR_WIDTH },
     h(Text, { bold: true }, path.basename(dashboard.root) || TUI_APP_NAME),
     h(Text, null, ""),
     h(Text, { bold: true }, "Context"),
@@ -458,6 +459,7 @@ export function WorkbenchSidebar({
     h(Text, null, ""),
     h(Text, { bold: true }, "Status"),
     h(Text, { color: runtimeStatusColor(chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })) }, chatRuntimeStatus({ dashboard, runningAction, pendingConfirmation, isEditingRevise, isEditingModelPool, planChatStep })),
+    h(Text, { color: sidebarStatusColor }, dashboard.tasks.length > 0 ? "handoffs-ready" : "waiting-for-plan"),
     h(Text, null, ""),
     h(Text, { bold: true }, "Providers"),
     ...providers.slice(0, 5).map((provider) =>

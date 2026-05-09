@@ -118,7 +118,9 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
-  const rawOutput = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
+  const stdout = stringifyProviderPromptOutput(result.stdout).trim();
+  const stderr = stringifyProviderPromptOutput(result.stderr).trim();
+  const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
 
   if (result.exitCode !== 0) {
     throw new Error(`codex exec failed: ${summarizeProviderFailure(rawOutput || `exit code ${result.exitCode}`)}`);
@@ -155,7 +157,7 @@ async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Pro
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
-  const rawOutput = result.stdout.trim() || result.stderr.trim();
+  const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
 
   if (result.exitCode !== 0) {
     throw new Error(`gemini failed: ${summarizeProviderFailure(rawOutput || `exit code ${result.exitCode}`)}`);
@@ -194,7 +196,7 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
-  const rawOutput = result.stdout.trim() || result.stderr.trim();
+  const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
 
   if (result.exitCode !== 0) {
     throw new Error(`claude failed: ${summarizeProviderFailure(rawOutput || `exit code ${result.exitCode}`)}`);
@@ -238,6 +240,22 @@ function promptWithReasoningEffort(prompt: string, effort?: string): string {
   }
 
   return [`Requested reasoning effort for this run: ${effort}.`, prompt].join("\n\n");
+}
+
+export function selectProviderPromptOutput(stdout: unknown, stderr: unknown): string {
+  return stringifyProviderPromptOutput(stdout).trim() || stringifyProviderPromptOutput(stderr).trim();
+}
+
+function stringifyProviderPromptOutput(output: unknown): string {
+  if (typeof output === "string") {
+    return output;
+  }
+
+  if (output === undefined || output === null) {
+    return "";
+  }
+
+  return String(output);
 }
 
 function parseProviderJson(rawOutput: string): Record<string, unknown> {

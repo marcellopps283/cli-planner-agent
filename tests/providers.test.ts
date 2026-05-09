@@ -9,13 +9,18 @@ import {
   summarizeGenericLiveOutput,
   summarizeGeminiLiveOutput,
 } from "../src/providers.js";
-import { providerPromptReasoningArgs } from "../src/providerPrompt.js";
+import { providerPromptReasoningArgs, selectProviderPromptOutput } from "../src/providerPrompt.js";
 
 describe("provider output sanitation", () => {
   it("maps provider reasoning efforts to supported CLI flags", () => {
     expect(providerPromptReasoningArgs("anthropic", "high")).toEqual(["--effort", "high"]);
     expect(providerPromptReasoningArgs("openai", "xhigh")).toEqual(["-c", 'model_reasoning_effort="xhigh"']);
     expect(providerPromptReasoningArgs("google", "thinking_budget:-1")).toEqual([]);
+  });
+
+  it("normalizes missing provider stdout before trimming CLI output", () => {
+    expect(selectProviderPromptOutput(undefined, '{"response":"OK"}')).toBe('{"response":"OK"}');
+    expect(selectProviderPromptOutput(null, undefined)).toBe("");
   });
 
   it("redacts emails and ids from plain text output", () => {

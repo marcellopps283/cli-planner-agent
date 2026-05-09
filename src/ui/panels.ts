@@ -14,19 +14,21 @@ import {
 } from "../tui.js";
 
 const h = createElement;
+const PANEL_BORDER_COLOR = "gray";
 
 export function ActionResultPanel({ result }: { result?: TuiActionResult }): React.ReactElement | null {
   if (!result) {
     return null;
   }
 
+  const statusColor = result.status === "ok" ? "green" : "red";
   const visibleLines = result.lines.slice(0, 8);
   const hiddenCount = result.lines.length - visibleLines.length;
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: result.status === "ok" ? "green" : "red", paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, `${result.actionId} ${result.status}`),
+    { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true, color: statusColor }, `${result.actionId} ${result.status}`),
     h(Text, null, result.summary),
     ...visibleLines.map((line) => h(Text, { key: line }, line)),
     ...(hiddenCount > 0 ? [h(Text, { key: "more", color: "gray" }, `+${hiddenCount} more line(s)`)] : []),
@@ -86,7 +88,7 @@ export function ChatModelSelectorPanel({
   if (!profile) {
     return h(
       Box,
-      { borderStyle: "single", borderColor: "yellow", paddingX: 1, flexDirection: "column", width },
+      { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column", width },
       h(Text, { bold: true }, "Model Selector"),
       h(Text, null, "Profile is missing. Run setup before selecting a chat model."),
     );
@@ -94,7 +96,7 @@ export function ChatModelSelectorPanel({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column", width },
+    { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column", width },
     h(Text, { bold: true }, "Model Selector"),
     h(Text, { color: "gray" }, `Connected CLI: ${provider}. Enter selects, Esc closes.`),
     ...(models.length > 0
@@ -170,7 +172,7 @@ export function SlashCommandPanel({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "gray", paddingX: 1, flexDirection: "column", width },
+    { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column", width },
     h(Text, { bold: true }, isFiltering ? "Slash Autocomplete" : "Slash Commands"),
     ...(isFiltering ? [h(Text, { key: "tab-hint", color: "gray" }, "Use \u2191\u2193 to choose. Tab completes. Enter runs selected command.")] : []),
     ...(visibleCommands.length > 0
@@ -220,7 +222,7 @@ export function ReasoningEffortSelectorPanel({
 
   return h(
     Box,
-    { borderStyle: "single", borderColor: "cyan", paddingX: 1, flexDirection: "column", width },
+    { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column", width },
     h(Text, { bold: true }, "Reasoning Effort"),
     h(Text, { color: "gray" }, `${provider.toUpperCase()}/${modelId}`),
     ...(efforts.length > 0
@@ -285,8 +287,8 @@ export function FocusOverlay({
 
   return h(
     Box,
-    { borderStyle: "round", borderColor: state.color, paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, state.title),
+    { borderStyle: "single", borderColor: PANEL_BORDER_COLOR, paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true, color: state.color }, state.title),
     h(Text, null, state.body),
     h(Text, { color: "gray" }, state.hint),
   );

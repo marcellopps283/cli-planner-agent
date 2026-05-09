@@ -5,7 +5,7 @@ import path from "node:path";
 
 import fg from "fast-glob";
 import matter from "gray-matter";
-import { Box, Text, render, renderToString, useApp, useInput } from "ink";
+import { Box, Text, render, renderToString, useApp, useInput, useWindowSize } from "ink";
 import React, { createElement, useState } from "react";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
@@ -2810,13 +2810,19 @@ export function BlueprintDashboard({
   setupReasoningEffortCursor?: number;
   setupPlannerCursor?: number;
 }): React.ReactElement {
+  const { columns, rows } = useWindowSize();
   const lintStatus = dashboard.lint.errors.length === 0 ? "ok" : "error";
   const appStatus = dashboard.setup.initialized ? lintStatus : "warn";
   const chatSurface = dashboard.setup.initialized && view === "actions";
+  const isInteractiveTty = Boolean(process.stdout.isTTY);
+  const terminalRows = rows > 0 ? rows : process.stdout.rows || 24;
+  const terminalColumns = columns > 0 ? columns : process.stdout.columns || 100;
 
   return h(
     Box,
-    { flexDirection: "column", minHeight: process.stdout.rows || 24 },
+    isInteractiveTty
+      ? { flexDirection: "column", height: terminalRows, width: terminalColumns, overflow: "hidden" as any }
+      : { flexDirection: "column", minHeight: terminalRows },
     ...(!chatSurface
       ? [
           h(
@@ -2837,42 +2843,48 @@ export function BlueprintDashboard({
         ]
       : []),
     ...(dashboard.setup.initialized && view !== "main" && view !== "actions" ? [h(SectionHeader, { key: "section", view })] : []),
-    h(ActiveView, {
-      dashboard,
-      view,
-      lintStatus,
-      selectedMainMenuIndex,
-      actionResult,
-      runningAction,
-      pendingConfirmation,
-      isEditingRevise,
-      reviseInput,
-      chatCommandInput,
-      hasStartedChatWorkflow,
-      planChatStep,
-      planChatDraft,
-      planChatInput,
-      isEditingModelPool,
-      modelPoolInput,
-      isSelectingChatModel,
-      chatModelCursor,
-      chatModelScrollOffset,
-      chatModelEffortCandidate,
-      chatModelEffortCursor,
-      slashCommandCursor,
-      slashCommandScrollOffset,
-      isEditingRoot,
-      rootInputMode,
-      rootInput,
-      setupStep,
-      setupDraft,
-      setupProviderCursor,
-      setupModelProviderCursor,
-      setupModelCursor,
-      setupReasoningModelCursor,
-      setupReasoningEffortCursor,
-      setupPlannerCursor,
-    }),
+    h(
+      Box,
+      isInteractiveTty
+        ? { key: "viewport", flexDirection: "column", flexGrow: 1, overflow: "hidden" as any }
+        : { key: "viewport", flexDirection: "column", flexGrow: 1 },
+      h(ActiveView, {
+        dashboard,
+        view,
+        lintStatus,
+        selectedMainMenuIndex,
+        actionResult,
+        runningAction,
+        pendingConfirmation,
+        isEditingRevise,
+        reviseInput,
+        chatCommandInput,
+        hasStartedChatWorkflow,
+        planChatStep,
+        planChatDraft,
+        planChatInput,
+        isEditingModelPool,
+        modelPoolInput,
+        isSelectingChatModel,
+        chatModelCursor,
+        chatModelScrollOffset,
+        chatModelEffortCandidate,
+        chatModelEffortCursor,
+        slashCommandCursor,
+        slashCommandScrollOffset,
+        isEditingRoot,
+        rootInputMode,
+        rootInput,
+        setupStep,
+        setupDraft,
+        setupProviderCursor,
+        setupModelProviderCursor,
+        setupModelCursor,
+        setupReasoningModelCursor,
+        setupReasoningEffortCursor,
+        setupPlannerCursor,
+      }),
+    ),
     h(KeyHints, {
       view,
       setupInitialized: dashboard.setup.initialized,
