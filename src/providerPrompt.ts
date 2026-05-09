@@ -8,6 +8,11 @@ import { DEFAULT_PROVIDER_ADAPTERS, sanitizeProviderOutput } from "./providers.j
 import type { ProviderId } from "./schemas.js";
 
 const DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS = 120_000;
+const GEMINI_HEADLESS_ATTEMPTS = [
+  { approvalMode: "plan", outputFormat: "json" },
+  { approvalMode: "auto_edit", outputFormat: "json" },
+  { approvalMode: "plan", outputFormat: "text" },
+] as const;
 
 export interface ProviderPromptOptions {
   provider: ProviderId;
@@ -106,6 +111,7 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
       "read-only",
       "--color",
       "never",
+      "--json",
       "-o",
       outputPath,
       options.prompt,
@@ -122,7 +128,7 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
   const stderr = stringifyProviderPromptOutput(result.stderr).trim();
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
 
-  if (result.exitCode !== 0) {
+  if (providerProcessFailed(result)) {
     throw new Error(`codex exec failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
   }
 
@@ -137,6 +143,24 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
 }
 
 async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Promise<ProviderPromptResult> {
+  const errors: string[] = [];
+
+  for (const attempt of GEMINI_HEADLESS_ATTEMPTS) {
+    try {
+      return await runGeminiPromptAttempt(options, cwd, attempt);
+    } catch (error) {
+      errors.push(`${attempt.approvalMode}/${attempt.outputFormat}: ${summarizeProviderFailure(error instanceof Error ? error.message : String(error))}`);
+    }
+  }
+
+  throw new Error(`gemini failed after ${GEMINI_HEADLESS_ATTEMPTS.length} headless attempt(s): ${errors.join(" | ")}`);
+}
+
+async function runGeminiPromptAttempt(
+  options: ProviderPromptOptions,
+  cwd: string,
+  attempt: (typeof GEMINI_HEADLESS_ATTEMPTS)[number],
+): Promise<ProviderPromptResult> {
   const result = await execa(
     "gemini",
     [
@@ -144,10 +168,9 @@ async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Pro
       "-p",
       promptWithReasoningEffort(options.prompt, options.reasoningEffort),
       "--skip-trust",
-      "--output-format",
-      "json",
       "--approval-mode",
-      "plan",
+      attempt.approvalMode,
+      ...(attempt.outputFormat === "json" ? ["--output-format", "json"] : []),
     ],
     {
       cwd,
@@ -159,12 +182,18 @@ async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Pro
   );
   const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
 
-  if (result.exitCode !== 0) {
+  if (providerProcessFailed(result)) {
     throw new Error(`gemini failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
   }
 
-  const parsed = parseProviderJson(rawOutput);
-  const response = typeof parsed.response === "string" ? parsed.response : rawOutput;
+  if (!rawOutput) {
+    throw new Error(`gemini returned no stdout/stderr: ${providerProcessFailure(result)}`);
+  }
+
+  const response =
+    attempt.outputFormat === "json"
+      ? geminiJsonResponse(rawOutput)
+      : rawOutput;
 
   return {
     provider: "google",
@@ -198,7 +227,7 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
   );
   const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
 
-  if (result.exitCode !== 0) {
+  if (providerProcessFailed(result)) {
     throw new Error(`claude failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
   }
 
@@ -256,8 +285,21 @@ function promptWithReasoningEffort(prompt: string, effort?: string): string {
   return [`Requested reasoning effort for this run: ${effort}.`, prompt].join("\n\n");
 }
 
+function geminiJsonResponse(rawOutput: string): string {
+  const parsed = parseProviderJson(rawOutput);
+  return typeof parsed.response === "string" ? parsed.response : rawOutput;
+}
+
 export function selectProviderPromptOutput(stdout: unknown, stderr: unknown): string {
   return stringifyProviderPromptOutput(stdout).trim() || stringifyProviderPromptOutput(stderr).trim();
+}
+
+function providerProcessFailed(result: { exitCode?: number; failed?: boolean }): boolean {
+  if (result.failed === true) {
+    return true;
+  }
+
+  return typeof result.exitCode === "number" && result.exitCode !== 0;
 }
 
 function providerProcessFailure(result: {

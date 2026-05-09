@@ -140,19 +140,22 @@ sugerido, a justificativa e alternativas por task antes de escrever os
 handoffs. Com `--answers` e `--yes`, o fluxo continua proprio para automacao e
 testes.
 
-Quando `--engine llm` e usado, o PlannerEngine chama o provider oficial com o
-model ID exato do profile (`codex -m`, `gemini -m`, `claude --model`), valida a
-resposta JSON com Zod e faz uma tentativa curta de reparo se o modelo devolver
-JSON fora do contrato. Com `--fallback`, o CLI tenta primeiro outro modelo ativo
-do pool, pedindo confirmacao no modo interativo, e so depois oferece fallback
-deterministico.
+Quando `--engine llm` e usado, o PlannerEngine chama o provider oficial em modo
+headless. Modelos reais do profile sao enviados ao CLI (`codex -m`, `gemini -m`,
+`claude --model`); pseudo-modelos de compatibilidade como
+`openai-codex-default` e `gemini-cli-default` usam o default autenticado do CLI.
+A resposta e validada com Zod e passa por uma tentativa curta de reparo se o
+modelo devolver JSON fora do contrato. Com `--fallback`, o CLI tenta primeiro
+outro modelo ativo do pool, pedindo confirmacao no modo interativo, e so depois
+oferece fallback deterministico.
 
 O registry bundled guarda benchmarks, precos, `task_fit` e esforcos de
 raciocinio suportados por modelo. A pesquisa operacional fica em
 `docs/SPECS/model_pool_research.md`; a direcao principal de TUI inspirada no
 OpenCode fica em `docs/SPECS/opencode_tui_reference.md`; e os padroes de
 sessoes, permissoes e planning harness ficam em
-`docs/SPECS/agent_harness_research.md`.
+`docs/SPECS/agent_harness_research.md`. O contrato de execucao headless por
+provider fica em `docs/SPECS/provider_headless_execution.md`.
 
 O pacote de contexto enviado ao planner continua compacto: stack detectada,
 scripts de validacao, top-level dirs, docs canonicos, headings curtos e ate 80

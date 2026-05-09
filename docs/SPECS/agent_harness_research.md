@@ -6,8 +6,13 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
 ## Fontes lidas
 
 - OpenAI Codex docs: https://developers.openai.com/codex/cli
+- OpenAI Codex non-interactive docs: https://www.mintlify.com/openai/codex/concepts/non-interactive-mode
 - OpenAI Codex repo: https://github.com/openai/codex
 - Claude Code docs: https://code.claude.com/docs/en/sessions
+- Claude Code headless docs: https://code.claude.com/docs/en/headless
+- Gemini CLI headless docs: https://google-gemini.github.io/gemini-cli/docs/cli/headless.html
+- MCO multi-CLI orchestrator: https://github.com/mco-org/mco
+- OpenCode repo: https://github.com/opencode-ai/opencode
 - Claw Orchestrator repo: https://github.com/Enderfga/claw-orchestrator
 - Claw Code overview: https://claw-code.codes/
 
@@ -33,6 +38,11 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
   expoe `ultraplan_start/status`; Codex tem `/goal` persistente. No Blueprint
   1.0 isso vira apenas estado visual e arquivos; no 2.0 pode virar supervisor
   com workers reais.
+- CLIs headless precisam de adapters especificos, nao um wrapper generico.
+  Codex recomenda JSONL para automacao e captura da ultima mensagem; Claude
+  expoe `-p --output-format json` e `--resume`; Gemini documenta `-p`,
+  `--output-format json` e `--approval-mode`, mas tem historico de fragilidade
+  no modo JSON. Blueprint deve tratar cada provider como runtime proprio.
 
 ## Aplicacoes no Blueprint
 
@@ -45,3 +55,5 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
   acceptance contract e comandos de validacao.
 - Evoluir depois para `planner task background` e supervisor 2.0, inspirado em
   `/goal` e `ultraplan`, sem executar workers no MVP.
+- Manter contrato de execucao em `provider_headless_execution.md`, incluindo
+  pseudo-modelos de CLI, retries de Gemini e diagnosticos de fallback.
