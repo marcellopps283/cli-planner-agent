@@ -1,6 +1,7 @@
 import { Box, Text, useWindowSize } from "ink";
 import path from "node:path";
 import React, { createElement } from "react";
+import Spinner from "ink-spinner";
 
 import { DEFAULT_MODEL_REGISTRY } from "../models.js";
 import {
@@ -236,15 +237,6 @@ function buildTimelineFeedItems({
     entries.push(buildHandoffTimelineItem(dashboard, timelineWidth));
   }
 
-  if (runningAction === "agent-workflow" && !dashboard.agentState) {
-    const lines = ["Building project understanding, validation checklist, questions, and next action..."];
-    entries.push({
-      key: "thinking",
-      rows: estimateTimelineRows(lines, timelineWidth),
-      element: h(PlannerThinkingBlock, { key: "thinking", dashboard }),
-    });
-  }
-
   if (dashboard.agentState) {
     entries.push({
       key: "agent-state",
@@ -282,12 +274,21 @@ function buildTimelineFeedItems({
     if (!hasActiveTimelineEvent) {
       entries.push(buildHandoffTimelineItem(dashboard, timelineWidth));
     }
-  } else if (!dashboard.agentState && actionResult?.actionId !== "plan") {
+  } else if (!runningAction && !dashboard.agentState && actionResult?.actionId !== "plan") {
     const lines = ["Send a planning request. Artifacts and todos will appear here as the model progresses."];
     entries.push({
       key: "empty",
       rows: estimateTimelineRows(lines, timelineWidth),
       element: h(EmptyWorkbenchBlock, { key: "empty" }),
+    });
+  }
+
+  if (runningAction === "agent-workflow") {
+    const lines = ["Working · building context, checklist, questions, and next action"];
+    entries.push({
+      key: "thinking",
+      rows: estimateTimelineRows(lines, timelineWidth),
+      element: h(PlannerThinkingBlock, { key: "thinking", dashboard }),
     });
   }
 
@@ -339,15 +340,36 @@ function estimateTimelineRows(lines: string[], width: number): number {
 
 export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
   const profile = dashboard.profile.profile;
+  const meta = profile ? `${profile.planner_provider}/${profile.planner_model}` : "planner model";
 
   return h(
     Box,
     { flexDirection: "column", marginBottom: 1 },
-    h(ChatMessageBlock, {
-      speaker: "Planner",
-      muted: profile ? `${profile.planner_provider}/${profile.planner_model}` : "planner model",
-      lines: ["Building project understanding, validation checklist, questions, and next action..."],
-    }),
+    h(
+      Box,
+      { flexDirection: "row" },
+      h(Box, { width: 2, flexShrink: 0 }, h(Text, { color: "cyan" }, "●")),
+      h(
+        Box,
+        { flexGrow: 1 },
+        h(Text, null, h(Text, { bold: true, color: "cyan" }, "Planner"), h(Text, { color: "gray" }, ` | ${meta}`)),
+      ),
+    ),
+    h(
+      Box,
+      { flexDirection: "row" },
+      h(Box, { width: 2, flexShrink: 0 }, h(Text, { color: "gray" }, "│")),
+      h(
+        Box,
+        { flexGrow: 1 },
+        h(
+          Text,
+          null,
+          h(Text, { color: "cyan" }, h(Spinner, { type: "dots" }), " Working"),
+          h(Text, { color: "gray" }, " · building context, checklist, questions, and next action"),
+        ),
+      ),
+    ),
   );
 }
 

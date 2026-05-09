@@ -255,8 +255,10 @@ describe("blueprint tui", () => {
     expect(providersOutput).toContain("Model Catalog");
     expect(actionsOutput).toContain("Ask anything...");
     expect(actionsOutput).not.toContain("Background Task Completed");
-    expect(actionsOutput).toContain("type / for commands");
-    expect(actionsOutput).toContain("tab switch model");
+    expect(actionsOutput).toContain("/ commands");
+    expect(actionsOutput).toContain("tab model");
+    expect(actionsOutput).not.toContain("type / for commands");
+    expect(actionsOutput).not.toContain("ctrl+p commands");
     expect(actionsOutput).not.toContain("Quick action");
   });
 
@@ -296,7 +298,8 @@ describe("blueprint tui", () => {
 
     expect(output).toContain("Ask anything");
     expect(output).toContain("OpenAI/gpt-5.5-xhigh");
-    expect(output).toContain("ctrl+p commands");
+    expect(output).toContain("/ commands");
+    expect(output).not.toContain("ctrl+p commands");
     expect(output).not.toContain("Slash Autocomplete");
     expect(typedOutput).toContain("planejar tela inicial");
     expect(typedOutput).not.toContain("Slash Autocomplete");
@@ -446,6 +449,14 @@ describe("blueprint tui", () => {
         hasStartedChatWorkflow: true,
       }),
     );
+    const runningOutput = renderToString(
+      createElement(BlueprintDashboard, {
+        dashboard,
+        view: "actions",
+        hasStartedChatWorkflow: true,
+        runningAction: "agent-workflow",
+      }),
+    );
     const fullTimelineOutput = renderToString(
       createElement(WorkbenchFeed, {
         dashboard,
@@ -483,6 +494,8 @@ describe("blueprint tui", () => {
     expect(fullTimelineOutput).toContain("Entendi que o app renderiza o workflow");
     expect(clippedTimelineOutput).not.toContain("planeje um harness agentico");
     expect(clippedTimelineOutput).toContain("Artifact: Updated Plan");
+    expect(runningOutput).toContain("Working");
+    expect(runningOutput).not.toContain("Running agent-workflow");
     expect(output).toContain("Harness agentico");
     expect(output).toContain("Understanding project");
     expect(output).toContain("[x] Entender pedido inicial");

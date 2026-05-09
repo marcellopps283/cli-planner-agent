@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, useWindowSize } from "ink";
 import React, { createElement } from "react";
 
 import {
@@ -39,16 +39,21 @@ export function ActionResultPanel({ result }: { result?: TuiActionResult }): Rea
 export function OpenCodePathBar({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
   const modelLabel = plannerRuntimeLabel(dashboard);
   const folder = folderLabel(dashboard.root);
+  const { columns } = useWindowSize();
+  const terminalColumns = columns > 0 ? columns : process.stdout.columns || 100;
+  const folderWidth = terminalColumns < 88 ? 16 : 22;
+  const hint = `tab model | / commands | v${TUI_APP_VERSION}`;
+  const modelWidth = Math.max(18, Math.min(42, terminalColumns - folderWidth - hint.length - 8));
 
   return h(
     Box,
-    null,
+    { overflowX: "hidden" as any, width: terminalColumns },
     h(
       Text,
-      { color: "gray" },
-      `${truncateText(folder, 22)} | `,
-      h(Text, { color: modelLabel === "planner missing" ? "yellow" : "cyan" }, truncateText(modelLabel, 36)),
-      ` | tab model | / | v${TUI_APP_VERSION}`,
+      { color: "gray", wrap: "truncate" },
+      `${truncateText(folder, folderWidth)} | `,
+      h(Text, { color: modelLabel === "planner missing" ? "yellow" : "cyan" }, truncateText(modelLabel, modelWidth)),
+      ` | ${hint}`,
     ),
   );
 }

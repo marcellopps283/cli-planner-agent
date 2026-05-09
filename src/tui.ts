@@ -10,9 +10,8 @@ import React, { createElement, useState } from "react";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
-import Spinner from "ink-spinner";
 import { OpenCodeLogo } from "./ui/logo.js";
-import { ActionResultPanel, OpenCodePathBar, SlashCommandPanel, ChatModelSelectorPanel, FocusOverlay, MessageList, EmptyPanel } from "./ui/panels.js";
+import { ActionResultPanel, SlashCommandPanel, ChatModelSelectorPanel, FocusOverlay, MessageList, EmptyPanel } from "./ui/panels.js";
 import { LandingSurface } from "./ui/startScreen.js";
 import { WorkbenchSurface } from "./ui/workbench.js";
 
@@ -3006,19 +3005,24 @@ export function BlueprintDashboard({
         setupPlannerCursor,
       }),
     ),
-    h(KeyHints, {
-      view,
-      setupInitialized: dashboard.setup.initialized,
-      pendingConfirmation,
-      isEditingRevise,
-      planChatStep,
-      isEditingModelPool,
-      isSelectingChatModel,
-      chatModelEffortCandidate,
-      isEditingRoot,
-      runningAction,
-      setupStep,
-    }),
+    ...(!chatSurface
+      ? [
+          h(KeyHints, {
+            key: "key-hints",
+            view,
+            setupInitialized: dashboard.setup.initialized,
+            pendingConfirmation,
+            isEditingRevise,
+            planChatStep,
+            isEditingModelPool,
+            isSelectingChatModel,
+            chatModelEffortCandidate,
+            isEditingRoot,
+            runningAction,
+            setupStep,
+          }),
+        ]
+      : []),
   );
 }
 
@@ -5240,7 +5244,7 @@ function KeyHints({
   } else if (pendingConfirmation) {
     hints = "y \u2192 confirm  \u2502  n \u2192 cancel";
   } else if (runningAction) {
-    hints = h(Text, { color: "cyan" }, h(Spinner, { type: "dots" }), ` Running ${runningAction}...`);
+    hints = `Running ${runningAction}...`;
   } else if (!setupInitialized) {
     hints = "1/Enter \u2192 use current  \u2502  2 \u2192 new folder  \u2502  3/c \u2192 choose dir  \u2502  q quit";
   } else if (view === "main") {
@@ -5249,15 +5253,6 @@ function KeyHints({
     hints = "esc interrupt  \u2502  tab switch model  \u2502  ctrl+p commands";
   } else {
     hints = "m/Esc menu  \u2502  c dir  \u2502  q quit";
-  }
-
-  if (view === "actions" && setupInitialized) {
-    return h(
-      Box,
-      { justifyContent: "space-between" },
-      h(Text, { color: "gray" }, hints),
-      h(Text, { color: "gray" }, "type / for commands"),
-    );
   }
 
   return h(
