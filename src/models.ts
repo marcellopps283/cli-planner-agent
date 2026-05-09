@@ -171,7 +171,7 @@ export const DEFAULT_MODEL_REGISTRY: ModelRegistryEntry[] = [
       tiny_edit: 0.62,
       long_context: 0.96,
     },
-    context_window: 1_000_000,
+    context_window: 1_050_000,
     max_output_tokens: 128_000,
     input_price_usd_per_mtok: 5,
     output_price_usd_per_mtok: 30,

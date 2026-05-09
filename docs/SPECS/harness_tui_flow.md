@@ -25,9 +25,11 @@ automacao, smoke e debugging.
     perguntas e proxima acao.
 11. O app renderiza esse estado como harness; o modelo controla status
     semantico de checkboxes/perguntas, nunca layout.
-12. Antes de escrever handoffs, app mostra task graph, modelo sugerido por task
+12. A conversa e salva como sessao unica do projeto; `/resume` reabre essa
+    sessao explicitamente, sem pular a landing automaticamente.
+13. Antes de escrever handoffs, app mostra task graph, modelo sugerido por task
     e pede confirmacao.
-13. Apos confirmacao, app gera os arquivos e informa os paths criados.
+14. Apos confirmacao, app gera os arquivos e informa os paths criados.
 
 ## Regras
 
@@ -65,10 +67,20 @@ automacao, smoke e debugging.
 - Depois da primeira mensagem, a tela vira workbench e executa
   `agent-workflow`: o texto vai para o planner LLM ativo e a TUI renderiza o
   estado JSON devolvido pelo modelo.
+- Enquanto o planner trabalha na primeira mensagem, o workbench mostra um bloco
+  de thinking com o provider/modelo ativo; quando o JSON chega, esse bloco e
+  substituido pelo estado do planner.
 - O estado agentico inclui `project_state`, mensagens do planner, checklist com
   status `done/in_progress/pending/blocked`, perguntas e `next_action`.
 - O modelo decide o estado semantico dos itens interativos que ele valida; a TUI
   continua dona do layout, controles e renderizacao.
+- `.blueprint/tui_sessions/SESSION.json` guarda uma sessao unica por projeto,
+  com mensagens `user/planner` e o ultimo `agent_state`. O arquivo legado
+  `AGENT_STATE.json` continua sendo gravado apenas por compatibilidade.
+- `/resume` reabre a sessao salva sob demanda. A landing continua sendo a
+  primeira tela em uma nova abertura do app; o usuario precisa pedir resume.
+- `/sessions` mostra metadados da sessao atual e `/clear` limpa a conversa
+  salva, sem remover handoffs, exports ou historico de acoes.
 - Texto livre ou `/plan [brief]` inicia o planejamento; `/providers`,
   `/model`, `/models`, `/registry`, `/lint`, `/export`, `/revise`, `/auth`,
   `/auth-live`, `/help` e `/menu` mantem o usuario em uma unica frente
@@ -85,11 +97,21 @@ automacao, smoke e debugging.
   perguntar ao usuario quando estiver realmente bloqueado.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
   confirmacao antes de persistir handoffs no modo interativo.
+- Quando o planner considera o estado pronto para handoff, ele devolve
+  `next_action.type = preview_plan` e um `plan_answers` valido. A TUI entao
+  pede confirmacao antes de abrir o preview tecnico.
+- O planner recebe scorecards deterministico-hibridos por `fit` e risco:
+  `low_risk_order` evita overfitting em tarefas pequenas, enquanto
+  `high_risk_order` evita underfitting em tarefas de arquitetura, seguranca,
+  muitos arquivos ou alto risco.
 - O PlannerEngine passa o model ID exato ao CLI oficial e tenta reparar uma
   resposta JSON invalida antes de acionar fallback.
 - O preview de planejamento inclui justificativa de modelo e alternativas
   aceitaveis por task.
-- Falhas do planner na TUI viram um proximo passo confirmavel: outro modelo do
-  pool ativo ou preview deterministico.
+- Falhas do planner no `agent-workflow` viram um proximo passo confirmavel:
+  outro modelo do pool ativo. O fallback so roda depois de confirmacao do
+  usuario.
+- Falhas do `blueprint plan` ainda podem sugerir outro modelo do pool ativo ou
+  preview deterministico, tambem com confirmacao.
 - Depois da geracao, a TUI destaca artifact root, tasks dir, graph e integration
   guide antes de listar os arquivos completos.

@@ -255,6 +255,9 @@ describe("blueprint plan generation", () => {
     expect(prompt).toContain("acceptable_alternatives");
     expect(prompt).toContain("reasoning_efforts");
     expect(prompt).toContain("default_reasoning_effort");
+    expect(prompt).toContain("routing_scorecards");
+    expect(prompt).toContain("low_risk_order");
+    expect(prompt).toContain("high_risk_order");
     expect(prompt).toContain("gpt-5.5");
     expect(prompt).toContain("gemini-3.1-pro-preview");
     expect(prompt).not.toContain("claude-opus-4-7");

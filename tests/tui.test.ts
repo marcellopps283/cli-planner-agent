@@ -314,6 +314,14 @@ describe("blueprint tui", () => {
       command: "/registry",
       argument: "",
     });
+    expect(parseTuiSlashCommandInput("/sessions")).toEqual({
+      command: "/sessions",
+      argument: "",
+    });
+    expect(parseTuiSlashCommandInput("/clear")).toEqual({
+      command: "/clear",
+      argument: "",
+    });
     expect(parseTuiSlashCommandInput("/unknown anything")).toEqual({
       command: "/help",
       argument: "unknown /unknown",
@@ -429,12 +437,90 @@ describe("blueprint tui", () => {
     expect(result.lines).toContain("check done understand_request Entender pedido inicial");
     expect(dashboard.agentState?.checklist[0]?.status).toBe("done");
     expect(firstScreenOutput).toContain("Ask anything");
-    expect(firstScreenOutput).not.toContain("Planner Agent State");
-    expect(output).toContain("Planner Agent State");
+    expect(dashboard.agentSession?.agent_state?.project_state.title).toBe("Harness agentico");
+    expect(dashboard.agentSession?.messages.map((message) => message.role)).toEqual(["user", "planner"]);
+    expect(firstScreenOutput).not.toContain("Harness agentico");
+    expect(output).toContain("Harness agentico");
+    expect(output).toContain("Understanding project");
     expect(output).toContain("[x] Entender pedido inicial");
     expect(output).toContain("[~] Validar escopo do harness");
     expect(output).toContain("O planner pode gerar preview");
     expect(output).not.toContain("Planning Intake");
+  });
+
+  it("requires confirmation before previewing handoffs from agent workflow state", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-agent-preview-test-"));
+    await writeFile(path.join(root, "README.md"), "# Agent preview\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+
+    const result = await runTuiAction({
+      root,
+      actionId: "agent-workflow",
+      agentRequest: "planeje os handoffs tecnicos",
+      plannerPromptRunner: async (options) => ({
+        provider: options.provider,
+        model: options.model,
+        response: JSON.stringify(makeAgentWorkflowState({
+          provider: options.provider,
+          model: options.model ?? "gpt-5.5",
+          nextActionType: "preview_plan",
+          planAnswers: makeAnswers(),
+        })),
+        rawOutput: "",
+      }),
+      recordHistory: false,
+    });
+    const dashboard = await loadTuiDashboard({ root });
+
+    expect(result.status).toBe("ok");
+    expect(result.canApply).toBe(true);
+    expect(result.planAnswers?.objective).toBe("Add a feature to a service.");
+    expect(result.planContinuation).toMatchObject({
+      type: "preview",
+      engine: "llm",
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+    expect(dashboard.tasks).toEqual([]);
+    expect(dashboard.agentSession?.agent_state?.next_action.type).toBe("preview_plan");
+  });
+
+  it("offers a confirmed fallback model when the agent workflow planner fails", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-agent-fallback-test-"));
+    await writeFile(path.join(root, "README.md"), "# Agent fallback\n", "utf8");
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+
+    const failed = await runTuiAction({
+      root,
+      actionId: "agent-workflow",
+      agentRequest: "continue o planejamento agentico",
+      plannerPromptRunner: async () => {
+        throw new Error("quota unavailable");
+      },
+      recordHistory: false,
+    });
+
+    expect(failed.status).toBe("failed");
+    expect(failed.canApply).toBe(true);
+    expect(failed.summary).toContain("Fallback available: google/gemini-3.1-pro-preview");
+    expect(failed.lines).toContain("press y to try this fallback or n to cancel");
+    expect(failed.planContinuation).toMatchObject({
+      type: "fallback",
+      engine: "llm",
+      plannerProvider: "google",
+      plannerModel: "gemini-3.1-pro-preview",
+      attemptedModels: ["gpt-5.5"],
+    });
   });
 
   it("does not render a persistent success panel for chat model switches", () => {
@@ -825,6 +911,58 @@ describe("blueprint tui", () => {
     expect(dashboard.nextAction).toContain("blueprint lint");
   });
 });
+
+function makeAgentWorkflowState({
+  provider,
+  model,
+  nextActionType = "ask_user",
+  planAnswers,
+}: {
+  provider: string;
+  model: string;
+  nextActionType?: "ask_user" | "continue_planning" | "preview_plan";
+  planAnswers?: PlanAnswers;
+}) {
+  return {
+    schema_version: "1.0",
+    user_request: "planeje os handoffs tecnicos",
+    planner: {
+      provider,
+      model,
+      reasoning_effort: "xhigh",
+    },
+    project_state: {
+      title: "Harness agentico",
+      summary: "O planner ja validou informacoes suficientes para preparar o preview.",
+      current_phase: "Ready to preview",
+      health: nextActionType === "preview_plan" ? "ready_to_preview" : "planning",
+      confidence: 0.86,
+    },
+    messages: [
+      {
+        role: "planner",
+        content: "Tenho informacoes suficientes para preparar o preview dos handoffs.",
+      },
+    ],
+    checklist: [
+      {
+        id: "understand_request",
+        label: "Entender pedido inicial",
+        status: "done",
+        validated_by: "active planner model",
+        evidence: "pedido inicial recebido",
+        interactive: true,
+      },
+    ],
+    questions: [],
+    next_action: {
+      type: nextActionType,
+      label: nextActionType === "preview_plan" ? "Preview dos handoffs" : "Continuar planejamento",
+      prompt: nextActionType === "preview_plan" ? "Confirme para gerar o preview tecnico." : undefined,
+    },
+    plan_answers: planAnswers,
+  };
+}
 
 async function makePlannedProject(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "blueprint-tui-test-"));

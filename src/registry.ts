@@ -14,8 +14,8 @@ import {
 } from "./schemas.js";
 
 export const MODEL_REGISTRY_FILE = "model_registry.yaml";
-export const BUNDLED_MODEL_REGISTRY_REVISION = "2026-05-04-cli-model-pool-depth";
-export const BUNDLED_MODEL_REGISTRY_RESEARCH_DATE = "2026-05-04";
+export const BUNDLED_MODEL_REGISTRY_REVISION = "2026-05-09-agentic-routing-scorecards";
+export const BUNDLED_MODEL_REGISTRY_RESEARCH_DATE = "2026-05-09";
 const MODEL_REGISTRY_SOURCE_URLS = [
   "https://developers.openai.com/api/docs/models",
   "https://openai.com/index/introducing-gpt-5-5/",

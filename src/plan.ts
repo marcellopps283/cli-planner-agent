@@ -47,6 +47,10 @@ const PlanAnswersSchema = z.object({
 
 export type PlanAnswers = z.infer<typeof PlanAnswersSchema>;
 
+export function parsePlanAnswers(value: unknown): PlanAnswers {
+  return PlanAnswersSchema.parse(value);
+}
+
 const PlanEngineSchema = z.enum(["deterministic", "llm"]);
 export type PlanEngine = z.infer<typeof PlanEngineSchema>;
 
@@ -59,6 +63,7 @@ const PlannerTaskFitSchema = z.enum([
   "tiny_edit",
   "long_context",
 ]);
+const PLANNER_TASK_FITS = PlannerTaskFitSchema.options;
 
 const PlannerDraftTaskSchema = z.object({
   id: z.string().regex(/^task-\d{3}-[a-z0-9-]+$/u),
@@ -686,12 +691,13 @@ function buildPlanFromDraft(
   });
 
   const tasks = draft.tasks.map((task) => {
-    const suggestedModel = resolveDraftModel(context, task.suggested_model, task.fit);
+    const suggestedModel = resolveDraftModel(context, task.suggested_model, task.fit, task.risk_level);
     const acceptableAlternatives = resolveDraftAlternatives(
       context,
       task.acceptable_alternatives,
       suggestedModel,
       task.fit,
+      task.risk_level,
     );
 
     return {
@@ -754,7 +760,12 @@ function validatePlannerDraftGraph(draft: PlannerDraft): void {
   }
 }
 
-function resolveDraftModel(context: PlanContext, suggestedModel: string | undefined, fit: string): ModelRegistryEntry {
+function resolveDraftModel(
+  context: PlanContext,
+  suggestedModel: string | undefined,
+  fit: string,
+  riskLevel: number,
+): ModelRegistryEntry {
   const activeModels = activeModelsForProfile(context.profile, context.registry);
 
   if (suggestedModel) {
@@ -771,7 +782,7 @@ function resolveDraftModel(context: PlanContext, suggestedModel: string | undefi
     );
   }
 
-  return selectModel(context, fit);
+  return selectModel(context, fit, riskLevel);
 }
 
 function resolveDraftAlternatives(
@@ -779,9 +790,10 @@ function resolveDraftAlternatives(
   alternatives: string[],
   selectedModel: ModelRegistryEntry,
   fit: string,
+  riskLevel = 5,
 ): string[] {
   if (alternatives.length === 0) {
-    return defaultModelAlternatives(context, selectedModel, fit);
+    return defaultModelAlternatives(context, selectedModel, fit, riskLevel);
   }
 
   const activeModelIds = new Set(activeModelsForProfile(context.profile, context.registry).map((model) => model.id));
@@ -819,10 +831,11 @@ function defaultModelAlternatives(
   context: PlanContext,
   selectedModel: ModelRegistryEntry,
   fit: string,
+  riskLevel = 5,
 ): string[] {
-  return activeModelsForProfile(context.profile, context.registry)
+  return rankModelsForFit(activeModelsForProfile(context.profile, context.registry), fit, riskLevel)
+    .map((entry) => entry.model)
     .filter((model) => model.id !== selectedModel.id && model.status !== "restricted")
-    .sort((left, right) => (right.task_fit[fit] ?? 0) - (left.task_fit[fit] ?? 0))
     .slice(0, 2)
     .map((model) => model.id);
 }
@@ -893,7 +906,8 @@ export function getPlannerFallbackCandidates(
 }
 
 export function buildPlannerPromptForContext(context: PlanContext, answers: PlanAnswers): string {
-  const activeModels = activeModelsForProfile(context.profile, context.registry).map((model) => ({
+  const activeRegistryModels = activeModelsForProfile(context.profile, context.registry);
+  const activeModels = activeRegistryModels.map((model) => ({
     id: model.id,
     provider: model.provider,
     status: model.status,
@@ -942,6 +956,7 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
       warnings: context.doctor.warnings,
     },
     active_models: activeModels,
+    routing_scorecards: buildRoutingScorecards(activeRegistryModels),
   };
 
   return [
@@ -984,6 +999,9 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     "- model_rationale must explain why the exact suggested_model fits this task better than smaller or excluded options.",
     "- acceptable_alternatives may contain up to 3 active model ids that can execute the same task if the primary model is unavailable.",
     "- Prefer the smallest active model that clears the task risk, context, and benchmark needs.",
+    "- Use routing_scorecards as the first routing prior: low_risk_order for risk <= 4, high_risk_order for risk >= 7, and task_fit plus rationale for the middle.",
+    "- Do not blindly pick the largest model. Use frontier models when risk, context, ambiguity, or benchmark needs justify them.",
+    "- Do not underfit. If a task edits core architecture, security, data loss paths, or many files, prefer high_risk_order even when a cheaper model is available.",
     "- Use benchmark_scores, routing_tags, task_fit, reasoning_efforts, default_reasoning_effort, context_window, latency_class, and prices when choosing a model.",
     "- Treat selected_reasoning_effort as the configured execution effort for that exact model.",
     "- If a task is read-only, set allowed_paths to [] and say read-only in context_rules.",
@@ -1085,19 +1103,24 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
     "package.json",
   ]);
   const forbiddenPaths = defaultForbiddenPaths();
+  const contextRisk = clampRisk(answers.riskLevel - 2);
+  const validationRisk = clampRisk(answers.riskLevel - 1);
+  const contextModel = selectModel(context, "long_context", contextRisk);
+  const implementationModel = selectModel(context, "coding_heavy", answers.riskLevel);
+  const validationModel = selectModel(context, "review", validationRisk);
 
   return [
     {
       id: "task-001-context-map",
       title: "Map current context and contracts",
       filename: "001-context-map.md",
-      suggestedModel: selectModel(context, "long_context"),
-      modelRationale: defaultModelRationale(selectModel(context, "long_context"), "long_context", clampRisk(answers.riskLevel - 2)),
-      acceptableAlternatives: defaultModelAlternatives(context, selectModel(context, "long_context"), "long_context"),
+      suggestedModel: contextModel,
+      modelRationale: defaultModelRationale(contextModel, "long_context", contextRisk),
+      acceptableAlternatives: defaultModelAlternatives(context, contextModel, "long_context", contextRisk),
       dependencies: [],
       allowedPaths: [],
       forbiddenPaths,
-      riskLevel: clampRisk(answers.riskLevel - 2),
+      riskLevel: contextRisk,
       testCommands: [],
       objective: "Inspect the project context and return a concise implementation map before any file edits.",
       contextRules: [
@@ -1124,9 +1147,9 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
       id: "task-002-implement-core-work",
       title: "Implement the core project change",
       filename: "002-implement-core-work.md",
-      suggestedModel: selectModel(context, "coding_heavy"),
-      modelRationale: defaultModelRationale(selectModel(context, "coding_heavy"), "coding_heavy", answers.riskLevel),
-      acceptableAlternatives: defaultModelAlternatives(context, selectModel(context, "coding_heavy"), "coding_heavy"),
+      suggestedModel: implementationModel,
+      modelRationale: defaultModelRationale(implementationModel, "coding_heavy", answers.riskLevel),
+      acceptableAlternatives: defaultModelAlternatives(context, implementationModel, "coding_heavy", answers.riskLevel),
       dependencies: ["task-001-context-map"],
       allowedPaths: implementationPaths,
       forbiddenPaths,
@@ -1157,13 +1180,13 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
       id: "task-003-integrate-and-validate",
       title: "Integrate results and validate acceptance",
       filename: "003-integrate-and-validate.md",
-      suggestedModel: selectModel(context, "review"),
-      modelRationale: defaultModelRationale(selectModel(context, "review"), "review", clampRisk(answers.riskLevel - 1)),
-      acceptableAlternatives: defaultModelAlternatives(context, selectModel(context, "review"), "review"),
+      suggestedModel: validationModel,
+      modelRationale: defaultModelRationale(validationModel, "review", validationRisk),
+      acceptableAlternatives: defaultModelAlternatives(context, validationModel, "review", validationRisk),
       dependencies: ["task-002-implement-core-work"],
       allowedPaths: validationPaths,
       forbiddenPaths,
-      riskLevel: clampRisk(answers.riskLevel - 1),
+      riskLevel: validationRisk,
       testCommands: answers.validationCommands,
       objective: "Review the implemented work, run validation, and prepare final integration notes.",
       contextRules: [
@@ -1374,12 +1397,157 @@ function renderTask(task: PlannedTask): string {
   return `---\n${stringify(metadata)}---\n\n<task_objective>\n${escapeXmlText(task.objective)}\n</task_objective>\n\n<suggested_model>\n${escapeXmlText(`${task.suggestedModel.id} (${task.suggestedModel.provider})`)}\n</suggested_model>\n\n<model_rationale>\n${escapeXmlText(task.modelRationale)}\n\nAcceptable alternatives: ${escapeXmlText(task.acceptableAlternatives.join(", ") || "none")}\n</model_rationale>\n\n<context_rules>\n${escapeXmlText(formatMarkdownList(task.contextRules))}\n</context_rules>\n\n<execution_prompt>\n${escapeXmlText(task.executionPrompt)}\n</execution_prompt>\n\n<acceptance_contract>\n${escapeXmlText(formatMarkdownList(task.acceptanceContract))}\n</acceptance_contract>\n`;
 }
 
-function selectModel(context: PlanContext, fit: string): ModelRegistryEntry {
+function selectModel(context: PlanContext, fit: string, riskLevel = 5): ModelRegistryEntry {
   const activeModels = activeModelsForProfile(context.profile, context.registry);
   const plannerModel = activeModels.find((model) => model.id === context.profile.planner_model);
-  const sorted = [...activeModels].sort((left, right) => (right.task_fit[fit] ?? 0) - (left.task_fit[fit] ?? 0));
+  const sorted = rankModelsForFit(activeModels, fit, riskLevel).map((entry) => entry.model);
 
   return sorted[0] ?? plannerModel ?? context.registry[0]!;
+}
+
+function buildRoutingScorecards(models: ModelRegistryEntry[]): Array<{
+  fit: string;
+  low_risk_order: Array<{ model: string; score: number; fit: number; tier: string; latency: string; cost: string }>;
+  high_risk_order: Array<{ model: string; score: number; fit: number; tier: string; latency: string; cost: string }>;
+}> {
+  return PLANNER_TASK_FITS.map((fit) => ({
+    fit,
+    low_risk_order: rankModelsForFit(models, fit, 3).map(formatRoutingScorecardEntry),
+    high_risk_order: rankModelsForFit(models, fit, 8).map(formatRoutingScorecardEntry),
+  }));
+}
+
+function rankModelsForFit(
+  models: ModelRegistryEntry[],
+  fit: string,
+  riskLevel: number,
+): Array<{ model: ModelRegistryEntry; score: number; fitScore: number }> {
+  return models
+    .filter((model) => model.status !== "restricted")
+    .map((model) => {
+      const fitScore = model.task_fit[fit] ?? 0;
+
+      return {
+        model,
+        fitScore,
+        score: scoreModelForFit(model, fitScore, riskLevel),
+      };
+    })
+    .sort((left, right) => {
+      const scoreDiff = right.score - left.score;
+
+      if (Math.abs(scoreDiff) >= 0.001) {
+        return scoreDiff;
+      }
+
+      const fitDiff = right.fitScore - left.fitScore;
+
+      if (fitDiff !== 0) {
+        return fitDiff;
+      }
+
+      return left.model.id.localeCompare(right.model.id);
+    });
+}
+
+function formatRoutingScorecardEntry(entry: { model: ModelRegistryEntry; score: number; fitScore: number }): {
+  model: string;
+  score: number;
+  fit: number;
+  tier: string;
+  latency: string;
+  cost: string;
+} {
+  return {
+    model: entry.model.id,
+    score: Number(entry.score.toFixed(3)),
+    fit: Number(entry.fitScore.toFixed(3)),
+    tier: entry.model.tier,
+    latency: entry.model.latency_class,
+    cost: entry.model.cost_class,
+  };
+}
+
+function scoreModelForFit(model: ModelRegistryEntry, fitScore: number, riskLevel: number): number {
+  const highRisk = riskLevel >= 7;
+  const lowRisk = riskLevel <= 4;
+  const tierScore = modelTierWeight(model.tier) / 4;
+  const latencyScore = latencyWeight(model.latency_class) / 3;
+  const contextScore = contextWindowScore(model.context_window);
+  const costScore = priceEfficiencyScore(model);
+  const stabilityScore = model.status === "stable" ? 1 : model.status === "preview" ? 0.72 : 0.2;
+
+  if (highRisk) {
+    return fitScore * 0.55 + tierScore * 0.2 + contextScore * 0.15 + stabilityScore * 0.05 + latencyScore * 0.05;
+  }
+
+  if (lowRisk) {
+    return fitScore * 0.45 + costScore * 0.25 + latencyScore * 0.15 + stabilityScore * 0.1 + contextScore * 0.05;
+  }
+
+  return fitScore * 0.5 + tierScore * 0.15 + contextScore * 0.12 + costScore * 0.1 + latencyScore * 0.08 + stabilityScore * 0.05;
+}
+
+function contextWindowScore(contextWindow: number | undefined): number {
+  if (!contextWindow) {
+    return 0.4;
+  }
+
+  if (contextWindow >= 1_000_000) {
+    return 1;
+  }
+
+  if (contextWindow >= 400_000) {
+    return 0.78;
+  }
+
+  if (contextWindow >= 200_000) {
+    return 0.58;
+  }
+
+  return 0.35;
+}
+
+function priceEfficiencyScore(model: ModelRegistryEntry): number {
+  const total = (model.input_price_usd_per_mtok ?? 0) + (model.output_price_usd_per_mtok ?? 0);
+
+  if (total <= 0) {
+    if (model.cost_class === "free") {
+      return 1;
+    }
+
+    if (model.cost_class === "subscription") {
+      return 0.7;
+    }
+
+    return 0.5;
+  }
+
+  if (total <= 2) {
+    return 1;
+  }
+
+  if (total <= 5) {
+    return 0.9;
+  }
+
+  if (total <= 10) {
+    return 0.78;
+  }
+
+  if (total <= 20) {
+    return 0.62;
+  }
+
+  if (total <= 40) {
+    return 0.48;
+  }
+
+  if (total <= 100) {
+    return 0.32;
+  }
+
+  return 0.18;
 }
 
 function comparePlannerFallbackModels(left: ModelRegistryEntry, right: ModelRegistryEntry): number {

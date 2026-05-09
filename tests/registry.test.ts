@@ -38,6 +38,7 @@ describe("model registry", () => {
       ]),
     );
     expect(loaded.registry?.models.find((model) => model.id === "gpt-5.5")?.reasoning_efforts).toContain("xhigh");
+    expect(loaded.registry?.models.find((model) => model.id === "gpt-5.5")?.context_window).toBe(1_050_000);
     expect(loaded.registry?.models.find((model) => model.id === "gemini-3.1-flash-lite-preview")?.reasoning_efforts).toContain(
       "medium",
     );

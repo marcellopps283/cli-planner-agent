@@ -1,6 +1,6 @@
 # Spec - Model Pool Research
 
-Verificado em 2026-05-04. O registry bundled deve ser revisado com frequencia,
+Verificado em 2026-05-09. O registry bundled deve ser revisado com frequencia,
 porque disponibilidade, nomes de modelos, precos e benchmarks mudam rapido.
 
 Politica MVP: o registry bundled guarda `metadata.bundled_revision` e
@@ -44,7 +44,7 @@ Sinais para o registry:
 
 - `gpt-5.5` e o modelo recomendado pela documentacao de modelos para raciocinio
   complexo e coding.
-- O model ID oficial e `gpt-5.5`, com janela de contexto de 1M tokens e max
+- O model ID oficial e `gpt-5.5`, com janela de contexto de 1,050,000 tokens e max
   output de 128k tokens.
 - Benchmarks publicados no lancamento: Terminal-Bench 2.0 82.7%, SWE-Bench Pro
   58.6%, GDPval 84.9%, OSWorld-Verified 78.7%, BrowseComp 84.4%.
@@ -124,5 +124,27 @@ Sinais para o registry:
 - `specialized`: variantes com um comportamento operacional especifico, como
   custom tools.
 
-O LLM planner recebe `task_fit`, `routing_tags`, precos, contexto e benchmarks,
-mas o CLI valida que `suggested_model` existe em `available_models`.
+O LLM planner recebe `task_fit`, `routing_tags`, precos, contexto, benchmarks e
+`routing_scorecards` por risco. O CLI valida que `suggested_model` existe em
+`available_models`.
+
+## Pesquisa adicional de workflow agentico - 2026-05-09
+
+Fontes oficiais consultadas:
+
+- https://developers.openai.com/codex/cli
+- https://developers.openai.com/codex/cli/features
+- https://developers.openai.com/codex/subagents
+- https://developers.openai.com/codex/learn/best-practices
+- https://code.claude.com/docs/en/sessions
+- https://code.claude.com/docs/en/interactive-mode
+- https://code.claude.com/docs/en/permission-modes
+
+Aplicacoes no Blueprint:
+
+- sessoes devem ser salvas localmente e retomadas por comando explicito;
+- plan mode/read-only deve existir como contrato de seguranca antes de escrita;
+- comandos locais precisam morar no chat, nao em telas separadas obrigatorias;
+- fallback de modelo e qualquer acao sensivel devem passar por confirmacao;
+- subagentes/workers ficam para a versao 2.0, mas a versao 1.0 ja deve gerar
+  handoffs com contratos de escopo, paths e validacao.

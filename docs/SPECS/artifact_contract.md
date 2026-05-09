@@ -96,6 +96,13 @@ Registros auditaveis de acoes disparadas pela TUI. Estes arquivos nao substituem
 plano; `tui_sessions` registra operacoes de interface como lint, export, auth
 doctor e preview/apply de revise.
 
+Excecoes nomeadas:
+
+- `SESSION.json`: sessao agentica principal do projeto, com mensagens
+  `user/planner` e o ultimo `agent_state`;
+- `AGENT_STATE.json`: espelho legado do ultimo estado agentico;
+- `DRAFT.json`: rascunho legado de intake.
+
 Campos:
 
 - `schema_version`

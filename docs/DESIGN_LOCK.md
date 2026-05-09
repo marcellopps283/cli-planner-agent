@@ -29,10 +29,21 @@ dependencias e gera handoffs isolados para agentes executores.
 - Usa uma experiencia tipo chat quando o usuario inicia uma tarefa de
   planejamento.
 - A primeira mensagem entra no workflow agentico do modelo planner ativo.
+- Mantem uma sessao unica por projeto em `.blueprint/tui_sessions/SESSION.json`.
+- Reabre conversa anterior apenas por comando explicito (`/resume`), preservando
+  a landing como primeira tela do app.
+- Expõe `/sessions` e `/clear` para inspecionar ou zerar a conversa salva sem
+  remover artefatos tecnicos.
 - A TUI renderiza estado; o modelo decide entendimento, checklist, validacoes,
   perguntas e proxima acao.
+- O modelo planner pode declarar `preview_plan` quando tiver dados suficientes,
+  mas a TUI pede confirmacao antes de preview ou escrita de artefatos.
+- Falhas de quota/modelo viram fallback confirmavel pelo usuario antes de nova
+  chamada.
 - Gera `.blueprint/` com arquitetura, grafo e tasks.
 - Recomenda modelo/worker por tarefa.
+- Usa scorecards deterministico-hibridos no prompt para equilibrar custo,
+  latencia, risco, contexto e benchmarks antes da decisao final do planner.
 - Mostra as atribuicoes de modelo por task antes de gerar os handoffs e pede
   confirmacao do usuario.
 - Nao executa codigo nem gerencia workers.

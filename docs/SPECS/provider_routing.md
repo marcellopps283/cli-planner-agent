@@ -8,7 +8,10 @@ fronteira de autenticacao/CLI, mas a unidade de roteamento e o model ID.
 
 ## MVP
 
-Decisao por LLM com banco atualizavel de modelos.
+Decisao por LLM com banco atualizavel de modelos e scorecards
+deterministicos de apoio. O LLM escolhe a atribuicao final, mas recebe uma
+ordem recomendada por tipo de tarefa e risco para reduzir overfitting e
+underfitting.
 
 Entradas:
 
@@ -34,6 +37,8 @@ Saida:
 - justificativa curta
 - alternativas aceitaveis
 - motivo para nao usar modelos excluidos
+- `model_rationale` precisa citar fit, risco, contexto, custo, latencia,
+  benchmarks ou disponibilidade quando relevante.
 
 ## Registry
 
@@ -101,15 +106,25 @@ models:
 - suporte multimodal;
 - tolerancia a erro.
 
-## Futuro hibrido
+## Scorecards hibridos
 
-Adicionar score deterministico antes do LLM:
+O prompt do planner inclui `routing_scorecards` para cada fit conhecido. Cada
+scorecard tem:
+
+- `low_risk_order`: prioriza fit suficiente, custo, latencia e estabilidade;
+- `high_risk_order`: prioriza fit, tier, contexto e confiabilidade;
+- `score`, `fit`, `tier`, `latency` e `cost` por modelo.
+
+Formula conceitual:
 
 ```text
-score = fit*0.45 + reliability*0.20 + context*0.15 + speed*0.10 + cost*0.05 + privacy*0.05
+low risk  = fit*0.45 + cost*0.25 + speed*0.15 + stability*0.10 + context*0.05
+high risk = fit*0.55 + tier*0.20 + context*0.15 + stability*0.05 + speed*0.05
 ```
 
-No MVP nao persistimos scorecard real. Isso fica para uma versao posterior.
+O scorecard e uma recomendacao, nao uma trava: o LLM pode escolher diferente
+quando justificar com benchmark, contexto, quota ou requisito da tarefa. O CLI
+continua validando que o modelo escolhido esta no pool ativo.
 
 O registry bundled pode ser exportado para `.blueprint/model_registry.yaml` com
 `blueprint registry export`. O usuario pode editar esse arquivo para ajustar

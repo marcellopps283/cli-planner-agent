@@ -40,15 +40,19 @@ O layout que interessa para Blueprint e:
 - Depois da primeira mensagem, a tela vira workbench com feed principal, input
   inferior e sidebar de `Context`, `MCP`, `LSP` e `Todo`; no Blueprint, esse
   workbench renderiza o estado agentico devolvido pelo planner ativo.
+- A landing sempre aparece primeiro em uma nova abertura. Historico salvo so
+  entra na tela por uma acao explicita como `/resume`, seguindo a expectativa de
+  sessoes retomaveis sem tomar controle do inicio.
 - `tab` abre os modelos disponiveis no provider/CLI conectado ao planner atual;
   `/model [id]` troca o modelo usado no chat.
 - O feed usa cards textuais para estado do planner, checklist validada pela IA,
   perguntas, preview de tarefas e handoffs ja gerados.
+- Falhas do modelo devem virar acoes confirmaveis dentro do feed/overlay:
+  tentar fallback, trocar modelo ou cancelar.
 - Quota real ainda e `n/a`, mas o slot da sidebar fica reservado.
 
 ## Proximas Fatias
 
-1. Persistir historico de conversa real, nao apenas historico de acoes.
-2. Adicionar `/sessions` para reabrir historicos.
-3. Adicionar comandos customizaveis por projeto.
-4. Evoluir o artefato para acompanhar progresso de workers na versao 2.0.
+1. Adicionar picker visual de sessoes quando houver multiplas conversas.
+2. Adicionar comandos customizaveis por projeto.
+3. Evoluir o artefato para acompanhar progresso de workers na versao 2.0.

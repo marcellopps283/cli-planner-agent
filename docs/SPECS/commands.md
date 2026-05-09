@@ -211,8 +211,8 @@ MVP atual:
 - o workbench exibe feed principal, sidebar contextual, input permanente e
   estado agentico do planner com checklist, perguntas e proxima acao;
 - aceita slash commands locais: `/plan`, `/providers`, `/model`, `/models`,
-  `/registry`, `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`, `/help` e
-  `/menu`;
+  `/registry`, `/lint`, `/export`, `/revise`, `/auth`, `/auth-live`,
+  `/sessions`, `/resume`, `/clear`, `/help` e `/menu`;
 - filtra slash commands quando o input comeca com `/`, navega sugestoes com
   `↑↓` e completa a opcao selecionada com `Tab`;
 - `Tab` fora de slash command abre o seletor do modelo usado pelo chat/planner;
@@ -226,16 +226,31 @@ MVP atual:
   reasoning effort, model pool e revise;
 - texto livre no chat inicia `agent-workflow`: a primeira mensagem vai ao modelo
   planner ativo e a TUI cai no workbench com o estado devolvido pela IA;
+- enquanto a primeira chamada esta em andamento, o workbench mostra um bloco
+  `Planner is thinking` com o provider/modelo ativo;
 - o planner LLM controla o estado semantico do workflow, incluindo checkboxes,
   perguntas, fase atual e proxima acao; a TUI apenas renderiza esse contrato;
-- `/plan [brief]` continua existindo para preview/geracao de handoffs, mas nao
-  e o fluxo primario da primeira mensagem;
+- cada conversa do projeto e persistida em
+  `.blueprint/tui_sessions/SESSION.json`, contendo mensagens `user/planner` e o
+  ultimo `agent_state`;
+- `/resume` reabre explicitamente a sessao salva; uma nova abertura da TUI
+  continua mostrando a landing antes de qualquer workbench;
+- `/sessions` mostra metadados da sessao salva; `/clear` remove
+  `SESSION.json`, `AGENT_STATE.json` e `DRAFT.json`, mas preserva artefatos e
+  historico de acoes;
+- `/plan [brief]` continua existindo para preview/geracao tecnica de handoffs,
+  mas nao e o fluxo primario da primeira mensagem;
+- `/plan` sem argumento usa o `plan_answers` devolvido pelo planner quando o
+  estado agentico esta pronto para preview; caso contrario orienta o usuario a
+  continuar no chat;
 - estrutura de requisitos fica no prompt interno, e perguntas ao usuario so
   devem acontecer quando o planner estiver realmente bloqueado;
 - o planejamento usa o PlannerEngine LLM do profile, mantendo o modo
   deterministico apenas para fallback, automacao e testes;
-- quando o PlannerEngine LLM falha dentro da TUI, o resultado sugere o proximo
-  modelo ativo ou o fallback deterministico e pede confirmacao antes de tentar;
+- quando o `agent-workflow` falha dentro da TUI, o resultado sugere o proximo
+  modelo ativo e pede confirmacao antes de tentar;
+- quando o `plan` tecnico falha dentro da TUI, o resultado sugere o proximo
+  modelo ativo ou o fallback deterministico e tambem pede confirmacao;
 - `/models` aceita IDs exatos separados por virgula ou `all` para
   voltar aos defaults dos providers ativos, e regrava `available_models` em
   `profile.yaml`;
@@ -245,7 +260,8 @@ MVP atual:
   chamada de modelo;
 - captura texto para `revise`, roda preview/dry-run, mostra classificacao e so
   permite apply depois de confirmacao;
-- registra cada acao executada em `.blueprint/tui_sessions/*.json`;
+- registra cada acao executada em `.blueprint/tui_sessions/*.json`; a sessao
+  agentica principal usa `SESSION.json`;
 - exige confirmacao na TUI antes de `auth doctor --live`, pois pode consumir
   quota de provider;
 - calcula uma proxima acao operacional;

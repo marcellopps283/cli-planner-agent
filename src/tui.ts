@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -26,6 +26,7 @@ import { extractJsonObject } from "./providerPrompt.js";
 import {
   generateBlueprintPlan,
   getPlannerFallbackCandidatesForRoot,
+  parsePlanAnswers,
   previewBlueprintPlan,
   type PlanAnswers,
   type PlanEngine,
@@ -96,6 +97,7 @@ export interface TuiDashboard {
   exports: string[];
   tuiSessions: string[];
   chatDraft?: PlanChatDraft;
+  agentSession?: PlannerAgentSession;
   agentState?: PlannerAgentWorkflowState;
   nextAction: string;
 }
@@ -114,7 +116,7 @@ export const TUI_ACTION_IDS = [
   "auth-doctor-live",
 ] as const;
 export type TuiActionId = (typeof TUI_ACTION_IDS)[number];
-type TuiLocalResultId = "help" | "providers";
+type TuiLocalResultId = "help" | "providers" | "sessions";
 type TuiActionResultId = TuiActionId | TuiLocalResultId;
 
 type SetupStep = "idle" | "providers" | "models" | "reasoning" | "planner" | "confirm";
@@ -195,6 +197,20 @@ export const PlannerAgentWorkflowStateSchema = z.object({
 
 export type PlannerAgentWorkflowState = z.infer<typeof PlannerAgentWorkflowStateSchema>;
 
+export const PlannerAgentSessionSchema = z.object({
+  schema_version: z.literal("1.0"),
+  session_id: z.string().min(1),
+  updated_at: z.iso.datetime(),
+  messages: z.array(z.object({
+    role: z.enum(["user", "planner"]),
+    content: z.string().min(1),
+    created_at: z.iso.datetime(),
+  })).default([]),
+  agent_state: PlannerAgentWorkflowStateSchema.optional(),
+});
+
+export type PlannerAgentSession = z.infer<typeof PlannerAgentSessionSchema>;
+
 export const TUI_SLASH_COMMANDS = [
   {
     command: "/plan",
@@ -261,6 +277,16 @@ export const TUI_SLASH_COMMANDS = [
     usage: "/resume",
     description: "resume the last planning draft if one exists",
   },
+  {
+    command: "/sessions",
+    usage: "/sessions",
+    description: "show saved planning session metadata",
+  },
+  {
+    command: "/clear",
+    usage: "/clear",
+    description: "clear the saved planning session and return to landing",
+  },
 ] as const;
 
 type TuiSlashCommand = (typeof TUI_SLASH_COMMANDS)[number]["command"];
@@ -324,6 +350,7 @@ export interface TuiActionResult {
   summary: string;
   lines: string[];
   agentState?: PlannerAgentWorkflowState;
+  planAnswers?: PlanAnswers;
   canApply?: boolean;
   change?: string;
   planContinuation?: PlanContinuation;
@@ -331,7 +358,7 @@ export interface TuiActionResult {
 }
 
 interface PlanContinuation {
-  type: "apply" | "fallback";
+  type: "preview" | "apply" | "fallback";
   engine: PlanEngine;
   plannerProvider?: ProviderId;
   plannerModel?: string;
@@ -426,12 +453,26 @@ export const TUI_APP_NAME = "blueprint";
 export const TUI_APP_VERSION = "0.0.0";
 export const TUI_SLASH_MENU_VISIBLE_ROWS = 6;
 export const TUI_MODEL_SELECTOR_VISIBLE_ROWS = 8;
+const TUI_AGENT_SESSION_FILE = "SESSION.json";
 const TUI_AGENT_STATE_FILE = "AGENT_STATE.json";
 
 export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<TuiDashboard> {
   const root = path.resolve(options.root);
   const blueprintRoot = path.join(root, BLUEPRINT_DIR);
-  let [setup, profile, doctor, lint, manifest, graph, tasks, exports, tuiSessions, chatDraftRaw, agentStateRaw] = await Promise.all([
+  let [
+    setup,
+    profile,
+    doctor,
+    lint,
+    manifest,
+    graph,
+    tasks,
+    exports,
+    tuiSessions,
+    chatDraftRaw,
+    agentSessionRaw,
+    agentStateRaw,
+  ] = await Promise.all([
     inspectBlueprintSetup(root, blueprintRoot),
     loadPlannerProfile(root),
     inspectProject(root),
@@ -442,6 +483,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     readExports(blueprintRoot),
     readTuiSessions(blueprintRoot),
     readFile(path.join(blueprintRoot, "tui_sessions", "DRAFT.json"), "utf8").catch(() => undefined),
+    readFile(path.join(blueprintRoot, "tui_sessions", TUI_AGENT_SESSION_FILE), "utf8").catch(() => undefined),
     readFile(path.join(blueprintRoot, "tui_sessions", TUI_AGENT_STATE_FILE), "utf8").catch(() => undefined),
   ]);
   if (!setup.initialized) {
@@ -460,10 +502,18 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
       // Ignore parse errors
     }
   }
-  let agentState: PlannerAgentWorkflowState | undefined;
+  let agentSession: PlannerAgentSession | undefined;
+  if (agentSessionRaw) {
+    try {
+      agentSession = PlannerAgentSessionSchema.parse(JSON.parse(agentSessionRaw));
+    } catch {
+      // Ignore parse errors
+    }
+  }
+  let agentState: PlannerAgentWorkflowState | undefined = agentSession?.agent_state;
   if (agentStateRaw) {
     try {
-      agentState = PlannerAgentWorkflowStateSchema.parse(JSON.parse(agentStateRaw));
+      agentState ??= PlannerAgentWorkflowStateSchema.parse(JSON.parse(agentStateRaw));
     } catch {
       // Ignore parse errors
     }
@@ -482,6 +532,7 @@ export async function loadTuiDashboard(options: TuiDashboardOptions): Promise<Tu
     exports,
     tuiSessions,
     chatDraft,
+    agentSession,
     agentState,
     nextAction: inferNextAction({ setup, profile, lint, tasks, manifest }),
   };
@@ -832,10 +883,15 @@ async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<
 
   const registryResult = await loadModelRegistryForProfile(options.root, profile);
   const registry = registryResult.registry?.models ?? DEFAULT_MODEL_REGISTRY;
-  const plannerRegistryModel = registry.find((model) => model.id === profile.planner_model);
+  const requestedPlannerModel = options.plannerModel
+    ? registry.find((model) => model.id === options.plannerModel)
+    : undefined;
+  const plannerProvider = requestedPlannerModel?.provider ?? options.plannerProvider ?? profile.planner_provider;
+  const plannerModel = requestedPlannerModel?.id ?? options.plannerModel ?? profile.planner_model;
+  const plannerRegistryModel = registry.find((model) => model.id === plannerModel);
   const reasoningEffort =
-    profile.planner_reasoning_effort
-    ?? profile.model_reasoning_efforts[profile.planner_model]
+    (plannerModel === profile.planner_model ? profile.planner_reasoning_effort : undefined)
+    ?? profile.model_reasoning_efforts[plannerModel]
     ?? plannerRegistryModel?.default_reasoning_effort;
   const prompt = buildPlannerAgentWorkflowPrompt({
     request,
@@ -844,33 +900,53 @@ async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<
     registry,
     reasoningEffort,
   });
-  const result = await runLlmPlannerEngine({
-    provider: profile.planner_provider,
-    model: profile.planner_model,
-    reasoningEffort,
-    prompt,
-    parseDraft: parsePlannerAgentWorkflowState,
-    runner: options.plannerPromptRunner,
-    timeoutMs: options.liveTimeoutMs,
-  });
+  let result: Awaited<ReturnType<typeof runLlmPlannerEngine<PlannerAgentWorkflowState>>>;
+
+  try {
+    result = await runLlmPlannerEngine({
+      provider: plannerProvider,
+      model: plannerModel,
+      reasoningEffort,
+      prompt,
+      parseDraft: parsePlannerAgentWorkflowState,
+      runner: options.plannerPromptRunner,
+      timeoutMs: options.liveTimeoutMs,
+    });
+  } catch (error) {
+    return buildAgentWorkflowFallbackResult(options, error, plannerModel, request);
+  }
+
   const state = PlannerAgentWorkflowStateSchema.parse({
     ...result.draft,
     user_request: result.draft.user_request || request,
     planner: {
       ...result.draft.planner,
-      provider: profile.planner_provider,
-      model: profile.planner_model,
+      provider: plannerProvider,
+      model: plannerModel,
       reasoning_effort: reasoningEffort,
     },
   });
+  const planAnswers = parseWorkflowPlanAnswers(state);
 
-  await writePlannerAgentWorkflowState(options.root, state);
+  await writePlannerAgentSession(options.root, dashboard.agentSession, request, state);
 
   return {
     actionId: "agent-workflow",
     status: "ok",
     summary: `${state.project_state.current_phase}: ${state.project_state.summary}`,
     agentState: state,
+    planAnswers,
+    canApply: Boolean(planAnswers && state.next_action.type === "preview_plan"),
+    planContinuation:
+      planAnswers && state.next_action.type === "preview_plan"
+        ? {
+            type: "preview",
+            engine: "llm",
+            plannerProvider: state.planner.provider,
+            plannerModel: state.planner.model,
+            force: dashboard.tasks.length > 0,
+          }
+        : undefined,
     lines: [
       `planner ${state.planner.provider}/${state.planner.model}`,
       `reasoning ${state.planner.reasoning_effort ?? "default"}`,
@@ -879,6 +955,62 @@ async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<
       ...state.checklist.map((item) => `check ${item.status} ${item.id} ${item.label}`),
       ...state.questions.map((question) => `question ${question.id} ${question.question}`),
       `next ${state.next_action.type} ${state.next_action.label}`,
+    ],
+  };
+}
+
+async function buildAgentWorkflowFallbackResult(
+  options: RunTuiActionOptions,
+  error: unknown,
+  failedModel: string | undefined,
+  request: string,
+): Promise<TuiActionResult> {
+  const attemptedModels = uniqueStrings([
+    ...(options.planAttemptedModels ?? []),
+    ...(failedModel ? [failedModel] : []),
+  ]);
+  const candidates = (
+    await getPlannerFallbackCandidatesForRoot({
+      root: options.root,
+      failedModel,
+    })
+  ).filter((candidate) => !attemptedModels.includes(candidate.model));
+  const message = summarizeTuiError(error);
+
+  if (candidates.length > 0) {
+    const next = candidates[0]!;
+
+    return {
+      actionId: "agent-workflow",
+      status: "failed",
+      summary: `Planner ${failedModel ?? "LLM"} failed. Fallback available: ${next.provider}/${next.model}.`,
+      canApply: true,
+      planContinuation: {
+        type: "fallback",
+        engine: "llm",
+        plannerProvider: next.provider,
+        plannerModel: next.model,
+        attemptedModels,
+      },
+      lines: [
+        `request ${request}`,
+        `error ${message}`,
+        `failed_model ${failedModel ?? "unknown"}`,
+        `fallback ${next.provider}/${next.model}`,
+        `reason ${next.reason}`,
+        "press y to try this fallback or n to cancel",
+      ],
+    };
+  }
+
+  return {
+    actionId: "agent-workflow",
+    status: "failed",
+    summary: `Planner ${failedModel ?? "LLM"} failed. No workflow fallback is available.`,
+    lines: [
+      `request ${request}`,
+      `error ${message}`,
+      `failed_model ${failedModel ?? "unknown"}`,
     ],
   };
 }
@@ -1344,6 +1476,7 @@ export function InteractiveDashboard({
   const [lastPlanForce, setLastPlanForce] = useState(false);
   const [lastPlanEngine, setLastPlanEngine] = useState<PlanEngine>("llm");
   const [lastPlanContinuation, setLastPlanContinuation] = useState<PlanContinuation | undefined>();
+  const [lastAgentRequest, setLastAgentRequest] = useState<string | undefined>();
   const [isEditingModelPool, setIsEditingModelPool] = useState(false);
   const [modelPoolInput, setModelPoolInput] = useState("");
   const [isSelectingChatModel, setIsSelectingChatModel] = useState(false);
@@ -1645,10 +1778,18 @@ export function InteractiveDashboard({
               ? lastPlanContinuation?.engine ?? lastPlanEngine
               : undefined,
           planAttemptedModels:
-            pendingConfirmation === "plan" ? lastPlanContinuation?.attemptedModels : undefined,
+            pendingConfirmation === "plan" || pendingConfirmation === "agent-workflow"
+              ? lastPlanContinuation?.attemptedModels
+              : undefined,
           plannerProvider:
-            pendingConfirmation === "plan" ? lastPlanContinuation?.plannerProvider : undefined,
-          plannerModel: pendingConfirmation === "plan" ? lastPlanContinuation?.plannerModel : undefined,
+            pendingConfirmation === "plan" || pendingConfirmation === "agent-workflow"
+              ? lastPlanContinuation?.plannerProvider
+              : undefined,
+          plannerModel:
+            pendingConfirmation === "plan" || pendingConfirmation === "agent-workflow"
+              ? lastPlanContinuation?.plannerModel
+              : undefined,
+          agentRequest: pendingConfirmation === "agent-workflow" ? lastAgentRequest : undefined,
         });
       }
 
@@ -1923,11 +2064,28 @@ export function InteractiveDashboard({
         return;
       }
 
+      const planAnswers = dashboardState.agentState ? parseWorkflowPlanAnswers(dashboardState.agentState) : undefined;
+
+      if (planAnswers) {
+        setLastPlanAnswers(planAnswers);
+        setLastPlanForce(dashboardState.tasks.length > 0);
+        setLastPlanEngine("llm");
+        setLastPlanContinuation({
+          type: "preview",
+          engine: "llm",
+          plannerProvider: dashboardState.agentState?.planner.provider,
+          plannerModel: dashboardState.agentState?.planner.model,
+          force: dashboardState.tasks.length > 0,
+        });
+        setPendingConfirmation("plan");
+        return;
+      }
+
       setActionResult({
         actionId: "plan",
         status: "failed",
         summary: "Missing planning request.",
-        lines: ["Type the request directly in the chat, or use /plan <brief>."],
+        lines: ["Type the request directly in the chat, use /plan <brief>, or continue until the planner is ready to preview."],
       });
       return;
     }
@@ -2006,9 +2164,37 @@ export function InteractiveDashboard({
       return;
     }
 
+    if (command.command === "/sessions") {
+      setActionResult(buildSessionsSlashResult(dashboardState));
+      return;
+    }
+
+    if (command.command === "/clear") {
+      void clearSavedAgentSession();
+      return;
+    }
+
     if (command.command === "/resume") {
+      if (dashboardState.agentSession?.agent_state || dashboardState.agentState) {
+        const state = dashboardState.agentSession?.agent_state ?? dashboardState.agentState;
+        setHasStartedChatWorkflow(true);
+        setPlanChatDraft(state?.user_request ? { brief: state.user_request } : {});
+        setActionResult({
+          actionId: "help",
+          status: "ok",
+          summary: "Resumed the saved planning session.",
+          lines: [
+            `session ${dashboardState.agentSession?.session_id ?? "legacy"}`,
+            `phase ${state?.project_state.current_phase ?? "unknown"}`,
+            `next ${state?.next_action.label ?? "continue planning"}`,
+          ],
+        });
+        return;
+      }
+
       if (dashboardState.chatDraft && dashboardState.chatDraft.brief) {
-        submitFreeformPlanRequest(dashboardState.chatDraft.brief);
+        setHasStartedChatWorkflow(true);
+        setPlanChatDraft(dashboardState.chatDraft);
         setActionResult(undefined);
       } else {
         setActionResult({
@@ -2024,8 +2210,33 @@ export function InteractiveDashboard({
     setActionResult(buildHelpSlashResult());
   }
 
+  async function clearSavedAgentSession(): Promise<void> {
+    try {
+      await clearPlannerAgentSession(dashboardState.root);
+      const nextDashboard = await loadTuiDashboard({ root: dashboardState.root });
+      setDashboardState(nextDashboard);
+      setHasStartedChatWorkflow(false);
+      setLastAgentRequest(undefined);
+      setPlanChatDraft({});
+      setActionResult({
+        actionId: "sessions",
+        status: "ok",
+        summary: "Cleared the saved planning session.",
+        lines: ["landing restored", "artifacts and action history were not removed"],
+      });
+    } catch (error) {
+      setActionResult({
+        actionId: "sessions",
+        status: "failed",
+        summary: "Failed to clear the saved planning session.",
+        lines: [summarizeTuiError(error)],
+      });
+    }
+  }
+
   function submitFreeformPlanRequest(brief: string): void {
     setHasStartedChatWorkflow(true);
+    setLastAgentRequest(brief);
     setPlanChatInput("");
     setPlanChatStep("idle");
     setPlanChatDraft({ brief });
@@ -2458,6 +2669,20 @@ export function InteractiveDashboard({
         setLastPlanContinuation(result.planContinuation);
         setLastPlanEngine(result.planContinuation?.engine ?? options.planEngine ?? lastPlanEngine);
         setPendingConfirmation("plan");
+      }
+
+      if (result.actionId === "agent-workflow" && result.canApply) {
+        setLastPlanContinuation(result.planContinuation);
+
+        if (result.planContinuation?.type === "fallback") {
+          setLastAgentRequest(options.agentRequest);
+          setPendingConfirmation("agent-workflow");
+        } else if (result.planAnswers) {
+          setLastPlanAnswers(result.planAnswers);
+          setLastPlanForce(Boolean(result.planContinuation?.force));
+          setLastPlanEngine(result.planContinuation?.engine ?? "llm");
+          setPendingConfirmation("plan");
+        }
       }
 
       const nextDashboard = await loadTuiDashboard({ root: dashboardState.root });
@@ -3729,6 +3954,34 @@ function buildProvidersSlashResult(dashboard: TuiDashboard): TuiActionResult {
   };
 }
 
+function buildSessionsSlashResult(dashboard: TuiDashboard): TuiActionResult {
+  const session = dashboard.agentSession;
+  const state = session?.agent_state ?? dashboard.agentState;
+
+  if (!session && !state && !dashboard.chatDraft?.brief) {
+    return {
+      actionId: "sessions",
+      status: "failed",
+      summary: "No saved planning session.",
+      lines: ["Type a first message to start planning."],
+    };
+  }
+
+  return {
+    actionId: "sessions",
+    status: "ok",
+    summary: session ? `Saved session ${session.session_id}.` : "Legacy planning draft is available.",
+    lines: [
+      `messages ${session?.messages.length ?? 0}`,
+      `updated ${session?.updated_at ?? "n/a"}`,
+      `phase ${state?.project_state.current_phase ?? "draft"}`,
+      `next ${state?.next_action.label ?? "resume draft"}`,
+      `resume /resume`,
+      `clear /clear`,
+    ],
+  };
+}
+
 export function chatRuntimeStatus({
   dashboard,
   runningAction,
@@ -4126,6 +4379,18 @@ export function parsePlannerAgentWorkflowState(response: string): PlannerAgentWo
   return PlannerAgentWorkflowStateSchema.parse(JSON.parse(extractJsonObject(response)));
 }
 
+function parseWorkflowPlanAnswers(state: PlannerAgentWorkflowState): PlanAnswers | undefined {
+  if (state.next_action.type !== "preview_plan" || !state.plan_answers) {
+    return undefined;
+  }
+
+  try {
+    return parsePlanAnswers(state.plan_answers);
+  } catch {
+    return undefined;
+  }
+}
+
 function buildPlannerAgentWorkflowPrompt({
   request,
   dashboard,
@@ -4176,6 +4441,13 @@ function buildPlannerAgentWorkflowPrompt({
       lint_errors: dashboard.lint.errors,
       lint_warnings: dashboard.lint.warnings,
     },
+    previous_session: dashboard.agentSession
+      ? {
+          session_id: dashboard.agentSession.session_id,
+          messages: dashboard.agentSession.messages.slice(-12),
+          agent_state: dashboard.agentSession.agent_state,
+        }
+      : undefined,
     active_models: activeModels,
   };
 
@@ -4187,6 +4459,9 @@ function buildPlannerAgentWorkflowPrompt({
     "Checkboxes are semantic validation state: mark done only when the supplied project context validates it; otherwise use pending, in_progress, or blocked.",
     "Reiterate the project in your own words, identify what is already known, what still needs validation, and what the next user-facing action should be.",
     "Ask questions only when the workflow is blocked or a decision would be unsafe to infer.",
+    "If the user is answering a prior question, update the same session state instead of restarting the workflow.",
+    "When you have enough information to preview the handoffs, set next_action.type to preview_plan and include a valid plan_answers object.",
+    "Do not generate or write files directly. The app will ask the user for confirmation before previewing or writing artifacts.",
     "Return strict JSON only. No markdown, no prose outside JSON.",
     "JSON schema:",
     JSON.stringify(
@@ -4228,11 +4503,47 @@ function buildPlannerAgentWorkflowPrompt({
   ].join("\n\n");
 }
 
-async function writePlannerAgentWorkflowState(rootInput: string, state: PlannerAgentWorkflowState): Promise<void> {
+async function writePlannerAgentSession(
+  rootInput: string,
+  currentSession: PlannerAgentSession | undefined,
+  userMessage: string,
+  state: PlannerAgentWorkflowState,
+): Promise<void> {
   const sessionsRoot = path.join(path.resolve(rootInput), BLUEPRINT_DIR, "tui_sessions");
+  const now = new Date().toISOString();
+  const session = PlannerAgentSessionSchema.parse({
+    schema_version: "1.0",
+    session_id: currentSession?.session_id ?? randomUUID(),
+    updated_at: now,
+    messages: [
+      ...(currentSession?.messages ?? []),
+      {
+        role: "user",
+        content: userMessage,
+        created_at: now,
+      },
+      ...state.messages.map((message) => ({
+        role: "planner" as const,
+        content: message.content,
+        created_at: now,
+      })),
+    ],
+    agent_state: state,
+  });
 
   await mkdir(sessionsRoot, { recursive: true });
+  await writeFile(path.join(sessionsRoot, TUI_AGENT_SESSION_FILE), `${JSON.stringify(session, null, 2)}\n`, "utf8");
   await writeFile(path.join(sessionsRoot, TUI_AGENT_STATE_FILE), `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+async function clearPlannerAgentSession(rootInput: string): Promise<void> {
+  const sessionsRoot = path.join(path.resolve(rootInput), BLUEPRINT_DIR, "tui_sessions");
+
+  await Promise.all([
+    rm(path.join(sessionsRoot, TUI_AGENT_SESSION_FILE), { force: true }),
+    rm(path.join(sessionsRoot, TUI_AGENT_STATE_FILE), { force: true }),
+    rm(path.join(sessionsRoot, "DRAFT.json"), { force: true }),
+  ]);
 }
 
 function inferTuiValidationCommands(dashboard: TuiDashboard): string[] {
@@ -4398,6 +4709,24 @@ export function currentFocusOverlay({
   planChatInput?: string;
 }): { title: string; body: string; hint: string; color: "cyan" | "yellow" } | undefined {
   if (pendingConfirmation) {
+    if (pendingConfirmation === "agent-workflow") {
+      return {
+        title: "Fallback Confirmation",
+        body: "The active planner failed. Try the suggested fallback model?",
+        hint: "Press y to run the fallback planner, n or Esc to cancel.",
+        color: "yellow",
+      };
+    }
+
+    if (pendingConfirmation === "plan") {
+      return {
+        title: "Preview Confirmation",
+        body: "The planner says the workflow is ready to preview handoffs.",
+        hint: "Press y to preview the task graph, n or Esc to keep planning.",
+        color: "yellow",
+      };
+    }
+
     return {
       title: "Confirmation Overlay",
       body: `Confirm ${pendingConfirmation}?`,

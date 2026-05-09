@@ -89,7 +89,7 @@ export function WorkbenchSurface({
       h(
         Box,
         { flexDirection: "column", flexGrow: 1, gap: 1, paddingBottom: 1 },
-        h(WorkbenchFeed, { dashboard, actionResult, planChatStep, planChatDraft }),
+        h(WorkbenchFeed, { dashboard, actionResult, runningAction, planChatStep, planChatDraft }),
         h(FocusOverlay, {
           pendingConfirmation,
           isEditingRevise,
@@ -136,11 +136,13 @@ export function WorkbenchSurface({
 export function WorkbenchFeed({
   dashboard,
   actionResult,
+  runningAction,
   planChatStep,
   planChatDraft,
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
+  runningAction?: TuiActionId;
   planChatStep: PlanChatStep;
   planChatDraft: PlanChatDraft;
 }): React.ReactElement {
@@ -149,7 +151,9 @@ export function WorkbenchFeed({
   return h(
     Box,
     { flexDirection: "column", gap: 1, flexGrow: 1 },
-    h(Text, { color: "gray" }, dashboard.nextAction),
+    ...(runningAction === "agent-workflow" && !dashboard.agentState
+      ? [h(PlannerThinkingBlock, { key: "thinking", dashboard })]
+      : []),
     ...(dashboard.agentState
       ? [h(PlannerAgentStateBlock, { key: "agent-state", state: dashboard.agentState })]
       : []),
@@ -167,12 +171,24 @@ export function WorkbenchFeed({
   );
 }
 
+export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard }): React.ReactElement {
+  const profile = dashboard.profile.profile;
+
+  return h(
+    Box,
+    { borderStyle: "single", borderColor: "blue", paddingX: 1, flexDirection: "column" },
+    h(Text, { bold: true }, "Planner is thinking"),
+    h(Text, { color: "gray" }, profile ? `${profile.planner_provider}/${profile.planner_model}` : "planner model"),
+    h(Text, null, "Building project understanding, validation checklist, questions, and next action..."),
+  );
+}
+
 export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowState }): React.ReactElement {
   return h(
     Box,
     { borderStyle: "single", borderColor: agentStateColor(state), paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true }, "Planner Agent State"),
-    h(Text, null, `${state.project_state.current_phase} | ${state.project_state.title}`),
+    h(Text, { bold: true }, state.project_state.title),
+    h(Text, { color: "gray" }, state.project_state.current_phase),
     h(Text, { color: "gray" }, truncateLine(state.project_state.summary, 110)),
     ...state.messages.slice(0, 3).map((message, index) =>
       h(Text, { key: `message-${index}` }, truncateLine(message.content, 110)),
