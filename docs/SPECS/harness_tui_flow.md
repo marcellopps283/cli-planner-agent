@@ -57,6 +57,8 @@ automacao, smoke e debugging.
   `docs/SPECS/opencode_tui_reference.md`: landing de chat, feed principal,
   sidebar contextual, slash commands, overlays e artefato de progresso no
   estilo OpenCode.
+- A referencia agentica de sessoes, permissoes, fallback e planejamento
+  multi-engine esta em `docs/SPECS/agent_harness_research.md`.
 - O overview fica atras do menu principal e inclui um painel `Operations` com
   status operacional, planner, providers, model pool, tasks, task models e
   sessoes.

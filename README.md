@@ -150,7 +150,9 @@ deterministico.
 O registry bundled guarda benchmarks, precos, `task_fit` e esforcos de
 raciocinio suportados por modelo. A pesquisa operacional fica em
 `docs/SPECS/model_pool_research.md`; a direcao principal de TUI inspirada no
-OpenCode fica em `docs/SPECS/opencode_tui_reference.md`.
+OpenCode fica em `docs/SPECS/opencode_tui_reference.md`; e os padroes de
+sessoes, permissoes e planning harness ficam em
+`docs/SPECS/agent_harness_research.md`.
 
 O pacote de contexto enviado ao planner continua compacto: stack detectada,
 scripts de validacao, top-level dirs, docs canonicos, headings curtos e ate 80

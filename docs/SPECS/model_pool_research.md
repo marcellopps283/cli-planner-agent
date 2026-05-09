@@ -136,9 +136,12 @@ Fontes oficiais consultadas:
 - https://developers.openai.com/codex/cli/features
 - https://developers.openai.com/codex/subagents
 - https://developers.openai.com/codex/learn/best-practices
+- https://github.com/openai/codex
 - https://code.claude.com/docs/en/sessions
 - https://code.claude.com/docs/en/interactive-mode
 - https://code.claude.com/docs/en/permission-modes
+- https://github.com/Enderfga/claw-orchestrator
+- https://claw-code.codes/
 
 Aplicacoes no Blueprint:
 
