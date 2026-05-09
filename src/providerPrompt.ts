@@ -81,7 +81,7 @@ export function extractJsonObject(text: string): string {
 }
 
 export function providerPromptModelArgs(provider: ProviderId, model?: string): string[] {
-  if (!model) {
+  if (!model || isProviderCliDefaultModel(provider, model)) {
     return [];
   }
 
@@ -123,7 +123,7 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
 
   if (result.exitCode !== 0) {
-    throw new Error(`codex exec failed: ${summarizeProviderFailure(rawOutput || `exit code ${result.exitCode}`)}`);
+    throw new Error(`codex exec failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
   }
 
   const response = await readFile(outputPath, "utf8");
@@ -160,7 +160,7 @@ async function runGeminiPrompt(options: ProviderPromptOptions, cwd: string): Pro
   const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
 
   if (result.exitCode !== 0) {
-    throw new Error(`gemini failed: ${summarizeProviderFailure(rawOutput || `exit code ${result.exitCode}`)}`);
+    throw new Error(`gemini failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
   }
 
   const parsed = parseProviderJson(rawOutput);
@@ -199,7 +199,7 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
   const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
 
   if (result.exitCode !== 0) {
-    throw new Error(`claude failed: ${summarizeProviderFailure(rawOutput || `exit code ${result.exitCode}`)}`);
+    throw new Error(`claude failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
   }
 
   const parsed = parseProviderJson(rawOutput);
@@ -234,6 +234,20 @@ export function providerPromptReasoningArgs(provider: ProviderId, effort?: strin
   return [];
 }
 
+export function isProviderCliDefaultModel(provider: ProviderId, model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+
+  if (provider === "openai") {
+    return normalized === "openai-codex-default" || normalized === "codex-cli-default";
+  }
+
+  if (provider === "google") {
+    return normalized === "gemini-cli-default" || normalized === "google-gemini-default";
+  }
+
+  return normalized === "claude-code-default" || normalized === "anthropic-claude-default";
+}
+
 function promptWithReasoningEffort(prompt: string, effort?: string): string {
   if (!effort) {
     return prompt;
@@ -244,6 +258,32 @@ function promptWithReasoningEffort(prompt: string, effort?: string): string {
 
 export function selectProviderPromptOutput(stdout: unknown, stderr: unknown): string {
   return stringifyProviderPromptOutput(stdout).trim() || stringifyProviderPromptOutput(stderr).trim();
+}
+
+function providerProcessFailure(result: {
+  exitCode?: number;
+  timedOut?: boolean;
+  signal?: string;
+  signalDescription?: string;
+  killed?: boolean;
+}): string {
+  if (result.timedOut) {
+    return "process timed out without stdout/stderr";
+  }
+
+  if (result.signal) {
+    return `process ended with signal ${result.signal}${result.signalDescription ? ` ${result.signalDescription}` : ""}`;
+  }
+
+  if (typeof result.exitCode === "number") {
+    return `exit code ${result.exitCode}`;
+  }
+
+  if (result.killed) {
+    return "process was killed without stdout/stderr";
+  }
+
+  return "process ended without stdout/stderr and no exit code was reported";
 }
 
 function stringifyProviderPromptOutput(output: unknown): string {

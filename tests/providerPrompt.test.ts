@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_PROVIDER_ADAPTERS } from "../src/providers.js";
-import { extractJsonObject, providerPromptModelArgs } from "../src/providerPrompt.js";
+import { extractJsonObject, isProviderCliDefaultModel, providerPromptModelArgs } from "../src/providerPrompt.js";
 
 describe("provider prompt parsing", () => {
   it("extracts raw JSON responses", () => {
@@ -31,6 +31,13 @@ describe("provider prompt parsing", () => {
       "claude-opus-4-7",
     ]);
     expect(providerPromptModelArgs("openai")).toEqual([]);
+  });
+
+  it("omits model flags for provider CLI default pseudo-models", () => {
+    expect(providerPromptModelArgs("openai", "openai-codex-default")).toEqual([]);
+    expect(providerPromptModelArgs("google", "gemini-cli-default")).toEqual([]);
+    expect(providerPromptModelArgs("anthropic", "claude-code-default")).toEqual([]);
+    expect(isProviderCliDefaultModel("openai", "gpt-5.5")).toBe(false);
   });
 
   it("keeps Gemini headless calls trusted in temporary planner directories", () => {
