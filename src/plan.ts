@@ -832,6 +832,7 @@ function resolveDraftModelSelection(
 ): DraftModelSelection {
   const activeModels = activeModelsForProfile(context.profile, context.registry);
   const rankedModels = rankModelsForFit(activeModels, fit, riskLevel);
+  const bestCapableEntry = resolveBestCapableRankedEntry(rankedModels, fit, riskLevel);
 
   if (suggestedModel) {
     const model = activeModels.find((candidate) => candidate.id === suggestedModel);
@@ -843,8 +844,19 @@ function resolveDraftModelSelection(
         throw new Error(`Planner draft suggested unroutable model ${suggestedModel}.`);
       }
 
-      const adjustmentReason = getRoutingAdjustmentReason(selectedEntry, rankedModels, fit, riskLevel);
-      const bestModel = rankedModels[0]?.model;
+      if (!modelMeetsCapabilityFloor(model, fit, riskLevel)) {
+        return {
+          model: bestCapableEntry.model,
+          adjustedFrom: model.id,
+          adjustmentReason: `suggested model is below the capability floor (${formatRoutingCapability(
+            selectedEntry,
+          )}; required fit>=${formatScore(minimumFitForTask(fit, riskLevel))} and non-utility tier for risky non-tiny work)`,
+        };
+      }
+
+      const capableRankedModels = rankedModels.filter((entry) => modelMeetsCapabilityFloor(entry.model, fit, riskLevel));
+      const adjustmentReason = getRoutingAdjustmentReason(selectedEntry, capableRankedModels, fit, riskLevel);
+      const bestModel = capableRankedModels[0]?.model;
 
       if (adjustmentReason && bestModel) {
         return {
@@ -864,7 +876,7 @@ function resolveDraftModelSelection(
     );
   }
 
-  return { model: rankedModels[0]?.model ?? selectModel(context, fit, riskLevel) };
+  return { model: bestCapableEntry.model };
 }
 
 function resolveDraftAlternatives(
@@ -1016,6 +1028,10 @@ function isAcceptableRoutingAlternative(
   fit: string,
   riskLevel: number,
 ): boolean {
+  if (!modelMeetsCapabilityFloor(alternativeEntry.model, fit, riskLevel)) {
+    return false;
+  }
+
   const bestEntry = rankedModels[0];
 
   if (!bestEntry || alternativeEntry.model.id === bestEntry.model.id) {
@@ -1041,6 +1057,71 @@ function isAcceptableRoutingAlternative(
   }
 
   return true;
+}
+
+function resolveBestCapableRankedEntry(
+  rankedModels: Array<{ model: ModelRegistryEntry; score: number; fitScore: number }>,
+  fit: string,
+  riskLevel: number,
+): { model: ModelRegistryEntry; score: number; fitScore: number } {
+  const capableEntry = rankedModels.find((entry) => modelMeetsCapabilityFloor(entry.model, fit, riskLevel));
+
+  if (capableEntry) {
+    return capableEntry;
+  }
+
+  const bestEntry = rankedModels[0];
+
+  if (!bestEntry) {
+    throw new Error(`No active models are available for risk ${riskLevel} ${fit} task.`);
+  }
+
+  throw new Error(
+    `No capable active model for risk ${riskLevel} ${fit} task. Best candidate ${
+      bestEntry.model.id
+    } has fit=${formatScore(bestEntry.fitScore)} tier=${
+      bestEntry.model.tier
+    }. Enable a stronger model or split/lower the task scope before generating handoffs.`,
+  );
+}
+
+function formatRoutingCapability(entry: { model: ModelRegistryEntry; fitScore: number }): string {
+  return `${entry.model.id} fit=${formatScore(entry.fitScore)} tier=${entry.model.tier}`;
+}
+
+function modelMeetsCapabilityFloor(model: ModelRegistryEntry, fit: string, riskLevel: number): boolean {
+  const fitScore = model.task_fit[fit] ?? 0;
+  const minimumFit = minimumFitForTask(fit, riskLevel);
+
+  if (fitScore < minimumFit) {
+    return false;
+  }
+
+  if (riskLevel >= 5 && fit !== "tiny_edit" && model.tier === "utility") {
+    return false;
+  }
+
+  return true;
+}
+
+function minimumFitForTask(fit: string, riskLevel: number): number {
+  if (fit === "tiny_edit") {
+    return riskLevel >= 7 ? 0.8 : 0.55;
+  }
+
+  if (riskLevel >= 8) {
+    return 0.84;
+  }
+
+  if (riskLevel >= 7) {
+    return 0.8;
+  }
+
+  if (riskLevel >= 5) {
+    return 0.7;
+  }
+
+  return 0.45;
 }
 
 function adjustDraftTaskRisk(task: PlannerDraft["tasks"][number]): { riskLevel: number; reason?: string } {
@@ -1657,10 +1738,9 @@ function renderTask(task: PlannedTask): string {
 
 function selectModel(context: PlanContext, fit: string, riskLevel = 5): ModelRegistryEntry {
   const activeModels = activeModelsForProfile(context.profile, context.registry);
-  const plannerModel = activeModels.find((model) => model.id === context.profile.planner_model);
-  const sorted = rankModelsForFit(activeModels, fit, riskLevel).map((entry) => entry.model);
+  const rankedModels = rankModelsForFit(activeModels, fit, riskLevel);
 
-  return sorted[0] ?? plannerModel ?? context.registry[0]!;
+  return resolveBestCapableRankedEntry(rankedModels, fit, riskLevel).model;
 }
 
 function buildRoutingScorecards(models: ModelRegistryEntry[]): Array<{

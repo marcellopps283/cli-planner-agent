@@ -134,6 +134,15 @@ Quando o planner subestima uma tarefa complexa ou superestima uma tarefa
 correcao no `model_rationale`. Alternativas tambem passam pelo mesmo filtro para
 evitar fallback fraco em tarefas de alto risco.
 
+O score relativo nao basta quando o pool ativo inteiro esta fraco. Antes de
+gerar handoffs, o CLI aplica um piso absoluto de capacidade:
+
+- tarefas `risk >= 8` precisam de fit alto para o tipo da tarefa;
+- tarefas `risk >= 5` que nao sejam `tiny_edit` nao podem ser entregues a tier
+  `utility`;
+- se nenhum modelo ativo atingir o piso, o preview falha e pede para habilitar
+  modelo mais forte ou quebrar/rebaixar o escopo da tarefa.
+
 O registry bundled pode ser exportado para `.blueprint/model_registry.yaml` com
 `blueprint registry export`. O usuario pode editar esse arquivo para ajustar
 tiers, quota notes, modelos preferidos e capacidades sem alterar o binario.

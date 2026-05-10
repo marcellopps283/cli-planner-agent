@@ -71,6 +71,8 @@ ou schema sao expostas com os attempts para auditoria e fallback.
 - `suggested_model`, quando informado, deve existir no pool ativo.
 - O harness pode corrigir `suggested_model` quando a escolha estiver abaixo do
   score minimo aceitavel para o fit/risco da tarefa.
+- Se o pool ativo nao tiver nenhum modelo capaz para o fit/risco, o harness
+  deve recusar o preview em vez de atribuir um modelo fraco.
 - `model_rationale` deve explicar a escolha usando fit, risco, contexto, custo,
   latencia, benchmark ou disponibilidade.
 - `acceptable_alternatives`, quando informado, so pode conter model IDs ativos
