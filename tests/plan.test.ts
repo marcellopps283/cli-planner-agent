@@ -94,6 +94,40 @@ describe("blueprint plan generation", () => {
     expect(taskFiles.sort()).toEqual(["001-custom-analysis.md", "002-custom-build.md", "README.md"]);
   });
 
+  it("keeps deterministic validation paths limited to existing project paths", async () => {
+    const root = await makeTempProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+    });
+
+    await generateBlueprintPlan({
+      root,
+      answers: {
+        ...makeAnswers(),
+        objective: "Polish README wording only.",
+        targetPaths: ["README.md"],
+        riskLevel: 2,
+      },
+    });
+    const lint = await lintBlueprint(root);
+    const validationTask = await readFile(
+      path.join(root, ".blueprint", "tasks", "003-integrate-and-validate.md"),
+      "utf8",
+    );
+
+    expect(lint.warnings).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("allowed_path tests/** does not exist yet"),
+        expect.stringContaining("allowed_path docs/** does not exist yet"),
+      ]),
+    );
+    expect(validationTask).toContain("allowed_paths:\n  - README.md\n  - package.json");
+    expect(validationTask).not.toContain("  - tests/**");
+    expect(validationTask).not.toContain("  - docs/**");
+  });
+
   it("generates handoffs from a validated LLM planner draft", async () => {
     const root = await makeTempProject();
     await initPlannerProfile({

@@ -1426,13 +1426,8 @@ function getExampleAlternatives(
 }
 
 function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedTask[] {
-  const implementationPaths = answers.targetPaths.length > 0 ? answers.targetPaths : ["src/**", "tests/**", "docs/**"];
-  const validationPaths = uniqueStrings([
-    ...implementationPaths.filter((targetPath) => /test|spec|docs|package\.json|pnpm-lock\.yaml/u.test(targetPath)),
-    "tests/**",
-    "docs/**",
-    "package.json",
-  ]);
+  const implementationPaths = answers.targetPaths.length > 0 ? answers.targetPaths : defaultImplementationPaths(context);
+  const validationPaths = defaultValidationPaths(context, implementationPaths);
   const forbiddenPaths = defaultForbiddenPaths();
   const contextRisk = clampRisk(answers.riskLevel - 2);
   const validationRisk = clampRisk(answers.riskLevel - 1);
@@ -1542,6 +1537,30 @@ function buildPlannedTasks(context: PlanContext, answers: PlanAnswers): PlannedT
       ],
     },
   ];
+}
+
+function defaultImplementationPaths(context: PlanContext): string[] {
+  const dirPaths = ["src", "tests", "docs"]
+    .filter((dir) => context.doctor.topLevelDirs.includes(dir))
+    .map((dir) => `${dir}/**`);
+  const filePaths = ["README.md", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"]
+    .filter((file) => context.doctor.canonicalFiles.includes(file) || context.doctor.manifests.includes(file));
+
+  return uniqueStrings([...dirPaths, ...filePaths]).slice(0, 6);
+}
+
+function defaultValidationPaths(context: PlanContext, implementationPaths: string[]): string[] {
+  const candidates = [
+    ...implementationPaths.filter((targetPath) => /(^|\/)(test|tests|spec|specs|docs)(\/|$)|README\.md$|\.md$|package\.json$|pnpm-lock\.yaml$/u.test(targetPath)),
+    ...(context.doctor.topLevelDirs.includes("tests") ? ["tests/**"] : []),
+    ...(context.doctor.topLevelDirs.includes("docs") ? ["docs/**"] : []),
+    ...(context.doctor.manifests.includes("package.json") || context.doctor.canonicalFiles.includes("package.json")
+      ? ["package.json"]
+      : []),
+  ];
+  const validationPaths = uniqueStrings(candidates);
+
+  return validationPaths.length > 0 ? validationPaths : implementationPaths.slice(0, 3);
 }
 
 function buildDependencyGraph(tasks: PlannedTask[]): DependencyGraph {
