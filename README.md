@@ -9,7 +9,7 @@ como Codex, Claude Code e Gemini CLI.
 
 ## Status
 
-MVP funcional, privado no GitHub e com CI ativo em `main`. O estado atual cobre
+MVP funcional, publico no GitHub e com CI ativo em `main`. O estado atual cobre
 inicializacao, profiles com pool de modelos exatos, registry customizavel,
 doctor, planner deterministico, PlannerEngine LLM via CLI oficial, lint,
 revise, export e TUI.
@@ -34,9 +34,15 @@ blueprint
 `blueprint` sem subcomando abre a TUI. Os subcomandos continuam disponiveis para
 automacao e debugging.
 
+## Demo
+
+- Public repository: <https://github.com/marcellopps283/cli-planner-agent>
+- Static demo page: <https://marcellopps283.github.io/cli-planner-agent/>
+- Hackathon submission kit: [`docs/submission/SUBMISSION.md`](docs/submission/SUBMISSION.md)
+
 ## Instalacao local
 
-Enquanto o pacote continuar privado, use o checkout local:
+Enquanto o pacote nao estiver publicado no npm, use o checkout local:
 
 ```bash
 pnpm install

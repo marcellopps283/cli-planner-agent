@@ -1,8 +1,14 @@
 {
   "name": "cli-planner-agent",
   "version": "0.0.0",
+  "description": "Terminal AI planning harness that generates model-routed handoffs for coding agents.",
   "private": true,
   "type": "module",
+  "homepage": "https://marcellopps283.github.io/cli-planner-agent/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcellopps283/cli-planner-agent.git"
+  },
   "bin": {
     "blueprint": "./dist/cli.js"
   },

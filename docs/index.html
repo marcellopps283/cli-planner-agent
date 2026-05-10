@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blueprint Planner-Agent</title>
+    <meta
+      name="description"
+      content="A terminal AI planning harness that turns a project idea into model-routed handoffs for coding agents."
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080a0f;
+        --panel: #111622;
+        --panel-2: #171e2b;
+        --text: #eef4ff;
+        --muted: #9aa8bd;
+        --line: #273244;
+        --cyan: #5eead4;
+        --blue: #7db7ff;
+        --amber: #ffd166;
+        --green: #8cffb7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 80% 0%, rgba(94, 234, 212, 0.14), transparent 34rem),
+          linear-gradient(180deg, #0a0d14 0%, var(--bg) 56%, #050608 100%);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .shell {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 22px 0;
+        color: var(--muted);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border: 1px solid rgba(94, 234, 212, 0.45);
+        background: rgba(94, 234, 212, 0.1);
+        color: var(--cyan);
+        border-radius: 7px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      nav {
+        display: flex;
+        gap: 14px;
+        font-size: 14px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(480px, 1.1fr);
+        gap: 36px;
+        align-items: center;
+        padding: 42px 0 30px;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 12ch;
+        font-size: clamp(54px, 8vw, 92px);
+        line-height: 0.9;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 680px;
+        margin: 22px 0 0;
+        color: #c8d6e8;
+        font-size: 19px;
+        line-height: 1.6;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .button {
+        display: inline-flex;
+        min-height: 42px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0 15px;
+        background: #151c28;
+        color: var(--text);
+        font-weight: 650;
+        text-decoration: none;
+      }
+
+      .button.primary {
+        border-color: rgba(94, 234, 212, 0.55);
+        background: #14332f;
+        color: #dffff9;
+      }
+
+      .terminal {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+      }
+
+      .terminal-bar {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+        padding: 10px 14px;
+        color: var(--muted);
+        background: #0d111a;
+        font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .terminal-body {
+        display: grid;
+        grid-template-columns: 1fr 180px;
+        min-height: 430px;
+      }
+
+      .chat {
+        padding: 18px;
+        border-right: 1px solid var(--line);
+      }
+
+      .message {
+        margin: 0 0 14px;
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+        font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .message.user {
+        border-color: rgba(125, 183, 255, 0.42);
+        background: rgba(125, 183, 255, 0.08);
+      }
+
+      .message strong {
+        color: var(--cyan);
+      }
+
+      .prompt {
+        margin-top: 22px;
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+        color: var(--muted);
+        font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .side {
+        padding: 16px;
+        background: #0f141d;
+      }
+
+      .side h2 {
+        margin: 0 0 14px;
+        font-size: 13px;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+        padding: 10px 0;
+        font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .ok {
+        color: var(--green);
+      }
+
+      .sections {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        padding: 36px 0 48px;
+      }
+
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 18px;
+        background: rgba(17, 22, 34, 0.82);
+      }
+
+      .section h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+
+      .section p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      code {
+        color: var(--amber);
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 22px 0 30px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      @media (max-width: 900px) {
+        .hero,
+        .sections,
+        .terminal-body {
+          grid-template-columns: 1fr;
+        }
+
+        .chat {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        nav {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="brand"><span class="mark">bp</span> Blueprint Planner-Agent</div>
+        <nav>
+          <a href="https://github.com/marcellopps283/cli-planner-agent">GitHub</a>
+          <a href="./submission/SUBMISSION.md">Submission kit</a>
+          <a href="./submission/VIDEO_SCRIPT.md">Video script</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <h1>AI planning harness for coding agents.</h1>
+            <p class="lead">
+              Blueprint turns a vague project brief into a dependency graph, task handoffs, model routing decisions,
+              and validation contracts that smaller worker agents can execute.
+            </p>
+            <div class="actions">
+              <a class="button primary" href="https://github.com/marcellopps283/cli-planner-agent">Open repository</a>
+              <a class="button" href="./submission/cover.png">Cover image</a>
+            </div>
+          </div>
+
+          <div class="terminal" aria-label="Blueprint terminal interface mockup">
+            <div class="terminal-bar">
+              <span>blueprint</span>
+              <span>planner: gpt-5.5</span>
+            </div>
+            <div class="terminal-body">
+              <div class="chat">
+                <p class="message user">Plan a multi-provider AI coding workflow for this repo.</p>
+                <p class="message">
+                  <strong>Planner</strong><br />
+                  I need stack, constraints, validation commands, and provider pool before handoff generation.
+                </p>
+                <p class="message">
+                  <strong>Preview ready</strong><br />
+                  6 tasks, strict dependency graph, suggested models, acceptance contracts, and isolated XML prompts.
+                </p>
+                <p class="prompt">&gt; /plan generate handoffs after confirmation</p>
+              </div>
+              <aside class="side">
+                <h2>Operations</h2>
+                <div class="metric"><span>Status</span><span class="ok">ready</span></div>
+                <div class="metric"><span>Providers</span><span>3</span></div>
+                <div class="metric"><span>Models</span><span>pool</span></div>
+                <div class="metric"><span>Output</span><span>.blueprint/</span></div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="sections">
+          <article class="section">
+            <h2>Agentic workflow</h2>
+            <p>Starts as a chat, asks for missing requirements, then switches to a clinical handoff generator.</p>
+          </article>
+          <article class="section">
+            <h2>Model routing</h2>
+            <p>Routes each subtask to exact selected models using fit, risk, context, cost, and reasoning effort.</p>
+          </article>
+          <article class="section">
+            <h2>Artifacts</h2>
+            <p>Writes <code>architecture.md</code>, <code>dependencies_graph.json</code>, task XML, and an integration guide.</p>
+          </article>
+        </section>
+      </main>
+
+      <footer>
+        Built for the AMD Developer Hackathon AI Agents & Agentic Workflows track. The CLI runs locally and uses the
+        user's authenticated provider CLIs for planning calls.
+      </footer>
+    </div>
+  </body>
+</html>
