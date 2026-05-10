@@ -471,7 +471,9 @@ describe("blueprint plan generation", () => {
     expect(prompt).toContain("low_risk_order");
     expect(prompt).toContain("high_risk_order");
     expect(prompt).toContain("declared_dependencies");
-    expect(prompt).toContain("Do not recommend a framework, package, library, build tool, database, or test framework because it is installed globally");
+    expect(prompt).toContain("not as a lock that prevents architectural brainstorming");
+    expect(prompt).toContain("present them as options with tradeoffs until the user chooses");
+    expect(prompt).toContain("Never recommend a framework, package, library, build tool, database, or test framework because it is installed globally");
     expect(prompt).toContain("gpt-5.5");
     expect(prompt).toContain("gemini-3.1-pro-preview");
     expect(prompt).not.toContain("claude-opus-4-7");

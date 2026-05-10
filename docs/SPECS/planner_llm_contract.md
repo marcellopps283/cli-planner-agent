@@ -78,11 +78,14 @@ ou schema sao expostas com os attempts para auditoria e fallback.
 - Providers excluidos pelo profile nao podem aparecer em tasks.
 - Dependencias so podem apontar para tasks anteriores.
 - IDs de task devem seguir `task-NNN-kebab-case`.
-- Stack detectada e CLIs instalados nao autorizam framework/biblioteca nova.
-  O planner deve preferir dependencias ja declaradas nos manifests do projeto.
-- Framework, pacote, banco, build tool ou test framework novo so pode aparecer
-  como decisao pendente de confirmacao quando o usuario nao tiver pedido isso
-  explicitamente.
+- Stack detectada e dependencias declaradas sao baseline do repositorio, nao
+  trava de arquitetura. O planner pode discutir frameworks, pacotes, bancos,
+  build tools e test frameworks novos durante brainstorming.
+- Ferramentas instaladas globalmente ou disponiveis no PC nao podem ser usadas
+  como justificativa implicita para escolher stack.
+- Antes de gerar handoffs, qualquer nova dependencia/stack precisa estar
+  explicitamente pedida pelo usuario, confirmada na conversa, ou registrada como
+  decisao pendente/pergunta em vez de instrucao de implementacao.
 - Tasks geradas precisam passar em `blueprint lint`.
 - `validationCommands` e `test_commands` sao normalizados para comandos
   reprodutiveis quando possivel. Exemplo: `pnpm typecheck` vira

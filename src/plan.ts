@@ -947,8 +947,8 @@ function declaredDependencyContextRule(context: PlanContext): string {
   const dependencies = summarizeDeclaredDependencies(context.doctor.dependencyManifests ?? []);
 
   return dependencies.length > 0
-    ? `Use only declared project dependencies unless the user explicitly approves a new framework/library: ${dependencies.join(", ")}.`
-    : "Do not introduce new frameworks or libraries based on local/global installation; ask for user approval before adding project dependencies.";
+    ? `Declared dependencies are the current repo baseline, not a stack lock: ${dependencies.join(", ")}. New frameworks/libraries may be explored, but only become implementation scope after the user's choice/confirmation in the conversation; never justify them from local/global installation.`
+    : "No project dependencies are declared yet. Brainstorm stack options freely with tradeoffs, but do not treat locally/globally installed tools as implicit user preference; ask for confirmation before turning a new framework/library into handoff scope.";
 }
 
 function summarizeDeclaredDependencies(
@@ -1251,10 +1251,11 @@ export function buildPlannerPromptForContext(context: PlanContext, answers: Plan
     "- If a task edits files, allowed_paths must be the narrowest relative paths or globs needed.",
     "- Prefer existing paths from project_inventory.inventory_files and existing top-level directories.",
     "- Do not invent new source or test directories unless the requested change clearly requires them; if a new directory is required, state that explicitly in context_rules.",
-    "- Treat project_inventory.stack as repo evidence only, not permission to add frameworks or libraries.",
-    "- Do not recommend a framework, package, library, build tool, database, or test framework because it is installed globally or available on the user's machine.",
-    "- Prefer libraries already declared in project_inventory.declared_dependencies or already visible in manifests/config files.",
-    "- If a new dependency or framework is needed and the user did not explicitly request it, put it in assumptions/risks/context_rules as requiring user confirmation; do not treat it as a settled architecture decision.",
+    "- Treat project_inventory.stack as repo evidence for the current baseline, not as a lock that prevents architectural brainstorming.",
+    "- You may propose frameworks, packages, libraries, build tools, databases, or test frameworks during brainstorming when they fit the user's goals; present them as options with tradeoffs until the user chooses.",
+    "- Never recommend a framework, package, library, build tool, database, or test framework because it is installed globally or available on the user's machine.",
+    "- Prefer already-declared dependencies when the user wants to extend the current repo. If you propose a new dependency, label it as requiring confirmation before it becomes handoff scope.",
+    "- Before preview_plan or generated tasks, any new framework/library choice must be explicitly requested by the user or listed as a pending decision/question instead of a settled implementation instruction.",
     "- Prefer small, isolated handoffs with explicit allowed_paths and acceptance_contract.",
     "- Do not plan worker execution; this product only writes handoff artifacts in MVP 1.0.",
     "- Do not include secrets, token values, or ignored file contents.",

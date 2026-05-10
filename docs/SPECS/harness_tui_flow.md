@@ -37,9 +37,10 @@ automacao, smoke e debugging.
 - Providers sao fronteira de autenticacao; modelos sao unidade de roteamento.
 - O banco comparativo de modelos e quase interno, mas IDs e selecao precisam ser
   visiveis durante onboarding.
-- O ambiente local nao define stack de produto. Frameworks e bibliotecas devem
-  vir de manifests/configs do repo ou de pedido explicito do usuario; sugestao
-  nova precisa virar decisao pendente de confirmacao.
+- O ambiente local nao define stack de produto. O planner pode brainstormar
+  frameworks e bibliotecas livremente com tradeoffs, mas nao pode transformar
+  algo instalado no PC em decisao implicita; escolha nova precisa ser confirmada
+  antes de virar handoff.
 - Handoffs devem ser completos o suficiente para outro agente executar sem
   depender da memoria da conversa.
 - MVP 1.0 planeja e gera handoffs; nao executa workers.
@@ -99,7 +100,8 @@ automacao, smoke e debugging.
   de competirem com o painel principal do chat.
 - O chat comeca por texto livre. Campos estruturados viram schema interno do
   workflow agentico; o planner deve inferir lacunas de forma conservadora e so
-  perguntar ao usuario quando estiver realmente bloqueado.
+  pedir preview quando produto, stack, escopo, validacao e restricoes estiverem
+  suficientemente definidos.
 - `blueprint plan` monta preview de task graph/modelo por task e pede
   confirmacao antes de persistir handoffs no modo interativo.
 - Quando o planner considera o estado pronto para handoff, ele devolve

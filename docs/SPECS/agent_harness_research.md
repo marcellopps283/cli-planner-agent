@@ -26,8 +26,9 @@ partir de leitura de docs e codigo publico de ferramentas agenticas.
   restricoes e padroes existentes. O workflow agentico deve alimentar o planner
   com inventario real de arquivos e preferir paths concretos nos handoffs.
 - O inventario real e o repo, nao a maquina do usuario. CLIs, frameworks ou
-  libs instalados globalmente nao devem virar recomendacao automatica de stack;
-  dependencia nova precisa ser confirmada pelo usuario.
+  libs instalados globalmente nao devem virar recomendacao automatica de stack.
+  Ainda assim, o planner precisa poder brainstormar alternativas novas com
+  tradeoffs; elas so viram handoff depois de escolha/confirmacao do usuario.
 - Codex exec e Gemini headless sao pensados para automacao e saidas
   estruturadas. O Blueprint deve tratar JSON/schema, ultima mensagem, retries e
   exit codes como parte do adapter, e nao como detalhe de UI.
