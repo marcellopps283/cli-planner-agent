@@ -848,7 +848,7 @@ function resolveDraftModelSelection(
         return {
           model: bestCapableEntry.model,
           adjustedFrom: model.id,
-          adjustmentReason: `suggested model is below the capability floor (${formatRoutingCapability(
+          adjustmentReason: `suggested model is below the adequacy floor (${formatRoutingCapability(
             selectedEntry,
           )}; required fit>=${formatScore(minimumFitForTask(fit, riskLevel))} and non-utility tier for risky non-tiny work)`,
         };
@@ -1077,7 +1077,7 @@ function resolveBestCapableRankedEntry(
   }
 
   throw new Error(
-    `No capable active model for risk ${riskLevel} ${fit} task. Best candidate ${
+    `No adequate active model for risk ${riskLevel} ${fit} task. Best candidate ${
       bestEntry.model.id
     } has fit=${formatScore(bestEntry.fitScore)} tier=${
       bestEntry.model.tier

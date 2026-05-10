@@ -1,11 +1,11 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_MODEL_REGISTRY } from "../src/models.js";
-import { previewBlueprintPlan, type PlanAnswers, type PlannerDraft } from "../src/plan.js";
+import { generateBlueprintPlan, previewBlueprintPlan, type PlanAnswers, type PlannerDraft } from "../src/plan.js";
 import { initPlannerProfile } from "../src/profile.js";
 import { runTuiAction } from "../src/tui.js";
 
@@ -92,7 +92,7 @@ describe("fake idea workflow evaluations", () => {
     expect(prompt).toContain("Do not force a plan too early");
   });
 
-  it("routes fake implementation ideas to capable models by complexity", async () => {
+  it("routes fake implementation ideas to adequate suggested_model values by subtask complexity", async () => {
     const root = await makeEvalProject();
     await initPlannerProfile({
       root,
@@ -123,6 +123,30 @@ describe("fake idea workflow evaluations", () => {
         expectModelCapable(alternative, draftTask.fit, previewTask!.riskLevel);
       }
     }
+  });
+
+  it("writes corrected suggested_model values into generated handoffs", async () => {
+    const root = await makeEvalProject();
+    await initPlannerProfile({
+      root,
+      providers: ["openai", "google"],
+      plannerProvider: "openai",
+      plannerModel: "gpt-5.5",
+    });
+
+    const result = await generateBlueprintPlan({
+      root,
+      answers: makeEvalAnswers(),
+      draft: makeMixedComplexityDraft(),
+    });
+    const routingTask = await readFile(path.join(root, ".blueprint", "tasks", "004-routing-contract.md"), "utf8");
+
+    expect(result.taskIds).toContain("task-004-routing-contract");
+    expect(routingTask).toContain("suggested_model: gpt-5.5");
+    expect(routingTask).toContain("<suggested_model>\ngpt-5.5 (openai)\n</suggested_model>");
+    expect(routingTask).not.toContain("suggested_model: gemini-3.1-flash-lite-preview");
+    expect(routingTask).not.toContain("suggested_model: gpt-5.4-nano");
+    expect(routingTask).toContain("Routing guard changed suggested_model from gemini-3.1-flash-lite-preview to gpt-5.5");
   });
 
   it("upgrades within a google-only pool instead of leaking to excluded providers", async () => {
@@ -158,7 +182,7 @@ describe("fake idea workflow evaluations", () => {
     );
   });
 
-  it("refuses high-risk fake tasks when the selected pool has no capable model", async () => {
+  it("refuses high-risk fake subtasks when every active model would be an inadequate suggestion", async () => {
     const root = await makeEvalProject();
     await initPlannerProfile({
       root,
@@ -184,7 +208,7 @@ describe("fake idea workflow evaluations", () => {
           ],
         },
       }),
-    ).rejects.toThrow("No capable active model for risk 9 architecture task");
+    ).rejects.toThrow("No adequate active model for risk 9 architecture task");
   });
 });
 
@@ -220,12 +244,12 @@ async function makeEvalProject(): Promise<string> {
 function makeEvalAnswers(): PlanAnswers {
   return {
     projectSummary: "A TypeScript CLI planner-agent that generates AI handoff artifacts.",
-    objective: "Evaluate fake user ideas and route each planned task to a capable model.",
+    objective: "Evaluate fake user ideas and route each planned subtask to an adequate suggested_model.",
     successCriteria: [
       "Brainstorming stays conversational until decisions are confirmed.",
-      "Simple edits use cheap capable models.",
+      "Simple edits use cheap adequate models.",
       "High-risk architecture tasks use frontier or strong specialized models.",
-      "The planner refuses handoffs when the selected pool has no capable model.",
+      "The planner refuses handoffs when every selected model would be inadequate for the subtask.",
     ],
     constraints: ["Do not use models outside the selected active pool."],
     outOfScope: ["Executing worker tasks directly."],
