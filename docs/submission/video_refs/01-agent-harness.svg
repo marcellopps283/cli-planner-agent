@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070a10"/>
+      <stop offset="0.55" stop-color="#111827"/>
+      <stop offset="1" stop-color="#050608"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="76%" cy="18%" r="58%">
+      <stop offset="0" stop-color="#5eead4" stop-opacity="0.28"/>
+      <stop offset="0.52" stop-color="#5eead4" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#5eead4" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#halo)"/>
+  <g opacity="0.16" stroke="#273244" stroke-width="1">
+    <path d="M0 120H1600M0 240H1600M0 360H1600M0 480H1600M0 600H1600M0 720H1600M0 840H1600"/>
+    <path d="M120 0V900M320 0V900M520 0V900M720 0V900M920 0V900M1120 0V900M1320 0V900M1520 0V900"/>
+  </g>
+  <g transform="translate(110 100)">
+    <rect width="68" height="68" rx="14" fill="#14332f" stroke="#5eead4" stroke-width="2"/>
+    <text x="34" y="44" text-anchor="middle" fill="#dffff9" font-family="Menlo, Consolas, monospace" font-size="28" font-weight="700">bp</text>
+    <text x="92" y="45" fill="#eef4ff" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="750">Blueprint Planner-Agent</text>
+  </g>
+  <g transform="translate(110 245)">
+    <text fill="#eef4ff" font-family="Inter, Arial, sans-serif" font-size="74" font-weight="820">
+      <tspan x="0" y="0">Plan first.</tspan>
+      <tspan x="0" y="88">Route smarter.</tspan>
+      <tspan x="0" y="176">Ship with agents.</tspan>
+    </text>
+    <text x="0" y="258" fill="#c8d6e8" font-family="Inter, Arial, sans-serif" font-size="28">
+      Terminal AI harness for coding agents.
+    </text>
+  </g>
+  <g transform="translate(940 185)" filter="url(#shadow)">
+    <rect width="560" height="470" rx="18" fill="#111622" stroke="#273244" stroke-width="2"/>
+    <rect width="560" height="56" rx="18" fill="#0d111a"/>
+    <path d="M0 56H560" stroke="#273244" stroke-width="2"/>
+    <text x="28" y="36" fill="#9aa8bd" font-family="Menlo, Consolas, monospace" font-size="17">$ blueprint</text>
+    <g transform="translate(28 92)" font-family="Menlo, Consolas, monospace">
+      <rect width="504" height="70" rx="10" fill="#162033" stroke="#315077"/>
+      <text x="18" y="30" fill="#7db7ff" font-size="18">project</text>
+      <text x="18" y="54" fill="#eef4ff" font-size="19">/work/cli-planner-agent</text>
+      <rect y="92" width="504" height="70" rx="10" fill="#171e2b" stroke="#273244"/>
+      <text x="18" y="122" fill="#5eead4" font-size="18">planner</text>
+      <text x="18" y="146" fill="#eef4ff" font-size="19">gpt-5.5 / high reasoning</text>
+      <rect y="184" width="236" height="92" rx="10" fill="#171e2b" stroke="#273244"/>
+      <text x="18" y="216" fill="#ffd166" font-size="18">providers</text>
+      <text x="18" y="246" fill="#eef4ff" font-size="18">OpenAI Claude Gemini</text>
+      <rect x="268" y="184" width="236" height="92" rx="10" fill="#171e2b" stroke="#273244"/>
+      <text x="286" y="216" fill="#ffd166" font-size="18">output</text>
+      <text x="286" y="246" fill="#eef4ff" font-size="18">.blueprint/</text>
+      <rect y="308" width="504" height="44" rx="9" fill="#14332f" stroke="#5eead4"/>
+      <text x="18" y="337" fill="#dffff9" font-size="18">Ask anything about the project...</text>
+    </g>
+  </g>
+  <text x="110" y="815" fill="#9aa8bd" font-family="Inter, Arial, sans-serif" font-size="24">Reference frame 1: product hero and terminal harness</text>
+</svg>
