@@ -48,6 +48,8 @@ AI Agents & Agentic Workflows
 - GitHub repository: <https://github.com/marcellopps283/cli-planner-agent>
 - Demo page: <https://marcellopps283.github.io/cli-planner-agent/>
 - Cover image: <https://marcellopps283.github.io/cli-planner-agent/submission/cover.png>
+- Pitch deck: <https://marcellopps283.github.io/cli-planner-agent/submission/Blueprint-Planner-Agent-Pitch-Deck.pptx>
+- Pitch deck HTML: <https://marcellopps283.github.io/cli-planner-agent/submission/pitch_deck.html>
 - Video: `TODO: upload final demo video and paste link`
 
 ## Demo Commands

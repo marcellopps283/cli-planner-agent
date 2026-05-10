@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blueprint Planner-Agent Pitch Deck</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #070a10;
+        --panel: #111622;
+        --panel-2: #171e2b;
+        --text: #eef4ff;
+        --muted: #a7b4c8;
+        --line: #273244;
+        --cyan: #5eead4;
+        --blue: #7db7ff;
+        --amber: #ffd166;
+        --green: #8cffb7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 78% 12%, rgba(94, 234, 212, 0.13), transparent 36rem),
+          linear-gradient(145deg, #070a10 0%, #101827 58%, #050608 100%);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .deck {
+        display: grid;
+        gap: 36px;
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 36px 0;
+      }
+
+      .slide {
+        position: relative;
+        overflow: hidden;
+        min-height: 664px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(17, 22, 34, 0.94);
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+        page-break-after: always;
+      }
+
+      .slide::after {
+        position: absolute;
+        right: -180px;
+        top: -240px;
+        width: 620px;
+        height: 620px;
+        border-radius: 50%;
+        background: rgba(94, 234, 212, 0.08);
+        content: "";
+      }
+
+      .inner {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        height: 100%;
+        min-height: 664px;
+        padding: 56px 64px;
+      }
+
+      .two-col {
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 42px;
+        align-items: center;
+      }
+
+      .stack {
+        align-content: center;
+        gap: 24px;
+      }
+
+      .eyebrow {
+        color: var(--cyan);
+        font: 700 15px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 10ch;
+        font-size: 78px;
+        line-height: 0.92;
+      }
+
+      h2 {
+        font-size: 58px;
+        line-height: 1;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 25px;
+        line-height: 1.45;
+      }
+
+      ul,
+      ol {
+        margin: 0;
+        padding-left: 28px;
+        color: #dce6f5;
+        font-size: 27px;
+        line-height: 1.55;
+      }
+
+      li {
+        margin: 8px 0;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        color: var(--text);
+        font-size: 25px;
+        font-weight: 780;
+      }
+
+      .mark {
+        display: grid;
+        width: 54px;
+        height: 54px;
+        place-items: center;
+        border: 1px solid rgba(94, 234, 212, 0.55);
+        border-radius: 8px;
+        background: rgba(94, 234, 212, 0.11);
+        color: var(--cyan);
+        font: 700 24px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .tagline {
+        max-width: 860px;
+        color: #cbd8ea;
+        font-size: 30px;
+      }
+
+      .terminal {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #0f141d;
+      }
+
+      .bar {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+        padding: 13px 18px;
+        background: #0d111a;
+        color: var(--muted);
+        font: 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .term-body {
+        padding: 24px;
+        font: 20px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .line {
+        display: block;
+        color: #dce6f5;
+      }
+
+      .accent {
+        color: var(--cyan);
+      }
+
+      .amber {
+        color: var(--amber);
+      }
+
+      .blue {
+        color: var(--blue);
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 20px;
+        background: var(--panel-2);
+      }
+
+      .card strong {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--cyan);
+        font-size: 23px;
+      }
+
+      .card span {
+        color: var(--muted);
+        font-size: 19px;
+        line-height: 1.45;
+      }
+
+      .flow {
+        display: grid;
+        gap: 14px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 54px 1fr;
+        gap: 16px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        background: var(--panel-2);
+      }
+
+      .num {
+        display: grid;
+        width: 46px;
+        height: 46px;
+        place-items: center;
+        border: 1px solid rgba(94, 234, 212, 0.55);
+        border-radius: 8px;
+        color: var(--cyan);
+        font: 700 20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .step span {
+        color: #dce6f5;
+        font-size: 24px;
+      }
+
+      .matrix {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+
+      .model {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 18px;
+        background: #0f141d;
+      }
+
+      .model h3 {
+        margin: 0 0 12px;
+        color: var(--cyan);
+        font-size: 21px;
+      }
+
+      .model p {
+        font-size: 18px;
+      }
+
+      .image {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .footer {
+        position: absolute;
+        bottom: 26px;
+        left: 64px;
+        z-index: 2;
+        color: #748197;
+        font: 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      code {
+        color: var(--amber);
+      }
+
+      @media print {
+        body {
+          background: #070a10;
+        }
+
+        .deck {
+          width: 100%;
+          gap: 0;
+          padding: 0;
+        }
+
+        .slide {
+          width: 100vw;
+          min-height: 100vh;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck">
+      <section class="slide">
+        <div class="inner stack">
+          <div class="brand"><span class="mark">bp</span> Blueprint Planner-Agent</div>
+          <h1>Plan first. Route smarter. Ship with agents.</h1>
+          <p class="tagline">
+            Terminal AI planning harness that turns vague software ideas into dependency graphs,
+            model-routed handoffs, and validation contracts for coding agents.
+          </p>
+          <div class="terminal">
+            <div class="bar"><span>$ blueprint</span><span>AI Agents & Agentic Workflows</span></div>
+            <div class="term-body">
+              <span class="line"><span class="accent">planner</span> gpt-5.5 / high reasoning</span>
+              <span class="line"><span class="blue">providers</span> OpenAI Codex · Claude Code · Gemini CLI</span>
+              <span class="line"><span class="amber">output</span> .blueprint/tasks/*.md</span>
+            </div>
+          </div>
+          <div class="footer">github.com/marcellopps283/cli-planner-agent</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner two-col">
+          <div class="stack">
+            <div class="eyebrow">Problem</div>
+            <h2>AI agents execute fast. Planning still breaks.</h2>
+            <p>
+              Large AI-assisted coding projects fail when the first prompt is vague and the work is not sliced cleanly.
+            </p>
+          </div>
+          <ul>
+            <li>Context drifts across chats and tools.</li>
+            <li>Tasks overlap or miss dependencies.</li>
+            <li>Expensive models get used for cheap work.</li>
+            <li>Weak models get assigned to high-risk architecture.</li>
+            <li>Outputs are hard to audit before code changes begin.</li>
+          </ul>
+          <div class="footer">01 / Problem</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner two-col">
+          <div class="stack">
+            <div class="eyebrow">Solution</div>
+            <h2>The planning brain before worker agents start.</h2>
+            <p>
+              Blueprint runs an investigative terminal chat, validates missing requirements, routes work to exact models,
+              and writes handoffs that other agents can execute.
+            </p>
+          </div>
+          <div class="cards">
+            <div class="card"><strong>Chat-first planning</strong><span>Brainstorms and fills gaps before architecture is locked.</span></div>
+            <div class="card"><strong>Compact context</strong><span>Reads project inventory instead of dumping the entire repo.</span></div>
+            <div class="card"><strong>Task graph</strong><span>Creates dependency-aware work units with clear blocking rules.</span></div>
+            <div class="card"><strong>Worker handoffs</strong><span>Generates XML task prompts, model choices, and acceptance contracts.</span></div>
+          </div>
+          <div class="footer">02 / Solution</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner two-col">
+          <div class="stack">
+            <div class="eyebrow">Workflow</div>
+            <h2>One terminal surface from setup to handoff.</h2>
+            <p>The harness keeps configuration, brainstorming, preview, and artifact generation in one flow.</p>
+          </div>
+          <div class="flow">
+            <div class="step"><span class="num">1</span><span>Onboard project, providers, models, and reasoning effort.</span></div>
+            <div class="step"><span class="num">2</span><span>Brainstorm until scope, constraints, and validation are clear.</span></div>
+            <div class="step"><span class="num">3</span><span>Preview dependency graph and model assignments.</span></div>
+            <div class="step"><span class="num">4</span><span>Generate architecture docs, XML tasks, and integration guide.</span></div>
+          </div>
+          <div class="footer">03 / Agentic workflow</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner stack">
+          <div class="eyebrow">Product Experience</div>
+          <h2>Planning chat, not a rigid form.</h2>
+          <img class="image" src="./video_refs/02-planning-chat.png" alt="Blueprint planning chat reference" />
+          <div class="footer">04 / Terminal harness UX</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner stack">
+          <div class="eyebrow">Model Routing</div>
+          <h2>Routes by exact model, not just provider.</h2>
+          <div class="matrix">
+            <div class="model">
+              <h3>Risk & Fit</h3>
+              <p>Architecture, security, and multi-file work require stronger reasoning.</p>
+            </div>
+            <div class="model">
+              <h3>Cost & Latency</h3>
+              <p>Small documentation or formatting tasks can use cheaper, faster models.</p>
+            </div>
+            <div class="model">
+              <h3>Context & Effort</h3>
+              <p>Model context window and reasoning settings are part of routing.</p>
+            </div>
+          </div>
+          <div class="terminal">
+            <div class="bar"><span>preview</span><span>task -> model -> rationale</span></div>
+            <div class="term-body">
+              <span class="line"><span class="accent">task-001</span> docs polish -> gemini flash-lite</span>
+              <span class="line"><span class="accent">task-004</span> routing contract -> gpt-5.5</span>
+              <span class="line"><span class="accent">task-006</span> integration validation -> gpt-5.5 or opus</span>
+            </div>
+          </div>
+          <div class="footer">05 / Model routing</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner stack">
+          <div class="eyebrow">Artifacts</div>
+          <h2>Versionable handoffs for worker agents.</h2>
+          <img class="image" src="./video_refs/03-handoff-artifacts.png" alt="Blueprint generated handoff artifacts" />
+          <div class="footer">06 / Generated artifacts</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner two-col">
+          <div class="stack">
+            <div class="eyebrow">MVP Status</div>
+            <h2>Working planner-only harness.</h2>
+            <p>Version 1 is focused on planning and handoff generation. It does not execute worker agents automatically.</p>
+          </div>
+          <ul>
+            <li>TypeScript CLI/TUI with Ink and Commander.</li>
+            <li>OpenAI/Codex, Claude Code, and Gemini CLI integration paths.</li>
+            <li>Provider registry and selected model pool.</li>
+            <li>Deterministic and LLM planning engines.</li>
+            <li>Handoff linting, export, and smart revise.</li>
+            <li>CI passing with 111 tests.</li>
+          </ul>
+          <div class="footer">07 / What works now</div>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="inner two-col">
+          <div class="stack">
+            <div class="eyebrow">Roadmap</div>
+            <h2>From planner to supervisor.</h2>
+            <p>
+              Blueprint 2.0 can run workers from the same terminal harness, track progress, handle failures, and
+              integrate results.
+            </p>
+          </div>
+          <div class="terminal">
+            <div class="bar"><span>vision</span><span>single AI development cockpit</span></div>
+            <div class="term-body">
+              <span class="line"><span class="accent">1.0</span> plan -> route -> handoff</span>
+              <span class="line"><span class="blue">2.0</span> supervise -> run workers -> integrate</span>
+              <span class="line"><span class="amber">demo</span> marcellopps283.github.io/cli-planner-agent</span>
+              <span class="line"><span class="amber">repo</span> github.com/marcellopps283/cli-planner-agent</span>
+            </div>
+          </div>
+          <div class="footer">08 / Roadmap</div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
