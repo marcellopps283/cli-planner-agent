@@ -1,9 +1,36 @@
-import { runProviderPrompt, type ProviderPromptOptions, type ProviderPromptResult } from "./providerPrompt.js";
+import {
+  runProviderPrompt,
+  type ProviderPromptEvent,
+  type ProviderPromptOptions,
+  type ProviderPromptResult,
+  type ProviderPromptStreamName,
+} from "./providerPrompt.js";
 import type { ProviderId } from "./schemas.js";
 
 const DEFAULT_REPAIR_ATTEMPTS = 1;
 
 export type PlannerPromptRunner = (options: ProviderPromptOptions) => Promise<ProviderPromptResult>;
+
+export interface PlannerEngineStreamEvent {
+  type:
+    | "attempt_start"
+    | "provider_output"
+    | "provider_exit"
+    | "parse_start"
+    | "parse_ok"
+    | "parse_invalid"
+    | "repair_start"
+    | "provider_failed";
+  provider: ProviderId;
+  model: string;
+  attempt: number;
+  repair: boolean;
+  message: string;
+  detail?: string;
+  stream?: ProviderPromptStreamName;
+}
+
+export type PlannerEngineStreamEventHandler = (event: PlannerEngineStreamEvent) => void;
 
 export interface PlannerEngineAttempt {
   provider: ProviderId;
@@ -23,6 +50,7 @@ export interface RunLlmPlannerEngineOptions<TDraft> {
   timeoutMs?: number;
   repairAttempts?: number;
   runner?: PlannerPromptRunner;
+  onEvent?: PlannerEngineStreamEventHandler;
 }
 
 export interface LlmPlannerEngineResult<TDraft> {
@@ -53,6 +81,18 @@ export async function runLlmPlannerEngine<TDraft>(
 
   for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
     const repair = attemptIndex > 0;
+    const attempt = attemptIndex + 1;
+
+    emitPlannerEngineEvent(options, {
+      type: "attempt_start",
+      provider: options.provider,
+      model: options.model,
+      attempt,
+      repair,
+      message: repair
+        ? `Asking ${options.provider}/${options.model} to repair the planner JSON.`
+        : `Calling ${options.provider}/${options.model} for planner workflow state.`,
+    });
 
     try {
       const result = await runner({
@@ -61,9 +101,21 @@ export async function runLlmPlannerEngine<TDraft>(
         reasoningEffort: options.reasoningEffort,
         prompt,
         timeoutMs: options.timeoutMs,
+        onEvent: (event) => {
+          emitPlannerEngineEvent(options, mapProviderEventToPlannerEvent(event, attempt, repair, options.model));
+        },
       });
 
       lastResponse = result.response;
+      emitPlannerEngineEvent(options, {
+        type: "parse_start",
+        provider: options.provider,
+        model: options.model,
+        attempt,
+        repair,
+        message: `Validating planner response from ${options.provider}/${options.model}.`,
+        detail: `response_chars=${result.response.length}`,
+      });
 
       try {
         const draft = options.parseDraft(result.response);
@@ -71,9 +123,18 @@ export async function runLlmPlannerEngine<TDraft>(
         attempts.push({
           provider: options.provider,
           model: options.model,
-          attempt: attemptIndex + 1,
+          attempt,
           repair,
           status: "ok",
+          detail: `response_chars=${result.response.length}`,
+        });
+        emitPlannerEngineEvent(options, {
+          type: "parse_ok",
+          provider: options.provider,
+          model: options.model,
+          attempt,
+          repair,
+          message: `Planner response accepted from ${options.provider}/${options.model}.`,
           detail: `response_chars=${result.response.length}`,
         });
 
@@ -89,9 +150,18 @@ export async function runLlmPlannerEngine<TDraft>(
         attempts.push({
           provider: options.provider,
           model: options.model,
-          attempt: attemptIndex + 1,
+          attempt,
           repair,
           status: "invalid",
+          detail,
+        });
+        emitPlannerEngineEvent(options, {
+          type: "parse_invalid",
+          provider: options.provider,
+          model: options.model,
+          attempt,
+          repair,
+          message: `Planner response failed validation: ${detail}`,
           detail,
         });
 
@@ -100,6 +170,15 @@ export async function runLlmPlannerEngine<TDraft>(
         }
 
         prompt = buildPlannerRepairPrompt(options.prompt, result.response, detail);
+        emitPlannerEngineEvent(options, {
+          type: "repair_start",
+          provider: options.provider,
+          model: options.model,
+          attempt: attempt + 1,
+          repair: true,
+          message: `Preparing repair prompt for ${options.provider}/${options.model}.`,
+          detail,
+        });
       }
     } catch (error) {
       if (error instanceof PlannerEngineError) {
@@ -111,9 +190,18 @@ export async function runLlmPlannerEngine<TDraft>(
       attempts.push({
         provider: options.provider,
         model: options.model,
-        attempt: attemptIndex + 1,
+        attempt,
         repair,
         status: "failed",
+        detail,
+      });
+      emitPlannerEngineEvent(options, {
+        type: "provider_failed",
+        provider: options.provider,
+        model: options.model,
+        attempt,
+        repair,
+        message: `Planner provider call failed: ${detail}`,
         detail,
       });
 
@@ -125,6 +213,57 @@ export async function runLlmPlannerEngine<TDraft>(
     `Planner failed without a usable response. Last response chars: ${lastResponse.length}.`,
     attempts,
   );
+}
+
+function mapProviderEventToPlannerEvent(
+  event: ProviderPromptEvent,
+  attempt: number,
+  repair: boolean,
+  fallbackModel: string,
+): PlannerEngineStreamEvent {
+  const model = event.model ?? fallbackModel;
+
+  if (event.type === "process_output") {
+    return {
+      type: "provider_output",
+      provider: event.provider,
+      model,
+      attempt,
+      repair,
+      stream: event.stream,
+      message: event.message,
+      detail: event.detail,
+    };
+  }
+
+  if (event.type === "process_exit") {
+    return {
+      type: "provider_exit",
+      provider: event.provider,
+      model,
+      attempt,
+      repair,
+      message: event.message,
+      detail: event.detail,
+    };
+  }
+
+  return {
+    type: "attempt_start",
+    provider: event.provider,
+    model,
+    attempt,
+    repair,
+    message: event.message,
+    detail: event.detail,
+  };
+}
+
+function emitPlannerEngineEvent(
+  options: RunLlmPlannerEngineOptions<unknown>,
+  event: PlannerEngineStreamEvent,
+): void {
+  options.onEvent?.(event);
 }
 
 export function buildPlannerRepairPrompt(originalPrompt: string, invalidResponse: string, error: string): string {

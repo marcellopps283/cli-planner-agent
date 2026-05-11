@@ -379,14 +379,24 @@ describe("blueprint tui", () => {
       recordHistory: false,
     });
 
+    const streamMessages: string[] = [];
     const result = await runTuiAction({
       root,
       actionId: "agent-workflow",
       agentRequest: "planeje um harness agentico com checkboxes validados pela IA",
-      plannerPromptRunner: async (options) => ({
-        provider: options.provider,
-        model: options.model,
-        response: JSON.stringify({
+      plannerPromptRunner: async (options) => {
+        options.onEvent?.({
+          type: "process_output",
+          provider: options.provider,
+          model: options.model,
+          stream: "stdout",
+          message: "planner is checking the active provider pool",
+        });
+
+        return {
+          provider: options.provider,
+          model: options.model,
+          response: JSON.stringify({
           schema_version: "1.0",
           user_request: "planeje um harness agentico com checkboxes validados pela IA",
           planner: {
@@ -451,9 +461,13 @@ describe("blueprint tui", () => {
             label: "Responder pergunta de escopo",
             prompt: "Responda a pergunta pendente do planner.",
           },
-        }),
-        rawOutput: "",
-      }),
+          }),
+          rawOutput: "",
+        };
+      },
+      onStreamEvent: (event) => {
+        streamMessages.push(event.message);
+      },
       recordHistory: false,
     });
     const dashboard = await loadTuiDashboard({ root });
@@ -472,6 +486,25 @@ describe("blueprint tui", () => {
         hasStartedChatWorkflow: true,
         runningAction: "agent-workflow",
         planChatDraft: { brief: "planeje um harness agentico com checkboxes validados pela IA" },
+        agentStreamEvents: [
+          {
+            id: "stream-1",
+            actionId: "agent-workflow",
+            status: "calling",
+            source: "engine",
+            message: "Calling google/gemini-3.1-pro-preview for planner workflow state.",
+            createdAt: "2026-05-11T00:00:00.000Z",
+          },
+          {
+            id: "stream-2",
+            actionId: "agent-workflow",
+            status: "streaming",
+            source: "provider",
+            message: "planner is checking the active provider pool",
+            detail: "stdout attempt 1",
+            createdAt: "2026-05-11T00:00:01.000Z",
+          },
+        ],
       }),
     );
     const fullTimelineOutput = renderToString(
@@ -494,6 +527,10 @@ describe("blueprint tui", () => {
     );
 
     expect(result.status).toBe("ok");
+    expect(streamMessages.some((message) => message.startsWith("Loaded compact project context:"))).toBe(true);
+    expect(streamMessages).toContain("planner is checking the active provider pool");
+    expect(streamMessages).toContain("Validating planner response from google/gemini-3.1-pro-preview.");
+    expect(streamMessages).toContain("Planner turn accepted: Understanding project.");
     expect(result.summary).toContain("Understanding project");
     expect(result.lines).toContain("check done understand_request Entender pedido inicial");
     expect(dashboard.agentState?.checklist[0]?.status).toBe("done");
@@ -516,6 +553,9 @@ describe("blueprint tui", () => {
     expect(clippedTimelineOutput).not.toContain("planeje um harness agentico");
     expect(clippedTimelineOutput).toContain("Artifact: Updated Plan");
     expect(runningOutput).toContain("Thinking");
+    expect(runningOutput).toContain("Live Agent Activity");
+    expect(runningOutput).toContain("planner is checking the active provider");
+    expect(runningOutput).toContain("pool - stdout attempt 1");
     expect(runningOutput).not.toContain("Artifact: Updated Plan");
     expect(runningOutput).not.toContain("Entendi que voce quer um harness agentico");
     expect(runningOutput).not.toContain("building context");

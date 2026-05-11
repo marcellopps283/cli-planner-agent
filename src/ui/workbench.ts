@@ -29,6 +29,8 @@ import {
   type TuiActionId,
   type TuiActionResult,
   type TuiDashboard,
+  type TuiStreamEvent,
+  type TuiStreamEventStatus,
 } from "../tui.js";
 
 const h = createElement;
@@ -64,6 +66,7 @@ export function WorkbenchSurface({
   slashCommandScrollOffset = 0,
   actionResult,
   isolateCurrentRun = false,
+  agentStreamEvents = [],
 }: {
   dashboard: TuiDashboard;
   runningAction?: TuiActionId;
@@ -85,6 +88,7 @@ export function WorkbenchSurface({
   slashCommandScrollOffset?: number;
   actionResult?: TuiActionResult;
   isolateCurrentRun?: boolean;
+  agentStreamEvents?: TuiStreamEvent[];
 }): React.ReactElement {
   const showSlashMenu = chatCommandInput.trimStart().startsWith("/");
   const { columns, rows } = useWindowSize();
@@ -110,6 +114,7 @@ export function WorkbenchSurface({
         h(WorkbenchFeed, {
           dashboard,
           actionResult,
+          agentStreamEvents,
           runningAction,
           planChatStep,
           planChatDraft,
@@ -184,17 +189,28 @@ export function WorkbenchFeed({
   maxRows,
   timelineWidth = 92,
   isolateCurrentRun = false,
+  agentStreamEvents = [],
 }: {
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
+  agentStreamEvents?: TuiStreamEvent[];
   planChatStep: PlanChatStep;
   planChatDraft: PlanChatDraft;
   maxRows?: number;
   timelineWidth?: number;
   isolateCurrentRun?: boolean;
 }): React.ReactElement {
-  const entries = buildTimelineFeedItems({ dashboard, actionResult, runningAction, planChatStep, planChatDraft, timelineWidth, isolateCurrentRun });
+  const entries = buildTimelineFeedItems({
+    dashboard,
+    actionResult,
+    runningAction,
+    agentStreamEvents,
+    planChatStep,
+    planChatDraft,
+    timelineWidth,
+    isolateCurrentRun,
+  });
   const visibleEntries = selectVisibleTimelineEntries(entries, maxRows);
   const visibleRows = visibleEntries.reduce((total, item) => total + item.rows, 0);
   const topSpacerRows = maxRows ? Math.max(maxRows - visibleRows, 0) : 0;
@@ -217,6 +233,7 @@ function buildTimelineFeedItems({
   dashboard,
   actionResult,
   runningAction,
+  agentStreamEvents,
   planChatStep,
   planChatDraft,
   timelineWidth,
@@ -225,6 +242,7 @@ function buildTimelineFeedItems({
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
+  agentStreamEvents: TuiStreamEvent[];
   planChatStep: PlanChatStep;
   planChatDraft: PlanChatDraft;
   timelineWidth: number;
@@ -301,6 +319,14 @@ function buildTimelineFeedItems({
   }
 
   if (runningAction === "agent-workflow") {
+    if (agentStreamEvents.length > 0) {
+      entries.push({
+        key: "live-agent-activity",
+        rows: estimateTimelineRows(agentStreamEvents.slice(-8).map((event) => event.message), timelineWidth),
+        element: h(LiveAgentActivityBlock, { key: "live-agent-activity", events: agentStreamEvents }),
+      });
+    }
+
     const lines = ["Thinking. The planner will narrate its own findings when this turn returns."];
     entries.push({
       key: "thinking",
@@ -406,6 +432,20 @@ export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard })
   );
 }
 
+export function LiveAgentActivityBlock({ events }: { events: TuiStreamEvent[] }): React.ReactElement {
+  const visibleEvents = events.slice(-8);
+
+  return h(InlineArtifactBlock, {
+    title: "Live Agent Activity",
+    subtitle: "real provider and planner events",
+    lines: visibleEvents.map((event): TimelineLine => ({
+      key: event.id,
+      color: streamEventColor(event.status),
+      text: `${streamEventIcon(event.status)} ${event.message}${event.detail ? ` - ${truncateLine(event.detail, 70)}` : ""}`,
+    })),
+  });
+}
+
 function chatTranscriptMessages(dashboard: TuiDashboard): ChatTranscriptMessage[] {
   const sessionMessages = dashboard.agentSession?.messages ?? [];
 
@@ -463,6 +503,54 @@ export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowS
         ]
       : []),
   );
+}
+
+function streamEventIcon(status: TuiStreamEventStatus): string {
+  if (status === "ready") {
+    return "[x]";
+  }
+
+  if (status === "failed") {
+    return "[!]";
+  }
+
+  if (status === "repairing") {
+    return "[~]";
+  }
+
+  if (status === "validating") {
+    return "[v]";
+  }
+
+  if (status === "streaming") {
+    return "[>]";
+  }
+
+  if (status === "calling") {
+    return "[→]";
+  }
+
+  return "[.]";
+}
+
+function streamEventColor(status: TuiStreamEventStatus): TimelineColor {
+  if (status === "ready") {
+    return "green";
+  }
+
+  if (status === "failed") {
+    return "red";
+  }
+
+  if (status === "repairing" || status === "validating") {
+    return "yellow";
+  }
+
+  if (status === "streaming" || status === "calling") {
+    return "cyan";
+  }
+
+  return "gray";
 }
 
 function plannerAgentStateBlockTextLines(state: PlannerAgentWorkflowState): string[] {

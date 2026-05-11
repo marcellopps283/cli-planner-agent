@@ -20,7 +20,7 @@ import { inspectProject, type ProjectDoctorReport } from "./doctor.js";
 import { exportBlueprint, type ExportBlueprintResult } from "./export.js";
 import { lintBlueprint, type BlueprintLintResult } from "./lint.js";
 import { DEFAULT_MODEL_REGISTRY } from "./models.js";
-import { runLlmPlannerEngine, type PlannerPromptRunner } from "./plannerEngine.js";
+import { runLlmPlannerEngine, type PlannerEngineStreamEvent, type PlannerPromptRunner } from "./plannerEngine.js";
 import { extractJsonObject } from "./providerPrompt.js";
 import {
   generateBlueprintPlan,
@@ -362,6 +362,25 @@ export interface TuiActionResult {
   sessionPath?: string;
 }
 
+export type TuiStreamEventStatus =
+  | "preparing"
+  | "calling"
+  | "streaming"
+  | "validating"
+  | "repairing"
+  | "ready"
+  | "failed";
+
+export interface TuiStreamEvent {
+  id: string;
+  actionId: TuiActionId;
+  status: TuiStreamEventStatus;
+  source: "engine" | "provider" | "planner";
+  message: string;
+  detail?: string;
+  createdAt: string;
+}
+
 interface PlanContinuation {
   type: "preview" | "apply" | "fallback";
   engine: PlanEngine;
@@ -392,6 +411,7 @@ export interface RunTuiActionOptions {
   liveTimeoutMs?: number;
   providerChecker?: (live: boolean) => Promise<ProviderDoctorResult[]>;
   recordHistory?: boolean;
+  onStreamEvent?: (event: TuiStreamEvent) => void;
 }
 
 export const TuiSessionRecordSchema = z.object({
@@ -905,6 +925,12 @@ async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<
 
   const registryResult = await loadModelRegistryForProfile(options.root, profile);
   const registry = registryResult.registry?.models ?? DEFAULT_MODEL_REGISTRY;
+  emitTuiStreamEvent(options, {
+    actionId: "agent-workflow",
+    status: "preparing",
+    source: "planner",
+    message: `Loaded compact project context: ${dashboard.doctor.fileCount} file(s), ${dashboard.doctor.manifests.length} manifest(s), ${registry.length} registry model(s).`,
+  });
   const requestedPlannerModel = options.plannerModel
     ? registry.find((model) => model.id === options.plannerModel)
     : undefined;
@@ -922,6 +948,13 @@ async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<
     registry,
     reasoningEffort,
   });
+  emitTuiStreamEvent(options, {
+    actionId: "agent-workflow",
+    status: "preparing",
+    source: "planner",
+    message: `Prepared planner prompt for ${plannerProvider}/${plannerModel}.`,
+    detail: `prompt_chars=${prompt.length}`,
+  });
   let result: Awaited<ReturnType<typeof runLlmPlannerEngine<PlannerAgentWorkflowState>>>;
 
   try {
@@ -933,6 +966,9 @@ async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<
       parseDraft: parsePlannerAgentWorkflowState,
       runner: options.plannerPromptRunner,
       timeoutMs: options.liveTimeoutMs,
+      onEvent: (event) => {
+        emitTuiStreamEvent(options, plannerEngineEventToTuiStreamEvent("agent-workflow", event));
+      },
     });
   } catch (error) {
     return buildAgentWorkflowFallbackResult(options, error, plannerModel, request);
@@ -949,6 +985,13 @@ async function runAgentWorkflowTuiAction(options: RunTuiActionOptions): Promise<
     },
   });
   const planAnswers = parseWorkflowPlanAnswers(state);
+  emitTuiStreamEvent(options, {
+    actionId: "agent-workflow",
+    status: state.next_action.type === "preview_plan" ? "ready" : "validating",
+    source: "planner",
+    message: `Planner turn accepted: ${state.project_state.current_phase}.`,
+    detail: state.next_action.label,
+  });
 
   await writePlannerAgentSession(options.root, dashboard.agentSession, request, state);
 
@@ -1034,6 +1077,58 @@ async function buildAgentWorkflowFallbackResult(
       `error ${message}`,
       `failed_model ${failedModel ?? "unknown"}`,
     ],
+  };
+}
+
+function plannerEngineEventToTuiStreamEvent(
+  actionId: TuiActionId,
+  event: PlannerEngineStreamEvent,
+): TuiStreamEvent {
+  return makeTuiStreamEvent({
+    actionId,
+    status: plannerEngineEventStatus(event),
+    source: event.type === "provider_output" || event.type === "provider_exit" ? "provider" : "engine",
+    message: event.message,
+    detail: event.detail ?? (event.stream ? `${event.stream} attempt ${event.attempt}` : `attempt ${event.attempt}`),
+  });
+}
+
+function plannerEngineEventStatus(event: PlannerEngineStreamEvent): TuiStreamEventStatus {
+  if (event.type === "attempt_start") {
+    return "calling";
+  }
+
+  if (event.type === "provider_output" || event.type === "provider_exit") {
+    return "streaming";
+  }
+
+  if (event.type === "parse_start") {
+    return "validating";
+  }
+
+  if (event.type === "repair_start" || event.type === "parse_invalid") {
+    return "repairing";
+  }
+
+  if (event.type === "parse_ok") {
+    return "ready";
+  }
+
+  return "failed";
+}
+
+function emitTuiStreamEvent(
+  options: RunTuiActionOptions,
+  event: Omit<TuiStreamEvent, "id" | "createdAt">,
+): void {
+  options.onStreamEvent?.(makeTuiStreamEvent(event));
+}
+
+function makeTuiStreamEvent(event: Omit<TuiStreamEvent, "id" | "createdAt">): TuiStreamEvent {
+  return {
+    ...event,
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
   };
 }
 
@@ -1602,6 +1697,7 @@ export function InteractiveDashboard({
   const [lastPlanEngine, setLastPlanEngine] = useState<PlanEngine>("llm");
   const [lastPlanContinuation, setLastPlanContinuation] = useState<PlanContinuation | undefined>();
   const [lastAgentRequest, setLastAgentRequest] = useState<string | undefined>();
+  const [agentStreamEvents, setAgentStreamEvents] = useState<TuiStreamEvent[]>([]);
   const [isEditingModelPool, setIsEditingModelPool] = useState(false);
   const [modelPoolInput, setModelPoolInput] = useState("");
   const [isSelectingChatModel, setIsSelectingChatModel] = useState(false);
@@ -2760,6 +2856,7 @@ export function InteractiveDashboard({
     setPendingConfirmation(undefined);
     setRunningAction(actionId);
     setActionResult(undefined);
+    setAgentStreamEvents([]);
 
     try {
       const result = await runTuiAction({
@@ -2779,6 +2876,12 @@ export function InteractiveDashboard({
         plannerModel: options.plannerModel,
         plannerReasoningEffort: options.plannerReasoningEffort,
         apply: options.apply,
+        onStreamEvent:
+          actionId === "agent-workflow"
+            ? (event) => {
+                setAgentStreamEvents((current) => [...current, event].slice(-18));
+              }
+            : undefined,
       });
       setActionResult(shouldDisplayTuiActionResult(result) ? result : undefined);
 
@@ -2835,6 +2938,7 @@ export function InteractiveDashboard({
     selectedMainMenuIndex,
     actionResult,
     runningAction,
+    agentStreamEvents,
     pendingConfirmation,
     isEditingRevise,
     reviseInput,
@@ -2872,6 +2976,7 @@ export function BlueprintDashboard({
   selectedMainMenuIndex = 0,
   actionResult,
   runningAction,
+  agentStreamEvents = [],
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
@@ -2906,6 +3011,7 @@ export function BlueprintDashboard({
   selectedMainMenuIndex?: number;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
+  agentStreamEvents?: TuiStreamEvent[];
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
@@ -2980,6 +3086,7 @@ export function BlueprintDashboard({
         selectedMainMenuIndex,
         actionResult,
         runningAction,
+        agentStreamEvents,
         pendingConfirmation,
         isEditingRevise,
         reviseInput,
@@ -3038,6 +3145,7 @@ function ActiveView({
   selectedMainMenuIndex,
   actionResult,
   runningAction,
+  agentStreamEvents = [],
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
@@ -3073,6 +3181,7 @@ function ActiveView({
   selectedMainMenuIndex: number;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
+  agentStreamEvents?: TuiStreamEvent[];
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
@@ -3143,6 +3252,7 @@ function ActiveView({
       dashboard,
       actionResult,
       runningAction,
+      agentStreamEvents,
       pendingConfirmation,
       isEditingRevise,
       reviseInput,
@@ -3886,6 +3996,7 @@ function ActionsView({
   dashboard,
   actionResult,
   runningAction,
+  agentStreamEvents = [],
   pendingConfirmation,
   isEditingRevise,
   reviseInput,
@@ -3907,6 +4018,7 @@ function ActionsView({
   dashboard: TuiDashboard;
   actionResult?: TuiActionResult;
   runningAction?: TuiActionId;
+  agentStreamEvents?: TuiStreamEvent[];
   pendingConfirmation?: TuiActionId;
   isEditingRevise?: boolean;
   reviseInput?: string;
@@ -3957,6 +4069,7 @@ function ActionsView({
   return h(WorkbenchSurface, {
     dashboard,
     runningAction,
+    agentStreamEvents,
     pendingConfirmation,
     isEditingRevise,
     reviseInput,

@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 
 import { execa } from "execa";
 
@@ -20,6 +21,7 @@ export interface ProviderPromptOptions {
   reasoningEffort?: string;
   prompt: string;
   timeoutMs?: number;
+  onEvent?: ProviderPromptEventHandler;
 }
 
 export interface ProviderPromptResult {
@@ -28,6 +30,19 @@ export interface ProviderPromptResult {
   response: string;
   rawOutput: string;
 }
+
+export type ProviderPromptStreamName = "stdout" | "stderr";
+
+export interface ProviderPromptEvent {
+  type: "process_start" | "process_output" | "process_exit";
+  provider: ProviderId;
+  model?: string;
+  stream?: ProviderPromptStreamName;
+  message: string;
+  detail?: string;
+}
+
+export type ProviderPromptEventHandler = (event: ProviderPromptEvent) => void;
 
 export async function runProviderPrompt(options: ProviderPromptOptions): Promise<ProviderPromptResult> {
   const adapter = DEFAULT_PROVIDER_ADAPTERS.find((candidate) => candidate.id === options.provider);
@@ -99,7 +114,13 @@ export function providerPromptModelArgs(provider: ProviderId, model?: string): s
 
 async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Promise<ProviderPromptResult> {
   const outputPath = join(cwd, "last-message.txt");
-  const result = await execa(
+  emitProviderEvent(options, {
+    type: "process_start",
+    provider: "openai",
+    model: options.model,
+    message: `Starting codex exec for ${options.model ?? "default model"}.`,
+  });
+  const subprocess = execa(
     "codex",
     [
       "exec",
@@ -124,9 +145,17 @@ async function runCodexPrompt(options: ProviderPromptOptions, cwd: string): Prom
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
+  observeProviderProcessOutput(subprocess, options, "openai");
+  const result = await subprocess;
   const stdout = stringifyProviderPromptOutput(result.stdout).trim();
   const stderr = stringifyProviderPromptOutput(result.stderr).trim();
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
+  emitProviderEvent(options, {
+    type: "process_exit",
+    provider: "openai",
+    model: options.model,
+    message: `codex exec exited with code ${result.exitCode ?? "unknown"}.`,
+  });
 
   if (providerProcessFailed(result)) {
     throw new Error(`codex exec failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
@@ -164,7 +193,13 @@ async function runGeminiPromptAttempt(
   cwd: string,
   attempt: (typeof GEMINI_HEADLESS_ATTEMPTS)[number],
 ): Promise<ProviderPromptResult> {
-  const result = await execa(
+  emitProviderEvent(options, {
+    type: "process_start",
+    provider: "google",
+    model: options.model,
+    message: `Starting gemini ${attempt.approvalMode}/${attempt.outputFormat} for ${options.model ?? "default model"}.`,
+  });
+  const subprocess = execa(
     "gemini",
     [
       ...providerPromptModelArgs("google", options.model),
@@ -183,7 +218,15 @@ async function runGeminiPromptAttempt(
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
+  observeProviderProcessOutput(subprocess, options, "google");
+  const result = await subprocess;
   const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
+  emitProviderEvent(options, {
+    type: "process_exit",
+    provider: "google",
+    model: options.model,
+    message: `gemini exited with code ${result.exitCode ?? "unknown"}.`,
+  });
 
   if (providerProcessFailed(result)) {
     throw new Error(`gemini failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
@@ -207,7 +250,13 @@ async function runGeminiPromptAttempt(
 }
 
 async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Promise<ProviderPromptResult> {
-  const result = await execa(
+  emitProviderEvent(options, {
+    type: "process_start",
+    provider: "anthropic",
+    model: options.model,
+    message: `Starting claude -p for ${options.model ?? "default model"}.`,
+  });
+  const subprocess = execa(
     "claude",
     [
       "-p",
@@ -227,7 +276,15 @@ async function runClaudePrompt(options: ProviderPromptOptions, cwd: string): Pro
       timeout: options.timeoutMs ?? DEFAULT_PROVIDER_PROMPT_TIMEOUT_MS,
     },
   );
+  observeProviderProcessOutput(subprocess, options, "anthropic");
+  const result = await subprocess;
   const rawOutput = selectProviderPromptOutput(result.stdout, result.stderr);
+  emitProviderEvent(options, {
+    type: "process_exit",
+    provider: "anthropic",
+    model: options.model,
+    message: `claude exited with code ${result.exitCode ?? "unknown"}.`,
+  });
 
   if (providerProcessFailed(result)) {
     throw new Error(`claude failed: ${summarizeProviderFailure(rawOutput || providerProcessFailure(result))}`);
@@ -393,4 +450,128 @@ function summarizeProviderAttemptFailures(provider: string, errors: Array<{ labe
   return `${provider} failed after ${errors.length} headless attempt(s): ${errors
     .map((error) => `${error.label}: ${error.summary}`)
     .join(" | ")}`;
+}
+
+function observeProviderProcessOutput(
+  subprocess: {
+    stdout?: Readable | null;
+    stderr?: Readable | null;
+  },
+  options: ProviderPromptOptions,
+  provider: ProviderId,
+): void {
+  observeProviderStream(subprocess.stdout, options, provider, "stdout");
+  observeProviderStream(subprocess.stderr, options, provider, "stderr");
+}
+
+function observeProviderStream(
+  stream: Readable | null | undefined,
+  options: ProviderPromptOptions,
+  provider: ProviderId,
+  streamName: ProviderPromptStreamName,
+): void {
+  if (!stream || !options.onEvent) {
+    return;
+  }
+
+  stream.setEncoding("utf8");
+  let buffer = "";
+
+  stream.on("data", (chunk: string | Buffer) => {
+    buffer += String(chunk);
+    const lines = buffer.split(/\r?\n/u);
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      emitProviderOutputLine(options, provider, streamName, line);
+    }
+
+    if (buffer.length > 800) {
+      emitProviderOutputLine(options, provider, streamName, buffer);
+      buffer = "";
+    }
+  });
+
+  stream.on("end", () => {
+    if (buffer.trim().length > 0) {
+      emitProviderOutputLine(options, provider, streamName, buffer);
+      buffer = "";
+    }
+  });
+}
+
+function emitProviderOutputLine(
+  options: ProviderPromptOptions,
+  provider: ProviderId,
+  stream: ProviderPromptStreamName,
+  line: string,
+): void {
+  const summary = summarizeProviderStreamLine(line);
+
+  if (!summary) {
+    return;
+  }
+
+  emitProviderEvent(options, {
+    type: "process_output",
+    provider,
+    model: options.model,
+    stream,
+    message: summary,
+    detail: stream,
+  });
+}
+
+function summarizeProviderStreamLine(line: string): string | undefined {
+  const sanitized = sanitizeProviderOutput(line).replace(/\s+/gu, " ").trim();
+
+  if (!sanitized) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(sanitized) as unknown;
+
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const type = stringField(record, "type") ?? stringField(record, "event") ?? stringField(record, "status");
+      const message =
+        stringField(record, "message")
+        ?? stringField(record, "msg")
+        ?? stringField(record, "summary")
+        ?? stringField(record, "text")
+        ?? stringField(record, "delta");
+
+      if (type && message) {
+        return truncateProviderEvent(`${type}: ${message}`);
+      }
+
+      if (message) {
+        return truncateProviderEvent(message);
+      }
+
+      if (type) {
+        return truncateProviderEvent(`provider event ${type}`);
+      }
+
+      return truncateProviderEvent(`provider json ${Object.keys(record).slice(0, 5).join(",") || "event"}`);
+    }
+  } catch {
+    // Non-JSON provider output is handled below.
+  }
+
+  return truncateProviderEvent(sanitized);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function truncateProviderEvent(value: string): string {
+  return value.length > 180 ? `${value.slice(0, 180)}...` : value;
+}
+
+function emitProviderEvent(options: ProviderPromptOptions, event: ProviderPromptEvent): void {
+  options.onEvent?.(event);
 }

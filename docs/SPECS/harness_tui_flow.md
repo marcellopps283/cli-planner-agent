@@ -74,10 +74,16 @@ automacao, smoke e debugging.
   `agent-workflow`: o texto vai para o planner LLM ativo e a TUI renderiza o
   estado JSON devolvido pelo modelo.
 - Enquanto o planner trabalha na primeira mensagem, o workbench mostra um bloco
-  de thinking com o provider/modelo ativo; quando o JSON chega, esse bloco e
-  substituido pelo estado do planner.
+  de thinking com o provider/modelo ativo. A TUI tambem renderiza eventos reais
+  do planner engine e do provider CLI conforme eles acontecem: tentativa,
+  output incremental, validacao, reparo e aceite. Esses eventos nao devem ser
+  uma timeline programada de passos ficticios; precisam nascer do lifecycle real
+  da chamada ou de mensagens/activity_log devolvidos pelo modelo planner.
+  Quando o JSON chega, esse bloco e substituido pelo estado conversacional do
+  planner.
 - O estado agentico inclui `project_state`, mensagens do planner, checklist com
-  status `done/in_progress/pending/blocked`, perguntas e `next_action`.
+  status `done/in_progress/pending/blocked`, `activity_log` narrado pelo
+  proprio modelo, perguntas e `next_action`.
 - O modelo decide o estado semantico dos itens interativos que ele valida; a TUI
   continua dona do layout, controles e renderizacao.
 - `.blueprint/tui_sessions/SESSION.json` guarda uma sessao unica por projeto,
