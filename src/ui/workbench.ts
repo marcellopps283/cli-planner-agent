@@ -257,7 +257,7 @@ function buildTimelineFeedItems({
   if (showPersistedAgentState && dashboard.agentState) {
     entries.push({
       key: "agent-state",
-      rows: estimateTimelineRows(plannerAgentStateTimelineLines(dashboard.agentState).map((line) => line.text), timelineWidth),
+      rows: estimateTimelineRows(plannerAgentStateBlockTextLines(dashboard.agentState), timelineWidth),
       element: h(PlannerAgentStateBlock, { key: "agent-state", state: dashboard.agentState }),
     });
   }
@@ -301,7 +301,7 @@ function buildTimelineFeedItems({
   }
 
   if (runningAction === "agent-workflow") {
-    const lines = ["Working · building context, checklist, questions, and next action"];
+    const lines = ["Thinking. The planner will narrate its own findings when this turn returns."];
     entries.push({
       key: "thinking",
       rows: estimateTimelineRows(lines, timelineWidth),
@@ -398,8 +398,8 @@ export function PlannerThinkingBlock({ dashboard }: { dashboard: TuiDashboard })
         h(
           Text,
           null,
-          h(Text, { color: "cyan" }, h(Spinner, { type: "dots" }), " Working"),
-          h(Text, { color: "gray" }, " · building context, checklist, questions, and next action"),
+          h(Text, { color: "cyan" }, h(Spinner, { type: "dots" }), " Thinking"),
+          h(Text, { color: "gray" }, " · waiting for the planner's own update"),
         ),
       ),
     ),
@@ -428,6 +428,20 @@ export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowS
   return h(
     Box,
     { flexDirection: "column", marginBottom: 1 },
+    ...(state.activity_log.length > 0
+      ? [
+          h(InlineArtifactBlock, {
+            key: "activity-artifact",
+            title: "Agent Activity",
+            subtitle: "planner narrated this turn",
+            lines: state.activity_log.slice(0, 6).map((item) => ({
+              key: item.id,
+              color: agentActivityColor(item.status),
+              text: `${agentActivityIcon(item.status)} ${item.text}`,
+            })),
+          }),
+        ]
+      : []),
     h(InlineArtifactBlock, {
       key: "todo-artifact",
       title: "Updated Plan",
@@ -449,6 +463,14 @@ export function PlannerAgentStateBlock({ state }: { state: PlannerAgentWorkflowS
         ]
       : []),
   );
+}
+
+function plannerAgentStateBlockTextLines(state: PlannerAgentWorkflowState): string[] {
+  return [
+    ...state.activity_log.slice(0, 6).map((item) => item.text),
+    ...plannerAgentStateTimelineLines(state).map((line) => line.text),
+    ...state.questions.slice(0, 4).map((question) => question.question),
+  ];
 }
 
 function plannerAgentStateTimelineLines(state: PlannerAgentWorkflowState): TimelineLine[] {
@@ -481,6 +503,46 @@ function plannerAgentStateTimelineLines(state: PlannerAgentWorkflowState): Timel
       text: `${agentCheckbox(item.status)} ${item.label}${item.evidence ? ` - ${item.evidence}` : ""}`,
     })),
   ];
+}
+
+function agentActivityIcon(status: PlannerAgentWorkflowState["activity_log"][number]["status"]): string {
+  if (status === "ready") {
+    return "[x]";
+  }
+
+  if (status === "blocked") {
+    return "[!]";
+  }
+
+  if (status === "deciding") {
+    return "[?]";
+  }
+
+  if (status === "checking") {
+    return "[~]";
+  }
+
+  return "[.]";
+}
+
+function agentActivityColor(status: PlannerAgentWorkflowState["activity_log"][number]["status"]): TimelineColor {
+  if (status === "ready") {
+    return "green";
+  }
+
+  if (status === "blocked") {
+    return "red";
+  }
+
+  if (status === "deciding") {
+    return "yellow";
+  }
+
+  if (status === "checking") {
+    return "cyan";
+  }
+
+  return "gray";
 }
 
 function agentCheckbox(status: PlannerAgentWorkflowState["checklist"][number]["status"]): string {

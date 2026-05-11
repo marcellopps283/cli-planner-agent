@@ -404,7 +404,23 @@ describe("blueprint tui", () => {
           messages: [
             {
               role: "planner",
-              content: "Entendi que o app renderiza o workflow, mas o modelo decide o estado semantico.",
+              content: "Entendi que voce quer um harness agentico, nao uma tela estatica de setup.",
+            },
+            {
+              role: "planner",
+              content: "Estou conferindo o contexto do projeto antes de decidir se ja da para abrir preview.",
+            },
+          ],
+          activity_log: [
+            {
+              id: "context-check",
+              status: "checking",
+              text: "Conferi o README e o profile gerado para entender quais providers entram no fluxo.",
+            },
+            {
+              id: "scope-decision",
+              status: "deciding",
+              text: "Ainda preciso validar quando a checklist permite preview sem virar planejamento prematuro.",
             },
           ],
           checklist: [
@@ -483,7 +499,7 @@ describe("blueprint tui", () => {
     expect(dashboard.agentState?.checklist[0]?.status).toBe("done");
     expect(firstScreenOutput).toContain("Ask anything");
     expect(dashboard.agentSession?.agent_state?.project_state.title).toBe("Harness agentico");
-    expect(dashboard.agentSession?.messages.map((message) => message.role)).toEqual(["user", "planner"]);
+    expect(dashboard.agentSession?.messages.map((message) => message.role)).toEqual(["user", "planner", "planner"]);
     expect(firstScreenOutput).not.toContain("Harness agentico");
     expect(fullTimelineOutput).toContain("● You");
     expect(fullTimelineOutput).toContain("● Planner");
@@ -492,12 +508,17 @@ describe("blueprint tui", () => {
     expect(fullTimelineOutput.indexOf("Planner")).toBeLessThan(fullTimelineOutput.indexOf("Artifact: Updated Plan"));
     expect(fullTimelineOutput).toContain("planeje um harness agentico com checkboxes");
     expect(fullTimelineOutput).toContain("validados pela IA");
-    expect(fullTimelineOutput).toContain("Entendi que o app renderiza o workflow");
+    expect(fullTimelineOutput).toContain("Entendi que voce quer um harness agentico");
+    expect(fullTimelineOutput).toContain("Estou conferindo o contexto do projeto");
+    expect(fullTimelineOutput).toContain("Artifact: Agent Activity");
+    expect(fullTimelineOutput).toContain("Conferi o README e o profile gerado");
+    expect(fullTimelineOutput).toContain("Ainda preciso validar quando a checklist permite preview");
     expect(clippedTimelineOutput).not.toContain("planeje um harness agentico");
     expect(clippedTimelineOutput).toContain("Artifact: Updated Plan");
-    expect(runningOutput).toContain("Working");
+    expect(runningOutput).toContain("Thinking");
     expect(runningOutput).not.toContain("Artifact: Updated Plan");
-    expect(runningOutput).not.toContain("Entendi que o app renderiza o workflow");
+    expect(runningOutput).not.toContain("Entendi que voce quer um harness agentico");
+    expect(runningOutput).not.toContain("building context");
     expect(runningOutput).toContain("planeje um harness agentico com checkboxes");
     expect(runningOutput).not.toContain("Running agent-workflow");
     expect(output).toContain("Harness agentico");
@@ -638,6 +659,9 @@ describe("blueprint tui", () => {
     expect(prompt).toContain("pkg-000/package.json");
     expect(prompt).toContain("declared_dependencies");
     expect(prompt).toContain("Use brainstorming mode while requirements are incomplete");
+    expect(prompt).toContain("Make the workflow feel like a conversational agent CLI");
+    expect(prompt).toContain("Every visible planner message and activity_log item must be specific");
+    expect(prompt).toContain("Use activity_log for model-owned visible work notes");
     expect(prompt).toContain("not as a lock that limits the user's architectural options");
     expect(prompt).toContain("present them as options with tradeoffs until the user chooses");
     expect(prompt).toContain("Do not suggest a framework, package, library, build tool, database, or test framework because it is installed globally");
@@ -1148,7 +1172,20 @@ function makeAgentWorkflowState({
     messages: [
       {
         role: "planner",
-        content: "Tenho informacoes suficientes para preparar o preview dos handoffs.",
+        content: "Ja validei o pedido principal e consigo preparar o preview dos handoffs.",
+      },
+      {
+        role: "planner",
+        content: "Vou manter o preview dependente de confirmacao antes de escrever qualquer arquivo.",
+      },
+    ],
+    activity_log: [
+      {
+        id: "handoff-readiness",
+        status: nextActionType === "preview_plan" ? "ready" : "thinking",
+        text: nextActionType === "preview_plan"
+          ? "O objetivo, criterios e caminhos alvo estao definidos o suficiente para preview."
+          : "Ainda estou organizando as informacoes antes de propor handoffs.",
       },
     ],
     checklist: [

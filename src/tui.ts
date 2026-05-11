@@ -173,6 +173,11 @@ export const PlannerAgentWorkflowStateSchema = z.object({
     role: z.enum(["planner"]),
     content: z.string().min(1),
   })).default([]),
+  activity_log: z.array(z.object({
+    id: z.string().min(1),
+    status: z.enum(["thinking", "checking", "deciding", "blocked", "ready"]),
+    text: z.string().min(1),
+  })).default([]),
   checklist: z.array(z.object({
     id: z.string().min(1),
     label: z.string().min(1),
@@ -4625,6 +4630,10 @@ function buildPlannerAgentWorkflowPrompt({
     "The app is a harness: it renders state, but you decide the semantic workflow state.",
     "Do not propose terminal layout, colors, panels, or visual structure.",
     "You control only project understanding, checklist status, questions, validation state, next action, and optional plan answers.",
+    "Make the workflow feel like a conversational agent CLI. Use messages to tell the user what you understood, what you checked in the provided context, what you are deciding now, and why you need more input.",
+    "Avoid generic boilerplate progress like 'building context' or 'processing'. Every visible planner message and activity_log item must be specific to this request, this repo, or the decision being made.",
+    "Prefer 2-4 short planner messages when the turn has meaningful reasoning: understanding, context check, current decision, and next question/action.",
+    "Use activity_log for model-owned visible work notes from this turn. These are not UI steps; they are your own concrete observations/actions.",
     "Checkboxes are semantic validation state: mark done only when the supplied project context validates it; otherwise use pending, in_progress, or blocked.",
     "Reiterate the project in your own words, identify what is already known, what still needs validation, and what the next user-facing action should be.",
     "Use brainstorming mode while requirements are incomplete: ask concise questions, present viable options with tradeoffs, and update the same workflow state.",
@@ -4658,7 +4667,14 @@ function buildPlannerAgentWorkflowPrompt({
           health: "planning|needs_input|ready_to_preview|blocked",
           confidence: 0.0,
         },
-        messages: [{ role: "planner", content: "what you want the user to see in the chat feed" }],
+        messages: [
+          { role: "planner", content: "short conversational update about what you understood" },
+          { role: "planner", content: "short conversational update about what you checked or are deciding" },
+        ],
+        activity_log: [
+          { id: "context-check", status: "checking", text: "specific context or requirement you checked this turn" },
+          { id: "decision", status: "deciding", text: "specific decision or unresolved gap you are working through" },
+        ],
         checklist: [
           {
             id: "understand_request",
